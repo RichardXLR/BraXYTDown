@@ -1,195 +1,354 @@
-# BraXYTDow 3.2
+<div align="center">
 
-Aplicativo desktop para Windows 10/11 que baixa vídeos, áudios e playlists
-públicas ou legitimamente acessíveis com fila, biblioteca inteligente, conversão, legendas, cortes e perfis de
-qualidade. A interface não bloqueia durante análise, download ou pós-processamento.
+<img src="assets/github/banner.jpg" alt="BraXYTDow Banner" width="100%"/>
 
-> Use apenas conteúdo próprio, em domínio público ou para o qual você tenha
-> autorização. Cookies opcionais apenas reutilizam uma sessão local legítima:
-> eles não concedem direitos sobre obras, não removem DRM e não devem ser usados
-> para violar direitos autorais ou controles de acesso.
+<br/>
 
-## Ferramentas e atualização automática
+# 🎬 BraXYTDow 3.2
 
-O BraXYTDow executa `yt-dlp`, `ffmpeg`, `ffprobe` e, quando disponível, `deno`
-como processos externos. A cópia empacotada é inicializada em uma pasta gravável
-por usuário e funciona como fallback offline.
+**Mídia pública, do seu jeito.**
 
-O atualizador interno pode verificar e instalar versões oficiais de forma
-atômica, sem modificar o EXE instalado. yt-dlp usa o canal nightly por padrão,
-pois tende a acompanhar mudanças do YouTube mais rapidamente; isso pode ser
-alterado para stable nas configurações. Downloads de atualização são validados
-por SHA-256 antes da ativação e uma instalação incompleta nunca substitui a ativa.
+Aplicativo desktop para Windows que baixa vídeos, áudios e playlists com interface moderna, fila inteligente e atualização automática de ferramentas.
 
-O **AutoCura 2.0** testa a cadeia YouTube → yt-dlp → Deno/EJS → FFmpeg antes de
-promover uma versão, mantém duas cópias de recuperação, coloca releases
-incompatíveis em quarentena e executa rollback depois de falhas repetidas. A
-Central de Compatibilidade permite testar a cadeia e restaurar uma versão
-anterior manualmente.
+<br/>
 
-A verificação online usa vários vídeos-canários e separa falhas de rede, região,
-conteúdo removido, limite temporário, EJS e PO Token. O EJS oficial remoto só é
-habilitado sob falha local. Um provedor de PO Token pode ser instalado
-opcionalmente: o pacote precisa estar na lista permitida, vir do repositório
-esperado por HTTPS, possuir SHA-256 e passar por quarentena e teste funcional.
-O plugin executa no processo externo do yt-dlp, nunca dentro da interface.
+[![Version](https://img.shields.io/badge/versão-3.2.0-1976F3?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/RichardXLR/BraXYTDown/releases)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![PySide6](https://img.shields.io/badge/PySide6-Qt_6-41CD52?style=for-the-badge&logo=qt&logoColor=white)](https://doc.qt.io/qtforpython/)
+[![Platform](https://img.shields.io/badge/Windows-10%2F11-0078D6?style=for-the-badge&logo=windows11&logoColor=white)](https://github.com/RichardXLR/BraXYTDown)
+[![License](https://img.shields.io/badge/licença-proprietário-F2B84B?style=for-the-badge&logo=creativecommons&logoColor=white)](https://github.com/RichardXLR/BraXYTDown)
 
-Outros recursos da versão 3.2:
+<br/>
 
-- biblioteca permanente de IDs, sincronização de playlists somente com itens
-  novos, busca e filtros por canal, formato, duração, data, status e arquivo;
-- detecção de arquivos movidos/apagados, associação manual, download novamente
-  e limpeza confirmada de parciais antigos e cópias duplicadas;
-- capítulos selecionáveis, edição em lote, prioridade, fila reordenável,
-  agendamento, limites por horário e pausa em conexão limitada;
-- editor de nome, metadados e capa com finalização atômica pelo FFmpeg;
-- bandeja do Windows, toast nativo com ações para abrir arquivo/pasta, modo
-  compacto, texto ampliado, contraste reforçado e redução de movimento.
-- créditos editoriais responsivos com retrato oficial de Richard Ittou, canais
-  sociais destacados, identidade do criador e diagnóstico técnico recolhível.
+[📥 Download](#-instalação) · [✨ Funcionalidades](#-funcionalidades) · [🛠️ Desenvolvimento](#-executar-em-desenvolvimento) · [📖 Documentação](#-arquitetura)
 
-### Sessão opcional com cookies
+</div>
 
-Em **Configurações > Sessão**, o usuário pode escolher um navegador compatível
-ou um arquivo `cookies.txt` Mozilla/Netscape. A ativação exige consentimento
-explícito de uso responsável. O BraXYTDow nunca solicita a senha e não copia o
-conteúdo dos cookies para SQLite, fila, histórico, logs ou diagnóstico; somente
-a origem selecionada é passada como argumento ao processo local do yt-dlp.
+<br/>
 
-O arquivo precisa permanecer no disco local e em local protegido. Cookies
-equivalem a uma sessão conectada: não os compartilhe, use apenas quando
-necessário e evite volumes excessivos. O projeto yt-dlp alerta que contas podem
-sofrer bloqueio temporário ou permanente. Se um provedor PO Token também estiver
-ativo, ele será carregado no mesmo processo externo do yt-dlp.
+---
 
-Não existe garantia de compatibilidade permanente com serviços de terceiros.
-Quando o YouTube mudar, use **Ferramentas > Verificar atualizações** e consulte o
-diagnóstico do aplicativo.
+<br/>
 
-## Executar em desenvolvimento
+## 📸 Preview
 
-Requisitos: Windows x64, Python 3.11 ou mais recente e PowerShell 5.1+.
+<div align="center">
+<img src="assets/github/screenshot-main.jpg" alt="BraXYTDow Interface" width="90%" style="border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.3);"/>
+
+<br/>
+<sub>Interface principal com tema dark, sidebar de navegação e prévia de mídia</sub>
+</div>
+
+<br/>
+
+---
+
+<br/>
+
+## ✨ Funcionalidades
+
+<table>
+<tr>
+<td width="50%">
+
+### 🎥 Download Inteligente
+- Vídeos em até **4K** com seleção de formato
+- Áudio em **MP3, M4A, OPUS** com bitrate configurável
+- **Playlists completas** com filtros e sincronização
+- Capítulos selecionáveis e corte por trecho
+- Download simultâneo com **1–4 threads**
+
+</td>
+<td width="50%">
+
+### 📋 Fila & Biblioteca
+- Fila **reordenável** com prioridade e agendamento
+- Edição em lote (destino, qualidade, limites)
+- Biblioteca permanente com busca e filtros
+- Detecção de arquivos movidos/apagados
+- Sincronização de playlists (somente novos itens)
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+### 🔧 AutoCura 2.0
+- Atualização **atômica** de yt-dlp, FFmpeg e Deno
+- Verificação com vídeos-canários do YouTube
+- **Rollback automático** em caso de falha
+- Quarentena de versões incompatíveis
+- Central de Compatibilidade com testes manuais
+
+</td>
+<td width="50%">
+
+### 🛡️ Segurança & Privacidade
+- Validação **SHA-256** em todas as atualizações
+- Verificação **Authenticode** em releases
+- Plugins PO Token em sandbox com allowlist
+- Cookies nunca copiados para DB/logs
+- Dados 100% locais em `%LOCALAPPDATA%`
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+### 🎨 Interface Premium
+- Tema **dark midnight** com acentos cobalt/cyan
+- Animações suaves e transições cross-fade
+- Modo **compacto** always-on-top
+- Bandeja do sistema com toast nativo
+- Ícones vetoriais renderizados em tempo real
+
+</td>
+<td width="50%">
+
+### ♿ Acessibilidade
+- Alto contraste e texto ampliado
+- Redução de movimento
+- Atalhos globais (`Ctrl+L`, `Ctrl+J`, `Ctrl+1..4`)
+- Layout responsivo (3 breakpoints)
+- Editor de metadados, capa e nome
+
+</td>
+</tr>
+</table>
+
+<br/>
+
+---
+
+<br/>
+
+## 🏗️ Arquitetura
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                     app.py                               │
+│           Bootstrap Qt · Single-instance Lock            │
+└──────────────────────┬──────────────────────────────────┘
+                       │
+                       ▼
+┌──────────────────────────────────────────────────────────┐
+│                    ui.py (GUI)                            │
+│   MainWindow · Pages · Dialogs · System Tray · Motion    │
+└──────────┬──────────────────────────────┬───────────────┘
+           │                              │
+           ▼                              ▼
+┌────────────────────┐      ┌──────────────────────────┐
+│    Analyzer        │      │    DownloadManager       │
+│  (Metadata fetch)  │      │  (Queue · Jobs · Retry)  │
+└────────┬───────────┘      └──────────┬───────────────┘
+         │                             │
+         ▼                             ▼
+┌────────────────────┐      ┌──────────────────────────┐
+│   parsers.py       │      │     DownloadJob          │
+│  JSON · Progress   │      │  (Process · PostProcess)  │
+└────────────────────┘      └──────────┬───────────────┘
+                                       │
+                                       ▼
+                            ┌──────────────────────────┐
+                            │   command_builder.py     │
+                            │  (yt-dlp CLI arguments)   │
+                            └──────────┬───────────────┘
+                                       │
+                                       ▼
+                            ┌──────────────────────────┐
+                            │   paths.py · storage.py  │
+                            │  (Binaries · SQLite DB)   │
+                            └──────────────────────────┘
+```
+
+<br/>
+
+### 📁 Estrutura do Projeto
+
+```
+BraXYTDown/
+├── 📂 baixatube/                 # Pacote principal do aplicativo
+│   ├── app.py                    # Entry point — bootstrap Qt
+│   ├── ui.py                     # Interface completa (4.200+ linhas)
+│   ├── service.py                # Analyzer + DownloadManager + Jobs
+│   ├── storage.py                # SQLite — settings, queue, history
+│   ├── command_builder.py        # Construtor de comandos yt-dlp
+│   ├── parsers.py                # Parser de JSON e progresso
+│   ├── models.py                 # Dataclasses e enums do domínio
+│   ├── paths.py                  # Paths, binários e manifesto
+│   ├── motion.py                 # Animações e transições
+│   ├── icons.py                  # Ícones vetoriais (22 glyphs)
+│   ├── compatibility.py          # Canários e AutoCura
+│   ├── tool_updates.py           # Atualizador de ferramentas
+│   ├── app_updates.py            # Auto-update do aplicativo
+│   ├── update_controller.py      # Orquestrador Qt de updates
+│   ├── cookie_auth.py            # Sessão com cookies
+│   ├── plugin_security.py        # Sandbox de plugins PO Token
+│   ├── network_policy.py         # Conexão limitada e bandwidth
+│   ├── process_tree.py           # Win32 Job Objects
+│   ├── windows_toast.py          # Notificações toast nativas
+│   ├── diagnostics.py            # Logging rotativo
+│   ├── library_cleanup.py        # Limpeza de parciais/duplicados
+│   ├── release_integrity.py      # Verificação Authenticode
+│   ├── branding.py               # Identidade e créditos
+│   └── utils.py                  # Helpers gerais
+├── 📂 tests/                     # 19 arquivos de testes
+├── 📂 scripts/                   # Build, assinatura e distribuição
+├── 📂 assets/                    # Ícones, imagens e SVGs
+├── 📂 installer/                 # Inno Setup config
+├── 📂 .github/workflows/         # CI/CD pipeline
+├── pyproject.toml                # Configuração do projeto
+├── requirements.txt              # Dependência: PySide6
+└── README.md                     # Este arquivo
+```
+
+<br/>
+
+---
+
+<br/>
+
+## 📥 Instalação
+
+### Opção 1: Executável (Recomendado)
+
+Baixe a versão mais recente na [página de releases](https://github.com/RichardXLR/BraXYTDown/releases):
+
+| Formato | Descrição |
+|---------|-----------|
+| `BraXYTDow.exe` | EXE único — sem dependências |
+| `BraXYTDow-3.2.0-windows-x64.zip` | Pacote portátil — inicialização mais rápida |
+| `BraXYTDow-Setup-3.2.0-x64.exe` | Instalador por usuário |
+
+### Opção 2: Código-fonte
 
 ```powershell
+# Clonar o repositório
+git clone https://github.com/RichardXLR/BraXYTDown.git
+cd BraXYTDown
+
+# Criar ambiente virtual
 py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
+
+# Instalar dependências
 python -m pip install -r requirements-dev.txt
+
+# Preparar binários (yt-dlp, FFmpeg, Deno)
 powershell -ExecutionPolicy Bypass -File scripts\prepare_binaries.ps1
+
+# Executar o aplicativo
 python -m baixatube
 ```
 
-`prepare_binaries.ps1` preserva binários válidos existentes. Quando precisa
-baixar, usa assets oficiais e confere os checksums publicados de yt-dlp, FFmpeg
-e Deno antes de substituir qualquer arquivo. Opções úteis:
+<br/>
 
-```powershell
-# Validar e reutilizar tudo localmente, sem rede
-powershell -File scripts\prepare_binaries.ps1 -Offline
+---
 
-# Atualizar explicitamente todas as ferramentas empacotadas
-powershell -File scripts\prepare_binaries.ps1 -Force
+<br/>
 
-# Build intencionalmente sem Deno
-powershell -File scripts\prepare_binaries.ps1 -SkipDeno
-```
-
-## Testes
+## 🧪 Testes
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-Os testes usam respostas locais e bancos temporários; não dependem do YouTube.
+> Os testes usam respostas locais e bancos temporários — **não dependem do YouTube**.
 
-## Criar a release Windows
+<br/>
 
-O build padrão usa primeiro `.venv`, valida ferramentas, executa os testes e
-gera as variantes onefile e onedir. Dependências de build exatas estão em
-`requirements-build-lock.txt`.
+---
+
+<br/>
+
+## 📦 Build da Release
 
 ```powershell
+# Build padrão (valida ferramentas, roda testes, gera EXE + ZIP)
 powershell -ExecutionPolicy Bypass -File scripts\build.ps1
-```
 
-Artefatos:
-
-- `dist\BraXYTDow.exe`: EXE único, sem Python/FFmpeg previamente instalados;
-- `dist\BraXYTDow-3.2.0-windows-x64.zip`: pacote portátil com inicialização mais rápida;
-- `dist\installer\BraXYTDow-Setup-3.2.0-x64.exe`: instalador por usuário, quando Inno Setup 6 estiver instalado;
-- `dist\BraXYTDow-sbom.cdx.json`: inventário CycloneDX das dependências e ferramentas;
-- `dist\SHA256SUMS.txt` e `dist\release-manifest.json`: integridade e proveniência da release.
-
-O EXE único extrai internamente o runtime na inicialização, comportamento normal
-do PyInstaller onefile. Para abertura mais rápida e menor uso temporário de
-disco, prefira o ZIP ou o instalador.
-
-Opções de build importantes:
-
-```powershell
-# Build totalmente offline com a venv e binários já preparados
+# Build offline com venv e binários já preparados
 powershell -File scripts\build.ps1 -Offline
 
-# Sincronizar a venv com o lock e atualizar ferramentas antes do build
-powershell -File scripts\build.ps1 -SyncDependencies -RefreshTools
-
-# Exigir que o instalador também seja produzido
+# Build completo com instalador
 powershell -File scripts\build.ps1 -RequireInstaller
-
-# Release oficial: exigir certificado Authenticode disponível no repositório do usuário
-powershell -File scripts\build.ps1 -RequireInstaller -RequireSigning `
-  -CertificateThumbprint "SEU_THUMBPRINT_DE_40_CARACTERES"
 ```
 
-O script falha se a versão do runtime, a versão do empacotamento, os binários ou
-o conteúdo interno da release forem inconsistentes. `scripts\verify_release.ps1`
-também pode ser executado separadamente após o PyInstaller.
+### Artefatos gerados
 
-### Publicar atualização do próprio aplicativo
+| Arquivo | Descrição |
+|---------|-----------|
+| `dist\BraXYTDow.exe` | EXE único PyInstaller |
+| `dist\BraXYTDow-3.2.0-windows-x64.zip` | Pacote portátil |
+| `dist\installer\BraXYTDow-Setup-3.2.0-x64.exe` | Instalador Inno Setup |
+| `dist\BraXYTDow-sbom.cdx.json` | SBOM CycloneDX |
+| `dist\SHA256SUMS.txt` | Checksums de integridade |
 
-O workflow `.github/workflows/release.yml` executa testes, build Windows,
-assinatura, SBOM, publicação no GitHub Releases e atestação de procedência. A
-publicação falha de forma segura se EXE ou instalador não tiverem Authenticode
-confiável e carimbo de tempo. O workflow aceita Microsoft Artifact Signing com
-OIDC ou certificado público PFX quando a autoridade certificadora permitir esse
-formato. A configuração completa e os nomes dos secrets estão em
-[`DISTRIBUTION.md`](DISTRIBUTION.md).
+<br/>
 
-Depois de assinar e hospedar o instalador em HTTPS, gere ou atualize o manifesto
-de canais:
+---
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\publish_app_manifest.ps1 `
-  -InstallerUrl "https://seu-dominio/BraXYTDow-Setup-3.2.0-x64.exe" `
-  -Channel stable -Rollout 10 `
-  -Notes "BraXYTDow 3.2"
-```
+<br/>
 
-Publique também `dist\latest.json` em HTTPS. O aplicativo exige schema 2,
-canal estável ou experimental, rollout determinístico, tamanho exato, SHA-256,
-assinatura Authenticode, identidade do publicador e certificado fixado. Ao
-atualizar, ele mantém um instalador anterior verificado e reverte depois de três
-inicializações malsucedidas. A instalação só começa após confirmação.
+## 🔒 Segurança & Privacidade
 
-## Dados locais e privacidade
+- 🔐 **Atualizações verificadas** — SHA-256 + Authenticode + tamanho exato
+- 🍪 **Cookies opcionais** — nunca copiados, apenas referenciados por path
+- 🧩 **Plugins sandboxed** — allowlist, quarentena, teste funcional obrigatório
+- 💾 **Dados locais** — tudo em `%LOCALAPPDATA%\BraXYTDow`
+- 🚫 **Zero telemetria** — nenhum dado enviado para servidores externos
 
-Configurações, fila, histórico, logs e ferramentas atualizadas ficam sob
-`%LOCALAPPDATA%\BraXYTDow`. Atualizações de uma instalação existente continuam
-usando `%LOCALAPPDATA%\BaixaTube` para preservar a fila, o histórico e as ferramentas.
-Cookies ficam desativados por padrão. Quando o usuário os ativa, somente a
-origem escolhida (navegador/perfil ou caminho do arquivo) é persistida para
-recuperar a fila; o conteúdo secreto não é copiado. Os endereços informados são
-enviados somente aos processos externos necessários para analisar e baixar a
-mídia solicitada.
+<br/>
 
-## Créditos
+---
 
-BraXYTDow foi criado e desenvolvido por **Richard Ittou**.
+<br/>
 
-- Instagram: [@Richard.ittou](https://www.instagram.com/richard.ittou?igsh=c210bHhzdzJwcWg1)
-- Discord: `richardxlrr`
+## ⚖️ Uso Responsável
 
-## Licenças de terceiros
+> Use apenas conteúdo próprio, em domínio público ou para o qual você tenha autorização. Cookies opcionais apenas reutilizam uma sessão local legítima: eles não concedem direitos sobre obras, não removem DRM e não devem ser usados para violar direitos autorais ou controles de acesso.
 
-Consulte [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). O manifesto
-`bin\tools-manifest.json`, gerado durante o build, registra versão, origem,
-tamanho e SHA-256 exatos das ferramentas incorporadas.
+<br/>
+
+---
+
+<br/>
+
+## 🧰 Ferramentas Externas
+
+O BraXYTDow utiliza as seguintes ferramentas como processos externos:
+
+| Ferramenta | Função | Atualização |
+|-----------|--------|-------------|
+| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | Extração e download de mídia | Nightly (padrão) ou Stable |
+| [FFmpeg](https://ffmpeg.org/) | Conversão, merge e pós-processamento | Via Gyan.dev builds |
+| [Deno](https://deno.com/) | Execução de JavaScript (EJS) | Via Denoland releases |
+
+> Todas são verificadas por SHA-256 antes da ativação. Consulte [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) para licenças.
+
+<br/>
+
+---
+
+<br/>
+
+<div align="center">
+
+## 👨‍💻 Criador
+
+<img src="assets/creator-richard.jpg" alt="Richard Ittou" width="120" style="border-radius: 50%;"/>
+
+### Richard Ittou
+
+*Criador e desenvolvedor do BraXYTDow*
+
+[![Instagram](https://img.shields.io/badge/Instagram-@richard.ittou-E4405F?style=for-the-badge&logo=instagram&logoColor=white)](https://www.instagram.com/richard.ittou?igsh=c210bHhzdzJwcWg1)
+[![Discord](https://img.shields.io/badge/Discord-richardxlrr-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com)
+
+<br/>
+
+---
+
+<sub>Feito com 💙 no Brasil · BraXYTDow v3.2.0</sub>
+
+</div>
