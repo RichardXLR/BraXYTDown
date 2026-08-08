@@ -1,0 +1,218 @@
+name: BraXYTDow signed release
+
+on:
+  workflow_dispatch:
+    inputs:
+      signing_provider:
+        description: Trusted signing provider
+        required: true
+        type: choice
+        default: pfx
+        options: [pfx, artifact-signing]
+      channel:
+        description: Update channel
+        required: true
+        type: choice
+        options: [stable, experimental]
+      rollout:
+        description: Rollout percentage (1-100)
+        required: true
+        default: "10"
+      notes:
+        description: Release notes
+        required: false
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: braxytdow-production-release
+  cancel-in-progress: false
+
+jobs:
+  build-sign-publish:
+    runs-on: windows-latest
+    environment: production-release
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup --yes --no-progress
+
+      - name: Restore CA-issued PFX certificate
+        if: inputs.signing_provider == 'pfx'
+        shell: powershell
+        env:
+          BRAXY_SIGNING_PFX_BASE64: ${{ secrets.BRAXY_SIGNING_PFX_BASE64 }}
+          BRAXY_SIGNING_PASSWORD: ${{ secrets.BRAXY_SIGNING_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:BRAXY_SIGNING_PFX_BASE64)) {
+            throw 'BRAXY_SIGNING_PFX_BASE64 is required for the PFX signing provider.'
+          }
+          $bytes = [Convert]::FromBase64String($env:BRAXY_SIGNING_PFX_BASE64)
+          $pfx = Join-Path $env:RUNNER_TEMP 'braxy-signing.pfx'
+          [IO.File]::WriteAllBytes($pfx, $bytes)
+          $secure = ConvertTo-SecureString $env:BRAXY_SIGNING_PASSWORD -AsPlainText -Force
+          $certificates = @(Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $secure)
+          $certificate = $certificates | Where-Object { $_.HasPrivateKey } | Select-Object -First 1
+          if (-not $certificate) { throw 'The PFX did not import a certificate with a private key.' }
+          "BRAXY_CERT_THUMBPRINT=$($certificate.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "BRAXY_TEMP_PFX=$pfx" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Build, test, sign and package with PFX
+        if: inputs.signing_provider == 'pfx'
+        shell: powershell
+        run: >-
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\build.ps1
+          -SyncDependencies -RefreshTools -RequireInstaller -RequireSigning
+          -CertificateThumbprint $env:BRAXY_CERT_THUMBPRINT
+
+      - name: Build and test for external Artifact Signing
+        if: inputs.signing_provider == 'artifact-signing'
+        shell: powershell
+        run: >-
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\build.ps1
+          -SyncDependencies -RefreshTools -SkipInstaller -SkipPortableZip
+
+      - name: Resolve version
+        shell: powershell
+        run: |
+          $version = (& .\.venv\Scripts\python.exe -c "from baixatube import __version__; print(__version__)").Trim()
+          if ([string]::IsNullOrWhiteSpace($version)) { throw 'Could not resolve the application version.' }
+          "BRAXY_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Sign in to Azure with OIDC
+        if: inputs.signing_provider == 'artifact-signing'
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign application executables with Microsoft Artifact Signing
+        if: inputs.signing_provider == 'artifact-signing'
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.BRAXY_ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.BRAXY_ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.BRAXY_ARTIFACT_SIGNING_PROFILE }}
+          files: |
+            ${{ github.workspace }}\dist\BraXYTDow.exe
+            ${{ github.workspace }}\dist\BraXYTDow\BraXYTDow.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: BraXYTDow
+          description-url: https://www.instagram.com/richard.ittou
+
+      - name: Package signed application
+        if: inputs.signing_provider == 'artifact-signing'
+        shell: powershell
+        run: >-
+          powershell.exe -NoProfile -ExecutionPolicy Bypass
+          -File scripts\package_external_release.ps1 -Version $env:BRAXY_VERSION
+
+      - name: Sign installer with Microsoft Artifact Signing
+        if: inputs.signing_provider == 'artifact-signing'
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.BRAXY_ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.BRAXY_ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.BRAXY_ARTIFACT_SIGNING_PROFILE }}
+          files: ${{ github.workspace }}\dist\installer\BraXYTDow-Setup-${{ env.BRAXY_VERSION }}-x64.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: BraXYTDow Installer
+          description-url: https://www.instagram.com/richard.ittou
+
+      - name: Verify and seal distribution bundle
+        shell: powershell
+        run: >-
+          powershell.exe -NoProfile -ExecutionPolicy Bypass
+          -File scripts\prepare_distribution_bundle.ps1
+          -Python .venv\Scripts\python.exe -Version $env:BRAXY_VERSION
+          -RequireInstaller -RequireSigning
+
+      - name: Attest build provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            dist/BraXYTDow.exe
+            dist/installer/BraXYTDow-Setup-${{ env.BRAXY_VERSION }}-x64.exe
+            dist/BraXYTDow-sbom.cdx.json
+
+      - name: Create release and upload artifacts
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "v$env:BRAXY_VERSION"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --title "BraXYTDow $env:BRAXY_VERSION" --notes "${{ inputs.notes }}"
+          }
+          gh release upload $tag `
+            dist\BraXYTDow.exe `
+            dist\BraXYTDow-$env:BRAXY_VERSION-windows-x64.zip `
+            dist\installer\BraXYTDow-Setup-$env:BRAXY_VERSION-x64.exe `
+            dist\BraXYTDow-sbom.cdx.json `
+            dist\signing-report.json `
+            dist\release-manifest.json `
+            dist\SHA256SUMS.txt --clobber
+
+      - name: Publish signed update manifest
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Path dist\channel -Force | Out-Null
+          gh release download update-channel --pattern latest.json --dir dist\channel 2>$null
+          $current = Join-Path (Resolve-Path dist\channel) 'latest.json'
+          $installerUrl = "https://github.com/${{ github.repository }}/releases/download/v$env:BRAXY_VERSION/BraXYTDow-Setup-$env:BRAXY_VERSION-x64.exe"
+          powershell.exe -NoProfile -ExecutionPolicy Bypass `
+            -File scripts\publish_app_manifest.ps1 `
+            -InstallerUrl $installerUrl `
+            -Channel "${{ inputs.channel }}" `
+            -Rollout ${{ inputs.rollout }} `
+            -Notes "${{ inputs.notes }}" `
+            -OutputPath $current
+          gh release view update-channel *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create update-channel --title 'BraXYTDow update channel' --notes 'Manifesto permanente dos canais'
+          }
+          gh release upload update-channel $current --clobber
+
+      - name: Upload verified distribution bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: BraXYTDow-${{ env.BRAXY_VERSION }}-signed
+          if-no-files-found: error
+          path: |
+            dist/BraXYTDow.exe
+            dist/BraXYTDow-${{ env.BRAXY_VERSION }}-windows-x64.zip
+            dist/installer/BraXYTDow-Setup-${{ env.BRAXY_VERSION }}-x64.exe
+            dist/BraXYTDow-sbom.cdx.json
+            dist/signing-report.json
+            dist/release-manifest.json
+            dist/SHA256SUMS.txt
+
+      - name: Remove temporary PFX and private key from runner
+        if: always() && inputs.signing_provider == 'pfx'
+        shell: powershell
+        run: |
+          if ($env:BRAXY_CERT_THUMBPRINT) {
+            $certificatePath = "Cert:\CurrentUser\My\$env:BRAXY_CERT_THUMBPRINT"
+            if (Test-Path -LiteralPath $certificatePath) { Remove-Item -LiteralPath $certificatePath -Force }
+          }
+          if ($env:BRAXY_TEMP_PFX -and (Test-Path -LiteralPath $env:BRAXY_TEMP_PFX)) {
+            Remove-Item -LiteralPath $env:BRAXY_TEMP_PFX -Force
+          }

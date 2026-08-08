@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.coverage
+.ruff_cache/
+.venv/
+
+# Build artifacts
+build/
+dist/
+
+# Binaries (downloaded at dev/build time)
+bin/*.exe
+bin/tools-manifest.json
+
+# Database & logs
+*.db
+*.db-shm
+*.db-wal
+*.log
+
+# Certificates & keys
+*.pfx
+*.p12
+*.pem
+*.key
+
+# Internal tooling / design assets (not part of source)
+.tools/
+.interface-design/
+.installer-lifecycle-test-*/
+artifacts/
+
+# IDE
+.vscode/
+.idea/

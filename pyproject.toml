@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "braxytdow"
+version = "3.2.0"
+description = "Downloader desktop de mídia pública"
+requires-python = ">=3.11"
+dependencies = [
+  "PySide6>=6.7,<7",
+]
+
+[project.scripts]
+braxytdow = "baixatube.app:main"
+baixatube = "baixatube.app:main"
+
+[tool.setuptools.packages.find]
+include = ["baixatube*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
