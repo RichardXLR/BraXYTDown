@@ -1,6 +1,6 @@
 {
   "baseline_platform_check": {
-    "checked_at": "2026-10-07T20:46:04.365860+00:00",
+    "checked_at": "2026-10-07T20:51:53.572983+00:00",
     "checks": [
       {
         "code": "platform_blocked",
@@ -23,7 +23,7 @@
     }
   ],
   "last_check": {
-    "checked_at": "2026-10-07T20:40:51.105112+00:00",
+    "checked_at": "2026-10-07T20:53:16.241193+00:00",
     "checks": [
       {
         "name": "runtime",
@@ -181,7 +181,7 @@
       "youtube_status": "blocked"
     },
     "platform_baseline": {
-      "checked_at": "2026-10-07T20:40:38.854620+00:00",
+      "checked_at": "2026-10-07T20:51:53.572983+00:00",
       "checks": [
         {
           "code": "platform_blocked",
@@ -209,8 +209,46 @@
     "status": "passed"
   },
   "last_error": "candidate_command_failed",
+  "pending": {
+    "candidate": {
+      "id": "dpl_73eoBRtP56wdbiP3tQ5zoFiGpvjA",
+      "readyState": "READY",
+      "url": "https://onda-audio-3liayvosr-r79078339-3591s-projects.vercel.app"
+    },
+    "created_at": "2026-10-07T20:53:16.241245+00:00",
+    "platform_baseline": {
+      "checked_at": "2026-10-07T20:51:53.572983+00:00",
+      "checks": [
+        {
+          "code": "platform_blocked",
+          "name": "me_at_zoo_metadata",
+          "status": "blocked"
+        },
+        {
+          "code": "platform_blocked",
+          "name": "big_buck_bunny_metadata",
+          "status": "blocked"
+        }
+      ],
+      "deployment_id": "dpl_CzzJ8YQhCdVRuF47RdDWFbUw4Yth"
+    },
+    "previous": {
+      "id": "dpl_CzzJ8YQhCdVRuF47RdDWFbUw4Yth",
+      "readyState": "READY",
+      "url": "https://onda-audio-4vvhivacf-r79078339-3591s-projects.vercel.app"
+    },
+    "previous_versions": {},
+    "versions": {
+      "deno": "2.9.7",
+      "fastapi": "0.142.3",
+      "imageio-ffmpeg": "0.6.0",
+      "publicsuffixlist": "1.0.2.20261007",
+      "uvicorn": "0.54.0",
+      "yt-dlp": "2026.8.19"
+    }
+  },
   "quarantine": [],
   "schema": 2,
-  "status": "failed",
-  "updated_at": "2026-10-07T20:46:38.709687+00:00"
+  "status": "promotion_pending",
+  "updated_at": "2026-10-07T20:53:16.241251+00:00"
 }
