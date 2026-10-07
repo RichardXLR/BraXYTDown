@@ -1,0 +1,29 @@
+Onda · tecnologias do serviço
+
+FFmpeg (empacotado por imageio-ffmpeg)
+FFmpeg e os codecs preservam suas licenças originais. O binário estático usado
+pelo serviço inclui componentes GPL, como x264. Não é enviado ao navegador.
+Código-fonte FFmpeg: https://github.com/FFmpeg/FFmpeg
+Licenças e condições: https://ffmpeg.org/legal.html
+Empacotamento e fontes dos binários: https://github.com/imageio/imageio-ffmpeg
+Build estático de referência: https://johnvansickle.com/ffmpeg/
+GPL: https://www.gnu.org/licenses/gpl.html
+
+O mecanismo WebAssembly e seu wrapper foram removidos desta versão do site.
+
+yt-dlp
+Fonte e licenças: https://github.com/yt-dlp/yt-dlp
+O yt-dlp e suas dependências mantêm os respectivos avisos de licença.
+
+Deno
+Licença MIT e fontes: https://github.com/denoland/deno
+
+FastAPI, Uvicorn, Mutagen e Public Suffix List
+Instalados a partir dos pacotes publicados. Mantêm suas licenças originais:
+https://github.com/fastapi/fastapi
+https://github.com/encode/uvicorn
+https://github.com/quodlibet/mutagen
+https://publicsuffix.org/
+
+Mídias da marca e retrato do criador foram fornecidos pelo usuário.
+Os canários sintéticos canary.wav, canary.mp4 e canary.ts são CC0.

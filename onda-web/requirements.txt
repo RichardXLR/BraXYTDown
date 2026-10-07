@@ -1,0 +1,6 @@
+fastapi==0.141.1
+uvicorn==0.52.1
+yt-dlp[default]==2026.8.19
+imageio-ffmpeg==0.6.0
+publicsuffixlist==1.0.2.20261003
+deno==2.9.7

@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#071225" />
+  <meta property="og:image" content="/assets/onda-logo.webp" />
+  <meta name="description" content="Seu estúdio de áudio e vídeo. Converta links públicos, escolha formatos, corte trechos e ajuste seus arquivos. Grátis, sem cadastro." />
+  <title>Onda — áudio e vídeo.</title>
+  <link rel="icon" href="/assets/onda-icon.png" type="image/png" />
+  <link rel="stylesheet" href="/ui.css" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/brand.css" />
+  <link rel="stylesheet" href="/experience.css" />
+  <script src="/ui.js" defer></script>
+  <script src="/app.js" defer></script>
+  <script src="/player.js" defer></script>
+  <script src="/intro.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#baixar">Pular para o baixador</a>
+  <div class="ambient-light" aria-hidden="true"></div>
+  <header class="app-topbar">
+    <a class="app-brand brand" href="/?tab=download" aria-label="Onda, início"><img class="brand-logo brand-image brand-symbol" src="/assets/onda-logo.webp" width="48" height="48" alt="" /><span class="brand-name">Onda<span class="brand-dot">.</span></span></a>
+    <span class="topbar-divider" aria-hidden="true"></span><span class="topbar-label">ESTÚDIO DE MÍDIA</span>
+    <div class="topbar-actions"><span class="topbar-operation" data-operation-label>Pronto para criar</span><span class="free-badge"><span aria-hidden="true"></span> Acesso gratuito</span><button class="sound-toggle" data-sound-toggle type="button" aria-pressed="false" aria-label="Ativar sons da interface"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m11 5-6 4H2v6h3l6 4ZM16 9l5 6m0-6-5 6" /></svg><span data-sound-label>Sons desligados</span></button></div>
+  </header>
+
+  <div class="workspace-shell">
+    <aside class="app-sidebar" aria-label="Navegação do estúdio">
+      <p class="sidebar-eyebrow">SEU ESTÚDIO</p>
+      <nav class="workspace-navigation" aria-label="Ferramentas de áudio e vídeo">
+        <div class="workspace-tabs" data-workspace-tablist role="tablist" aria-label="Seções do estúdio" aria-orientation="vertical">
+          <button class="nav-item" id="tab-download" data-workspace-tab="download" type="button" role="tab" aria-selected="true" aria-controls="panel-download" tabindex="0"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 16v4h16v-4"/></svg><span>Áudio e vídeo</span><span class="nav-active-dot" aria-hidden="true"></span></button>
+          <button class="nav-item" id="tab-library" data-workspace-tab="library" type="button" role="tab" aria-selected="false" aria-controls="panel-library" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v16M9 4v16m5-15 4-1 4 15-4 1Z"/></svg><span>Biblioteca</span><span class="nav-count" id="history-count">0</span></button>
+          <button class="nav-item" id="tab-compatibility" data-workspace-tab="compatibility" type="button" role="tab" aria-selected="false" aria-controls="panel-compatibility" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg><span>Compatibilidade</span></button>
+          <button class="nav-item" id="tab-personalization" data-workspace-tab="personalization" type="button" role="tab" aria-selected="false" aria-controls="panel-personalization" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18h1a2 2 0 0 0 1-3.7 2 2 0 0 1 1-3.8h2a4 4 0 0 0 4-4C21 6 17 3 12 3Z"/><circle cx="7.5" cy="10" r=".7"/><circle cx="10" cy="6.5" r=".7"/><circle cx="15" cy="6.5" r=".7"/></svg><span>Personalização</span></button>
+          <button class="nav-item" id="tab-credits" data-workspace-tab="credits" type="button" role="tab" aria-selected="false" aria-controls="panel-credits" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2M18 5l2-2m-2 7h3"/></svg><span>Créditos</span></button>
+          <button class="nav-item" id="tab-help" data-workspace-tab="help" type="button" role="tab" aria-selected="false" aria-controls="panel-help" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4M12 16h.01"/></svg><span>Ajuda</span></button>
+        </div>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="sidebar-studio-mark" aria-hidden="true"><svg viewBox="0 0 160 50"><path d="M0 26c20-33 37 33 58 0s38 33 59 0 33-9 43 0"/><path d="M0 34c20-33 37 33 58 0s38 33 59 0 33-9 43 0"/></svg><span>ESTÚDIO ONDA</span></div>
+        <div class="sidebar-service" aria-live="polite"><span class="service-dot" id="service-dot" aria-hidden="true"></span><span id="service-label">Verificando serviço</span></div>
+        <p class="sidebar-footer">Áudio e vídeo, do seu jeito.</p>
+      </div>
+    </aside>
+
+    <main class="workspace-content" id="inicio">
+      <section class="workspace-panel" id="panel-download" data-workspace-panel="download" role="tabpanel" aria-labelledby="tab-download" tabindex="0">
+        <div class="studio-hero" data-reveal>
+          <div><div class="eyebrow"><span class="tiny-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span> SEU CONTEÚDO. SEU ESTÚDIO.</div><h1 id="hero-title">Dê forma ao <span id="hero-media-word">seu som.</span></h1><p class="hero-copy">Cole um link. Escolha áudio ou vídeo. Ajuste o arquivo ao seu fluxo.</p></div>
+          <div class="hero-wave" aria-hidden="true"><span>DA FONTE AO PLAY</span><svg viewBox="0 0 260 92"><defs><linearGradient id="wave-gradient" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#2f4c70"/><stop offset=".5" stop-color="#69bfff"/><stop offset="1" stop-color="#2f4c70"/></linearGradient></defs><path class="wave-background" d="M0 46h260"/><g stroke="url(#wave-gradient)" stroke-width="3" stroke-linecap="round"><path d="M5 43v6M14 36v20M23 40v12M32 29v34M41 20v52M50 28v36M59 36v20M68 16v60M77 8v76M86 22v48M95 29v34M104 13v66M113 24v44M122 34v24M131 18v56M140 6v80M149 21v50M158 29v34M167 19v54M176 35v22M185 25v42M194 33v26M203 20v52M212 34v24M221 39v14M230 33v26M239 39v14M248 43v6"/></g></svg><div class="hero-wave-line"><span></span><i></i><span></span></div></div>
+        </div>
+        <div class="studio-meta" data-reveal><div class="source-tags"><span class="source-tag">Links públicos</span><span class="source-tag" id="studio-format-count">8 formatos de áudio</span><span class="source-tag">Sem cadastro</span></div><span class="studio-meta-note">Do link ao arquivo, com menos cliques.</span></div>
+        <div class="download-card studio-card" id="baixar">
+          <div class="card-topline"><span><span class="card-status-dot" aria-hidden="true"></span> <span id="card-mode-title">ÁUDIO POR LINK</span></span><span class="card-topline-right">Uma fonte. Seu formato.</span></div>
+          <form id="download-form" novalidate>
+            <fieldset class="media-type-fieldset"><legend>O que vamos criar?</legend><div class="media-type-switch" id="media-type-switch">
+              <label class="media-type-choice selected"><input type="radio" name="media_type" value="audio" checked /><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17V5l10-2v12M10 8l10-2"/><ellipse cx="6" cy="18" rx="4" ry="3"/><ellipse cx="16" cy="16" rx="4" ry="3"/></svg><span>Áudio</span><small>8 formatos</small></span></label>
+              <label class="media-type-choice"><input type="radio" name="media_type" value="video" /><span><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m10 9 5 3-5 3Z"/></svg><span>Vídeo</span><small>4 formatos</small></span></label>
+            </div></fieldset>
+            <div class="url-label-row"><label for="video-url"><span class="label-number" aria-hidden="true">01</span> Link do vídeo ou áudio</label><button class="text-button" id="example-button" type="button">Usar exemplo <span aria-hidden="true">→</span></button></div>
+            <div class="url-field">
+              <svg class="input-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m10 13 4-4M8.3 15.7l-1.2 1.2a3.5 3.5 0 0 1-5-5l4-4a3.5 3.5 0 0 1 5 0m1.6.4 1.2-1.2a3.5 3.5 0 0 1 5 5l-4 4a3.5 3.5 0 0 1-5 0" /></svg>
+              <input id="video-url" name="url" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Cole seu link aqui…" required aria-describedby="url-help" />
+              <button class="paste-button" id="paste-button" type="button" title="Colar link da área de transferência"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="16" rx="2"/><rect x="8" y="2" width="8" height="5" rx="1"/></svg> <span>Colar link</span></button>
+            </div>
+            <div class="source-row"><p id="url-help"><span class="source-dot" aria-hidden="true"></span> <span id="source-label">YouTube, TikTok e outras fontes suportadas</span></p><button class="text-button inspect-button" id="inspect-button" type="button" disabled>Ver detalhes <span aria-hidden="true">→</span></button></div>
+            <div class="media-preview" id="media-preview" hidden>
+              <img id="media-thumbnail" alt="" hidden />
+              <div><span class="media-kicker" id="media-source"></span><p id="media-title"></p><span class="media-duration" id="media-duration"></span></div>
+            </div>
+            <section class="source-player-card" id="source-player" aria-labelledby="source-player-heading">
+              <div class="source-player-heading"><h2 id="source-player-heading"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m10 9 5 3-5 3Z"/></svg> Prévia do vídeo</h2><span>Imagem e som</span></div>
+              <div class="source-player-stage" id="source-player-stage">
+                <div class="source-player-empty" id="source-player-empty"><span class="preview-play-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m9 5 11 7-11 7Z"/></svg></span><strong>O vídeo começa por aqui.</strong><p>Cole um link para carregar a prévia da fonte.</p><div class="preview-empty-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+                <video id="source-video-player" controls playsinline preload="none" hidden aria-label="Reprodução do vídeo de origem"></video>
+                <audio id="source-audio-player" controls preload="none" hidden aria-label="Reprodução do áudio de origem"></audio>
+                <iframe id="source-embed-player" title="Reprodução do vídeo de origem" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen hidden></iframe>
+              </div>
+              <div class="source-player-caption"><p id="source-player-status" role="status" aria-live="polite">A reprodução depende do acesso e do suporte da plataforma.</p><button class="text-button" id="retry-source-preview" type="button" hidden>Atualizar prévia <span aria-hidden="true">↻</span></button><a class="text-button" id="source-player-external" target="_blank" rel="noopener noreferrer" hidden>Abrir na fonte <span aria-hidden="true">↗</span></a></div>
+            </section>
+            <div class="options-grid">
+              <fieldset class="format-fieldset" id="audio-format-fieldset"><legend>Formato <span aria-hidden="true">02</span></legend><div class="format-chips" id="format-chips">
+                <label class="choice selected"><input type="radio" name="format" value="mp3" checked /><span>MP3</span></label>
+                <label class="choice"><input type="radio" name="format" value="m4a" /><span>M4A</span></label>
+                <label class="choice"><input type="radio" name="format" value="wav" /><span>WAV</span></label>
+                <label class="choice"><input type="radio" name="format" value="flac" /><span>FLAC</span></label>
+                <label class="choice"><input type="radio" name="format" value="ogg" /><span>OGG</span></label>
+                <label class="choice"><input type="radio" name="format" value="opus" /><span>OPUS</span></label>
+                <label class="choice"><input type="radio" name="format" value="aac" /><span>AAC</span></label>
+                <label class="choice"><input type="radio" name="format" value="aiff" /><span>AIFF</span></label>
+              </div></fieldset>
+              <fieldset class="quality-fieldset" id="audio-quality-fieldset"><legend>Qualidade <span aria-hidden="true">03</span></legend><div class="quality-chips" id="quality-chips">
+                <label class="choice"><input type="radio" name="quality" value="128" /><span>128<small>kbps</small></span></label>
+                <label class="choice"><input type="radio" name="quality" value="192" /><span>192<small>kbps</small></span></label>
+                <label class="choice"><input type="radio" name="quality" value="256" /><span>256<small>kbps</small></span></label>
+                <label class="choice selected"><input type="radio" name="quality" value="320" checked /><span>320<small>kbps</small></span></label>
+              </div><div class="lossless-choice" id="lossless-choice" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg><div><strong>Formato sem perda</strong><span>Saída em 44,1 kHz · estéreo · 16 bits</span></div></div></fieldset>
+              <fieldset class="format-fieldset" id="video-format-fieldset" hidden disabled><legend>Formato <span aria-hidden="true">02</span></legend><div class="format-chips video-format-chips" id="video-format-chips">
+                <label class="choice selected"><input type="radio" name="video_format" value="mp4" checked /><span>MP4</span></label>
+                <label class="choice"><input type="radio" name="video_format" value="webm" /><span>WebM</span></label>
+                <label class="choice"><input type="radio" name="video_format" value="mkv" /><span>MKV</span></label>
+                <label class="choice"><input type="radio" name="video_format" value="mov" /><span>MOV</span></label>
+              </div><p class="format-context">MP4 é a escolha mais compatível. O formato define o contêiner do arquivo.</p></fieldset>
+              <fieldset class="resolution-fieldset" id="video-resolution-fieldset" hidden disabled><legend>Resolução <span aria-hidden="true">03</span></legend><div class="resolution-chips" id="video-resolution-chips">
+                <label class="choice selected"><input type="radio" name="video_resolution" value="source" checked /><span>Original<small>até Full HD</small></span></label>
+                <label class="choice"><input type="radio" name="video_resolution" value="1080" /><span>1080<small>p</small></span></label>
+                <label class="choice"><input type="radio" name="video_resolution" value="720" /><span>720<small>p</small></span></label>
+                <label class="choice"><input type="radio" name="video_resolution" value="480" /><span>480<small>p</small></span></label>
+                <label class="choice"><input type="radio" name="video_resolution" value="360" /><span>360<small>p</small></span></label>
+              </div></fieldset>
+            </div>
+            <details class="media-tools" id="media-tools">
+              <summary><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16M8 4v6M16 14v6"/></svg> Corte e ajustes <small id="tools-active-count">1 ativo</small></span><span class="details-plus" aria-hidden="true">+</span></summary>
+              <div class="media-tools-content">
+                <div class="tools-heading"><div><h3>Um arquivo, do seu jeito.</h3><p>Corte um trecho e escolha os ajustes para esta conversão.</p></div><button class="text-button" id="reset-tools" type="button">Restaurar ajustes</button></div>
+                <fieldset class="trim-fieldset"><legend>Selecionar um trecho <span>opcional</span></legend><div class="trim-fields"><label for="trim-start">Começa em<input class="trim-input" id="trim-start" type="text" inputmode="text" autocomplete="off" placeholder="00:00" aria-describedby="trim-help tools-error" /></label><span class="trim-separator" aria-hidden="true">→</span><label for="trim-end">Termina em<input class="trim-input" id="trim-end" type="text" inputmode="text" autocomplete="off" placeholder="Fim do arquivo" aria-describedby="trim-help tools-error" /></label></div><p class="tool-help" id="trim-help">Use mm:ss, hh:mm:ss ou segundos. Deixe vazio para usar o início ou o fim da fonte. Os limites de duração se aplicam à fonte inteira, mesmo com corte.</p></fieldset>
+                <div class="tool-flags">
+                  <label class="tool-flag"><input id="strip-metadata" type="checkbox" checked /><span><strong>Remover metadados</strong><small>Remove autoria, capa e capítulos. Dados técnicos necessários ao contêiner podem permanecer.</small></span></label>
+                  <label class="tool-flag"><input id="normalize-audio" type="checkbox" /><span><strong>Normalizar volume</strong><small id="normalize-help">Ajusta o volume para uma referência comum. Não remove ruído nem recria qualidade.</small></span></label>
+                  <label class="tool-flag" id="mute-video-option" hidden><input id="mute-video" type="checkbox" /><span><strong>Vídeo sem áudio</strong><small>Exporta somente a imagem, sem a faixa de áudio.</small></span></label>
+                </div>
+                <p class="tools-error" id="tools-error" role="alert" hidden></p>
+              </div>
+            </details>
+            <details class="advanced-options" id="advanced-options">
+              <summary><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16M8 4v6M16 14v6" /></svg> Opções de sessão <small>OPCIONAL</small></span><span class="details-plus" aria-hidden="true">+</span></summary>
+              <div class="advanced-content">
+                <p class="advanced-intro">Algumas fontes exigem uma sessão. Se quiser, forneça cookies da sua própria sessão no formato Netscape. O site não acessa o login de outra aba.</p>
+                <div class="cookies-label-row"><label for="cookies-input">Cookies da sua sessão <span>opcional</span></label><button class="text-button" id="clear-cookies" type="button">Limpar cookies</button></div>
+                <textarea id="cookies-input" rows="4" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="# Netscape HTTP Cookie File" aria-describedby="cookies-help cookies-status"></textarea>
+                <div class="cookies-file-row"><label class="cookies-file-label" for="cookies-file">Selecionar arquivo .txt</label><input id="cookies-file" class="sr-only" type="file" accept=".txt,text/plain" aria-describedby="cookies-help cookies-status" /><span class="cookies-filename" id="cookies-filename">Nenhum arquivo selecionado</span></div>
+                <p class="cookies-status" id="cookies-status" role="status" aria-live="polite">Nenhum cookie fornecido.</p>
+                <p class="cookies-help" id="cookies-help">Dados sensíveis: use apenas a sua própria sessão, voluntariamente. Limite de 64 KB. Enviados ao serviço somente nas solicitações que você iniciar, sem salvar no histórico. Cookies não garantem acesso nem removem bloqueios ou limites.</p>
+              </div>
+            </details>
+            <div class="download-actions"><p id="quality-note">O arquivo final depende da qualidade do áudio de origem.</p><button class="download-button" id="download-button" type="submit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4" /></svg><span id="download-button-label">Baixar áudio</span><span class="button-format" id="button-format">MP3</span></button></div>
+          </form>
+          <div class="operation-status" id="operation-status" hidden aria-live="polite" aria-atomic="true">
+            <div class="status-heading"><span class="status-indicator" id="status-indicator" aria-hidden="true"></span><div><p id="status-title"></p><span id="status-message"></span></div><button class="cancel-button" id="cancel-button" type="button" hidden>Cancelar</button></div>
+            <div class="progress-track" id="progress-track" hidden><div id="progress-fill"></div></div>
+            <a class="save-button" id="save-button" hidden>Salvar arquivo <span aria-hidden="true">↓</span></a>
+          </div>
+          <div class="card-footer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6Zm-4 9 3 3 5-6" /></svg><span>Baixe apenas áudio ou vídeo próprio, de domínio público ou autorizado.</span><span class="privacy-label">Sem cadastro</span></div>
+        </div>
+        <div class="studio-bottom-grid source-note-grid" data-reveal>
+          <article class="source-note"><div class="feature-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg></div><div><span class="browser-option-kicker">BOM SABER</span><h2>A qualidade começa na fonte.</h2><p>Mais bitrate não recria detalhes ausentes. O acesso a cada link depende da plataforma.</p><a class="feature-link" href="/?tab=compatibility">Ver compatibilidade <span aria-hidden="true">→</span></a></div></article>
+        </div>
+        <div class="studio-limits"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2" /></svg><span id="download-limits">Áudio: até 20 min com perda <i>·</i> 8 min sem perda <i>·</i> 100 MB por arquivo</span><span class="studio-limits-right">Seu conteúdo. Seu controle.</span></div>
+      </section>
+
+      <section class="workspace-panel" id="panel-library" data-workspace-panel="library" role="tabpanel" aria-labelledby="tab-library" tabindex="0" hidden>
+        <div class="view-heading" data-reveal><div class="eyebrow">SEUS ÚLTIMOS PLAYS</div><h1 class="view-title">Seu conteúdo, <span>organizado.</span></h1><p class="view-description">Retome um link e suas preferências. Seu próximo arquivo começa aqui.</p></div>
+        <section class="history-section studio-card" id="history-section" hidden aria-labelledby="history-title"><div class="section-heading compact-heading"><div><span class="section-eyebrow">SALVO NESTE NAVEGADOR</span><h2 id="history-title">Seus últimos links</h2></div><button class="text-button" id="clear-history" type="button">Limpar histórico</button></div><ul id="history-list"></ul><p class="history-note">Até cinco links. Apenas URLs, formato e preferências ficam neste navegador. Os arquivos e cookies não são guardados no histórico.</p></section>
+        <div class="library-empty studio-card" id="history-empty"><div class="empty-art" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v16M9 4v16m5-15 4-1 4 15-4 1Z"/></svg><span></span><span></span></div><span class="section-eyebrow">UMA BIBLIOTECA COM A SUA CARA</span><h2>O primeiro arquivo é com você.</h2><p>Depois de uma conversão, seu link aparece aqui.<br />Reutilize suas escolhas sem começar do zero.</p><a class="primary-link" href="/?tab=download">Criar meu primeiro arquivo <span aria-hidden="true">→</span></a></div>
+        <aside class="library-note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6Zm-4 9 3 3 5-6" /></svg><p>O histórico é seu. Limpar os links remove somente os dados deste navegador, sem alterar os arquivos já baixados.</p></aside>
+      </section>
+
+      <section class="workspace-panel" id="panel-compatibility" data-workspace-panel="compatibility" role="tabpanel" aria-labelledby="tab-compatibility" tabindex="0" hidden>
+        <section class="compatibility-section workspace-section" id="compatibilidade" aria-labelledby="compatibility-title">
+        <div class="section-heading"><div><span class="section-eyebrow">CONHEÇA O SEU ESTÚDIO</span><h1 class="view-title" id="compatibility-title">Sem ruído. <span>Só transparência.</span></h1><p class="view-description">Consulte o serviço e teste o acesso às suas fontes.</p></div><button class="secondary-button" id="refresh-compatibility" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2 6M20 4v7h-7" /></svg> Atualizar status</button></div>
+        <div class="compatibility-grid">
+          <div class="compatibility-card"><div class="compatibility-card-heading"><span class="service-dot" id="compatibility-dot" aria-hidden="true"></span><h3 id="compatibility-state">Verificando o serviço</h3></div><p id="compatibility-message" class="compatibility-copy">Consulte as versões disponíveis e teste o acesso a uma fonte antes de baixar.</p><dl class="engine-versions"><div><dt>yt-dlp</dt><dd id="version-ytdlp">—</dd></div><div><dt>FFmpeg</dt><dd id="version-ffmpeg">—</dd></div><div><dt>Deno</dt><dd id="version-deno">—</dd></div></dl><p class="compatibility-count" id="compatibility-count">O catálogo de extratores será exibido quando o serviço responder.</p><p class="compatibility-limit" id="compatibility-limits">Áudio: 20 min com perda / 8 min sem perda · vídeo: 5 min · 100 MB de saída</p></div>
+          <div class="compatibility-card healing-card"><div class="autocura-heading"><span class="compatibility-kicker">AUTOCURA · ATUALIZAÇÕES</span><span class="autocura-shield" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6Zm-4 9 3 3 5-6"/></svg></span></div><h3 id="healing-title">Carregando o AutoCura</h3><p class="compatibility-copy" id="healing-message">Consulte a conexão com o GitHub e o resultado das verificações antes de cada atualização.</p><div class="autocura-flow" aria-label="Etapas da atualização"><span>Verificar</span><i aria-hidden="true">→</i><span>Testar</span><i aria-hidden="true">→</i><span>Publicar</span></div><dl class="autocura-details" id="autocura-details"><div><dt>Última verificação</dt><dd id="autocura-last-check">Aguardando status</dd></div><div><dt>Agenda</dt><dd id="autocura-next-check">Aguardando configuração</dd></div></dl><a class="autocura-repository" id="autocura-repository" href="https://github.com/RichardXLR/BraXYTDown" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 19c-4 1-4-2-6-2m12 5v-4c0-1 .1-2-1-3 3 0 6-1 6-5a4 4 0 0 0-1-3c0-1 0-2-.5-3 0 0-1.5 0-3.5 2a12 12 0 0 0-6 0C7 4 5.5 4 5.5 4 5 5 5 6 5 7a4 4 0 0 0-1 3c0 4 3 5 6 5-1 1-1 2-1 3v4"/></svg>RichardXLR / BraXYTDown <span aria-hidden="true">↗</span></a><p class="compatibility-disclaimer">Versões aprovadas são publicadas juntas. Falhas de compatibilidade impedem a promoção e preservam a versão anterior. O acesso a cada plataforma continua sujeito às regras da fonte.</p></div>
+        </div>
+        <div class="compatibility-test-panel"><div class="compatibility-test-heading"><div><h3>Teste de acesso à fonte</h3><p>Selecione uma plataforma do catálogo e informe um link público para testar. Os cookies opcionais atuais serão incluídos.</p></div><button class="secondary-button" id="test-current-link" type="button">Testar meu link <span aria-hidden="true">→</span></button></div><div class="platform-test-fields"><label for="compatibility-platform">Plataforma<select id="compatibility-platform"><option value="">Todas as fontes compatíveis</option><option value="Youtube">YouTube</option><option value="TikTok">TikTok</option><option value="Instagram">Instagram</option><option value="Facebook">Facebook</option><option value="Twitter">X / Twitter</option><option value="Vimeo">Vimeo</option><option value="Twitch">Twitch</option><option value="Generic">Arquivo direto / outra fonte</option></select></label><label for="compatibility-link">Link para testar<input id="compatibility-link" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://…" /></label><button class="secondary-button" id="test-platform-link" type="button">Testar fonte <span aria-hidden="true">→</span></button></div><p class="platform-test-hint">O catálogo indica suporte do extrator. O teste mostra se este link está acessível agora.</p><div class="canary-buttons" id="compatibility-canaries"></div><div class="compatibility-result" id="compatibility-result" hidden role="status" aria-live="polite" aria-atomic="true"><div><p id="compatibility-result-title"></p><span id="compatibility-result-message"></span></div><button class="cancel-button" id="cancel-compatibility-test" type="button" hidden>Cancelar</button></div><p class="compatibility-test-note">O teste não converte nem baixa arquivos, e não confirma autorização para baixar o conteúdo. A conversão gratuita hospedada na Vercel respeita os limites acima.</p></div>
+      </section>
+      </section>
+
+      <section class="workspace-panel" id="panel-help" data-workspace-panel="help" role="tabpanel" aria-labelledby="tab-help" tabindex="0" hidden>
+        <div class="view-heading" data-reveal><div class="eyebrow">GUIA DO SEU ESTÚDIO</div><h1 class="view-title">Menos dúvidas. <span>Mais play.</span></h1><p class="view-description">Entenda os formatos, os ajustes e o acesso às suas fontes.</p></div>
+        <aside class="help-brand-card"><div><span class="section-eyebrow">FEITO PRA DAR PLAY</span><h2>Onda<span class="brand-dot">.</span></h2><p>Seu som, na sua frequência.</p></div><button class="intro-replay" data-intro-replay type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2 6M20 4v7h-7M10 9l4 3-4 3Z"/></svg>Rever abertura <span aria-hidden="true">→</span></button></aside>
+        <section class="how-section workspace-section" id="como-funciona" aria-labelledby="how-title">
+        <div class="section-heading"><div><span class="section-eyebrow">SEM COMPLICAÇÃO</span><h2 id="how-title">Três passos. E pode dar play.</h2></div><p>Menos cliques.<br />Mais música.</p></div>
+        <div class="steps-grid">
+          <article class="step"><div class="step-top"><span class="step-number">01</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 13 4-4M8.3 15.7l-1.2 1.2a3.5 3.5 0 0 1-5-5l4-4a3.5 3.5 0 0 1 5 0m1.6.4 1.2-1.2a3.5 3.5 0 0 1 5 5l-4 4a3.5 3.5 0 0 1-5 0" /></svg></div><h3>Encontre o som</h3><p>Copie o link público do vídeo ou áudio que você quer levar com você.</p></article>
+          <article class="step"><div class="step-top"><span class="step-number">02</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16M8 4v6M16 14v6" /></svg></div><h3>Escolha do seu jeito</h3><p>Escolha áudio ou vídeo, um formato e os ajustes que fazem sentido para você.</p></article>
+          <article class="step"><div class="step-top"><span class="step-number">03</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4" /></svg></div><h3>Baixe. Aperte play.</h3><p>Aguarde a conversão e salve o arquivo. Seu arquivo pronto para acompanhar você.</p></article>
+        </div>
+      </section>
+        <section class="formats-section workspace-section" id="formatos" aria-labelledby="formats-title">
+        <div class="section-heading"><div><span class="section-eyebrow">UM FORMATO PARA CADA MOMENTO</span><h2 id="formats-title">Um formato para o seu fluxo.</h2></div><p>Do arquivo leve ao áudio sem perda,<br />encontre o formato para o seu uso.</p></div>
+        <div class="formats-grid">
+          <article class="format-card format-card-highlight"><div class="format-card-top"><span class="format-file-icon" aria-hidden="true">♪</span><span class="format-tag">POPULAR</span></div><h3>MP3</h3><p>Leve, versátil e pronto para tocar em praticamente qualquer lugar.</p><span class="format-detail">PARA O DIA A DIA <span aria-hidden="true">→</span></span></article>
+          <article class="format-card"><div class="format-card-top"><span class="format-file-icon" aria-hidden="true">♪</span><span class="format-tag">COMPACTO</span></div><h3>M4A / AAC</h3><p>Bom equilíbrio entre tamanho e qualidade para ouvir onde quiser.</p><span class="format-detail">QUALIDADE E PRATICIDADE <span aria-hidden="true">→</span></span></article>
+          <article class="format-card"><div class="format-card-top"><span class="format-file-icon" aria-hidden="true">≋</span><span class="format-tag">SEM PERDA</span></div><h3>WAV / AIFF</h3><p>Áudio sem compressão com perda. Ideal para edição e produção.</p><span class="format-detail">PARA CRIAR E EDITAR <span aria-hidden="true">→</span></span></article>
+          <article class="format-card"><div class="format-card-top"><span class="format-file-icon" aria-hidden="true">≋</span><span class="format-tag">SEM PERDA</span></div><h3>FLAC</h3><p>Preserva os dados do áudio com arquivos menores que WAV.</p><span class="format-detail">PARA GUARDAR CADA DETALHE <span aria-hidden="true">→</span></span></article>
+          <article class="format-card"><div class="format-card-top"><span class="format-file-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m10 9 5 3-5 3Z"/></svg></span><span class="format-tag">VÍDEO</span></div><h3>MP4 / MOV</h3><p>MP4 tem ampla compatibilidade; MOV é comum em fluxos de edição. A qualidade continua dependendo da fonte.</p><span class="format-detail">PARA REPRODUZIR E EDITAR <span aria-hidden="true">→</span></span></article>
+          <article class="format-card"><div class="format-card-top"><span class="format-file-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m10 9 5 3-5 3Z"/></svg></span><span class="format-tag">VÍDEO</span></div><h3>WebM / MKV</h3><p>WebM funciona em navegadores compatíveis. MKV é um contêiner flexível para players com suporte a Matroska.</p><span class="format-detail">ESCOLHA CONFORME O PLAYER <span aria-hidden="true">→</span></span></article>
+          <article class="format-card wide-format"><div><div class="format-card-top"><span class="format-file-icon" aria-hidden="true">♪</span><span class="format-tag">EFICIENTE</span></div><h3>OGG / OPUS</h3><p>Formatos eficientes para um som de qualidade em arquivos compactos.</p></div><div class="mini-waveform" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
+        </div>
+        <p class="formats-note"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v1" /></svg> Converter para um formato sem perda não recupera detalhes ausentes na fonte.</p>
+      </section>
+        <section class="faq-section workspace-section" id="perguntas" aria-labelledby="faq-title">
+        <div class="faq-intro"><span class="section-eyebrow">FICOU ALGUMA DÚVIDA?</span><h2 id="faq-title">Bom saber antes do play.</h2><div class="faq-art" aria-hidden="true"><svg viewBox="0 0 240 110"><path d="M0 55h16l7-13 8 26 8-46 8 66 8-40 8 14 8-28 8 48 8-65 8 78 8-48 8 14 8-35 8 50 8-68 8 88 8-62 8 38 8-19 8 10 8-25 8 34 8-18h22" /></svg></div></div>
+        <div class="faq-list">
+          <details><summary>Quais links posso usar?<span aria-hidden="true">+</span></summary><p>Links públicos do YouTube, TikTok e outras fontes compatíveis com o serviço, além de links diretos de arquivos de áudio ou vídeo. A disponibilidade depende da fonte: conteúdo privado, com login, proteção ou restrições pode não ser acessível.</p></details>
+          <details><summary>Qual formato devo escolher?<span aria-hidden="true">+</span></summary><p>MP3 é uma boa opção para compatibilidade e arquivos leves. M4A, AAC, OGG e OPUS usam compressão eficiente. WAV e AIFF são úteis para edição; FLAC preserva os dados do áudio com compressão sem perda.</p></details>
+          <details><summary>Escolher 320 kbps melhora o áudio?<span aria-hidden="true">+</span></summary><p>A qualidade depende do áudio de origem. Um bitrate maior pode reduzir perdas adicionais durante a conversão, mas não recria detalhes que já faltam na fonte. O mesmo vale para formatos sem perda.</p></details>
+          <details><summary>Existe um limite de duração ou tamanho?<span aria-hidden="true">+</span></summary><p>O serviço aceita até 20 minutos para áudio com perda, até 8 minutos para WAV, FLAC e AIFF e até 5 minutos para vídeo. O arquivo de saída pode ter até 100 MB, e o vídeo é limitado a Full HD e 30 fps, mantendo a orientação. Esses limites mantêm a conversão viável; o tempo de espera depende da fonte e do formato.</p></details>
+          <details><summary>Por que um link pode não funcionar?<span aria-hidden="true">+</span></summary><p>A plataforma pode limitar o acesso, exigir login, bloquear a infraestrutura do serviço ou não oferecer uma faixa de áudio acessível. Links indisponíveis e arquivos que ultrapassam os limites também podem falhar. Quando isso acontecer, a mensagem na tela explica o motivo disponível.</p></details>
+          <details><summary>Posso usar minha sessão de outra aba?<span aria-hidden="true">+</span></summary><p>O site não lê a sessão de outras abas nem pede sua senha. Nas opções avançadas, você pode fornecer voluntariamente cookies da sua própria sessão no formato Netscape. Eles são enviados somente nas solicitações iniciadas por você e não ficam no histórico. Isso não garante acesso nem remove os limites da plataforma ou do serviço.</p></details>
+          <details><summary>Como funciona a resolução do vídeo?<span aria-hidden="true">+</span></summary><p>Original mantém a resolução disponível até Full HD (1920×1080 ou 1080×1920), com até 30 fps. Em paisagem, 1080p, 720p, 480p e 360p definem a altura máxima; em retrato, a largura máxima. A orientação é preservada. O serviço não amplia fontes menores para simular qualidade superior; o formato final depende da fonte acessível.</p></details>
+          <details><summary>Posso baixar só um trecho?<span aria-hidden="true">+</span></summary><p>Em “Corte e ajustes”, informe o começo e o fim em mm:ss, hh:mm:ss ou segundos. O fim deve ser posterior ao começo. Deixar os campos vazios usa os limites da fonte; os limites de duração se aplicam à fonte inteira, mesmo ao cortar um trecho.</p></details>
+          <details><summary>O que muda ao remover metadados?<span aria-hidden="true">+</span></summary><p>A opção vem ativada e remove campos descritivos de autoria, capas e capítulos. Dados técnicos exigidos pelo formato, como informações de codificação, podem permanecer. Isso não altera os direitos sobre o conteúdo.</p></details>
+          <details><summary>Normalizar volume melhora a qualidade?<span aria-hidden="true">+</span></summary><p>A normalização ajusta o volume para uma referência comum. Não remove ruído nem recupera detalhes da fonte. Em vídeo sem áudio, esse ajuste fica indisponível.</p></details>
+          <details><summary>Onde ficam os meus downloads?<span aria-hidden="true">+</span></summary><p>Depois da conversão, use “Salvar arquivo” para baixar o áudio ou vídeo no seu dispositivo. O navegador define a pasta de destino. O histórico guarda somente os últimos links e suas preferências neste navegador, não os arquivos.</p></details>
+        </div>
+      </section>
+        <aside class="rights-note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6Zm-4 9 3 3 5-6" /></svg><div><h2>Crie com respeito a quem cria.</h2><p>Baixe apenas áudio ou vídeo próprio, de domínio público ou autorizado. Estar público não significa autorização para baixar. O serviço não verifica direitos autorais nem garante acesso a todas as plataformas.</p></div></aside>
+      </section>
+            <section class="workspace-panel" id="panel-personalization" data-workspace-panel="personalization" role="tabpanel" aria-labelledby="tab-personalization" tabindex="0" hidden>
+        <div class="view-heading" data-reveal><div class="eyebrow">UM ESTÚDIO COM A SUA CARA</div><h1 class="view-title">Sua Onda. <span>Seu estilo.</span></h1><p class="view-description">Escolha o visual e o ritmo da interface. Suas preferências são salvas automaticamente neste dispositivo.</p></div>
+        <div class="preferences-layout">
+          <section class="preferences-card studio-card" aria-labelledby="preferences-visual-title"><div class="preferences-card-heading"><span class="preferences-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18h1a2 2 0 0 0 1-3.7 2 2 0 0 1 1-3.8h2a4 4 0 0 0 4-4C21 6 17 3 12 3Z"/><circle cx="8" cy="8" r="1"/><circle cx="14" cy="7" r="1"/></svg></span><div><h2 id="preferences-visual-title">Cores e aparência</h2><p>O azul da Onda, com o seu toque.</p></div></div>
+            <label class="preference-field" for="preference-accent"><span>Cor de destaque<small>Usada nos controles e nos detalhes da interface.</small></span><span class="preference-select-wrap"><span class="preference-color-dot" aria-hidden="true"></span><select id="preference-accent"><option value="blue">Azul Onda</option><option value="cyan">Azul oceano</option><option value="violet">Violeta</option></select></span></label>
+            <label class="preference-field" for="preference-theme"><span>Aparência<small>Escolha um tema ou acompanhe seu dispositivo.</small></span><select id="preference-theme"><option value="dark">Escuro</option><option value="light">Claro</option><option value="system">Do dispositivo</option></select></label>
+            <label class="preference-field" for="preference-density"><span>Espaçamento<small>Mais espaço ou uma interface mais compacta.</small></span><select id="preference-density"><option value="comfortable">Confortável</option><option value="compact">Compacto</option></select></label>
+          </section>
+          <section class="preferences-card studio-card" aria-labelledby="preferences-experience-title"><div class="preferences-card-heading"><span class="preferences-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg></span><div><h2 id="preferences-experience-title">Ritmo e experiência</h2><p>Detalhes que acompanham você.</p></div></div>
+            <label class="preference-toggle" for="preference-motion"><span><strong>Animações da interface</strong><small>Transições e ondas suaves. A preferência de acessibilidade do dispositivo tem prioridade.</small></span><input id="preference-motion" type="checkbox" checked /><span class="preference-switch" aria-hidden="true"></span></label>
+            <label class="preference-toggle" for="preference-intro"><span><strong>Exibir abertura ao entrar</strong><small>Reproduz a apresentação na primeira visita. Você pode pular ou rever na Ajuda.</small></span><input id="preference-intro" type="checkbox" checked /><span class="preference-switch" aria-hidden="true"></span></label>
+            <div class="preference-sound-note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m11 5-6 4H2v6h3l6 4ZM16 8a5 5 0 0 1 0 8m3-11a9 9 0 0 1 0 14"/></svg><p>Os sons de interação são controlados pelo ícone no topo. O som dos vídeos é ajustado no próprio player.</p></div>
+          </section>
+        </div>
+        <div class="preferences-save-row"><p id="preferences-status" role="status" aria-live="polite"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>Suas escolhas ficam salvas neste navegador.</p><button class="secondary-button" id="reset-preferences" type="button">Restaurar personalização</button></div>
+        <aside class="preferences-privacy"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6Zm-4 9 3 3 5-6"/></svg><p>Cores, aparência, sons e preferências ficam somente neste dispositivo. Cookies de sessão não fazem parte desses dados. Nenhuma conta é necessária para usar o Onda.</p></aside>
+      </section>
+      <section class="workspace-panel" id="panel-credits" data-workspace-panel="credits" role="tabpanel" aria-labelledby="tab-credits" tabindex="0" hidden>
+        <div class="view-heading" data-reveal><div class="eyebrow">QUEM CRIA A ONDA</div><h1 class="view-title">Uma ideia. <span>Muitas ondas.</span></h1><p class="view-description">Conheça o criador por trás do seu estúdio.</p></div>
+        <article class="creator-card studio-card" aria-labelledby="creator-name">
+          <div class="creator-portrait-scene"><div class="creator-orbit creator-orbit-one" aria-hidden="true"></div><div class="creator-orbit creator-orbit-two" aria-hidden="true"></div><div class="creator-portrait"><img src="/assets/richard-ittou.webp" width="1280" height="1280" loading="lazy" decoding="async" alt="Richard Ittou, criador do Onda" /></div><svg class="creator-waves" viewBox="0 0 560 200" aria-hidden="true"><path d="M-30 100C80 10 130 190 250 100S410 10 590 100"/><path d="M-30 125C80 35 130 215 250 125S410 35 590 125"/><path d="M-30 150C80 60 130 240 250 150S410 60 590 150"/></svg><span class="creator-photo-label">CRIADOR DO ONDA</span></div>
+          <div class="creator-content"><span class="creator-kicker">IDEIA, DIREÇÃO E CRIAÇÃO</span><h2 id="creator-name">Richard<br /><span>Ittou.</span></h2><p class="creator-intro">Criador do Onda.</p><p class="creator-description">Um espaço para transformar seus links em áudio e vídeo, com simplicidade, cuidado e identidade.</p><a class="creator-instagram" href="https://www.instagram.com/richard.ittou?stkn=c210bHhzdzJwcWg1" target="_blank" rel="noopener noreferrer"><span class="instagram-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><path d="M17.5 6.5h.01"/></svg></span><span><strong>Instagram</strong><span>instagram.com/<wbr />richard.ittou</span></span><span class="creator-social-arrow" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m7 17 10-10M7 7h10v10"/></svg></span></a><span class="creator-signature" aria-hidden="true">Richard Ittou <i>≋</i></span></div>
+        </article>
+        <div class="credits-detail-grid"><div><span>IDENTIDADE</span><p>Azul, movimento e uma forma de criar.</p></div><div><span>AGRADECIMENTOS</span><p>À comunidade dos projetos de código aberto que tornam a conversão de mídia possível.</p></div></div>
+      </section>
+      <footer class="workspace-footer"><span>Onda<span class="brand-dot">.</span></span><span>Áudio e vídeo. Do seu jeito.</span></footer>
+    </main>
+  </div>
+  <div class="sr-only" id="announcement" role="status" aria-live="polite"></div>
+</body>
+</html>

@@ -1,0 +1,59 @@
+/* The supplied opening keeps its square frame and full duration on every screen. */
+.intro-dialog{background:radial-gradient(ellipse at 50% 32%,#124367 0,#091c34 42%,#040c19 100%);isolation:isolate;overscroll-behavior:contain}
+.intro-dialog::before,.intro-dialog::after{content:'';position:fixed;z-index:-1;pointer-events:none;left:50%;width:125vw;height:125vw;border:1px solid #51c8ff14;border-radius:45%;transform:translate(-50%,52%) rotate(-18deg);bottom:0}
+.intro-dialog::after{width:146vw;height:146vw;border-color:#63bcff0a;transform:translate(-50%,57%) rotate(12deg)}
+.intro-inner{width:min(1000px,100%);min-height:100%;padding:24px 34px 20px;justify-content:center}
+.intro-header{margin-bottom:16px;min-height:44px}
+.intro-wordmark{font-size:29px;letter-spacing:-1.3px}
+.intro-wordmark>span{font-size:inherit;vertical-align:baseline;margin-left:0;color:#65c9ff}
+.intro-skip,.intro-sound,.intro-play{min-height:44px;gap:10px;background:#0a2038cc;border-color:#57baff38;font-size:13px;letter-spacing:.05px;outline-offset:4px}
+.intro-skip:focus-visible,.intro-sound:focus-visible,.intro-play:focus-visible{outline:2px solid #80d5ff}
+.intro-stage{width:min(720px,100%,max(100px,calc(100svh - 280px)));border-radius:17px;background:#fff;box-shadow:0 0 0 1px #9ee5ff24,0 24px 78px #0005,0 0 90px #199cce20}
+.intro-stage[data-size=mobile]{width:min(480px,100%,max(100px,calc(100svh - 280px)))}
+.intro-stage video{width:100%;height:100%;object-fit:contain;object-position:center}
+.intro-play{bottom:22px;padding-inline:20px;background:#072945ed;box-shadow:0 8px 30px #0003}
+.intro-footer{margin-top:20px;gap:22px;width:100%}
+.intro-eyebrow{font-size:12px;letter-spacing:1.25px;line-height:1.4;margin:0 0 6px}
+.intro-footer h2{font-size:clamp(23px,2.6vw,31px);font-weight:500;line-height:1.25;letter-spacing:-.8px}
+.intro-footer #intro-description{font-size:13px;line-height:1.65;margin-top:6px;color:#a9bed4}
+.intro-sound svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round}
+.intro-progress-row{display:flex;align-items:center;gap:13px;width:100%;margin-top:18px;min-height:18px}
+.intro-progress{flex:1;width:auto;min-width:0;height:3px;margin:0;accent-color:#6ad7ff}
+.intro-duration{font-size:12px;line-height:1.5;color:#8faec8;font-variant-numeric:tabular-nums}
+.intro-hint{margin:8px 0 0;font-size:12px;line-height:1.6;color:#91aac2}
+.intro-leaving{animation:onda-intro-out .22s ease forwards}
+@media(max-width:700px){
+  .intro-inner{padding:20px 20px 18px}
+  .intro-header{margin-bottom:16px;gap:15px}
+  .intro-wordmark{font-size:26px}
+  .intro-skip{font-size:12px;padding:10px 13px}
+  .intro-stage,.intro-stage[data-size=mobile]{width:min(480px,100%,max(100px,calc(100svh - 330px)));border-radius:15px}
+  .intro-footer{margin-top:18px;align-items:flex-start;flex-direction:column;gap:12px}
+  .intro-eyebrow{font-size:12px;letter-spacing:.8px}
+  .intro-footer h2{font-size:24px;letter-spacing:-.55px}
+  .intro-footer #intro-description{font-size:12px;line-height:1.65;max-width:none}
+  .intro-sound{font-size:12px;padding:10px 15px}
+  .intro-progress-row{margin-top:16px}
+  .intro-hint{max-width:100%;font-size:12px}
+}
+@media(max-height:560px) and (min-width:701px){
+  .intro-inner{padding:14px 28px 12px}
+  .intro-header{margin-bottom:10px}
+  .intro-stage,.intro-stage[data-size=mobile]{width:min(480px,100%,max(100px,calc(100svh - 210px)))}
+  .intro-footer{margin-top:14px}
+  .intro-footer h2{font-size:23px}
+  .intro-footer #intro-description{display:none}
+  .intro-progress-row{margin-top:12px}
+  .intro-hint{margin-top:5px}
+}
+@media(max-height:640px) and (max-width:700px){
+  .intro-inner{padding-top:14px;padding-bottom:14px}
+  .intro-stage,.intro-stage[data-size=mobile]{width:min(480px,100%,max(100px,calc(100svh - 285px)))}
+  .intro-header{margin-bottom:12px}
+  .intro-footer{margin-top:14px;gap:10px}
+  .intro-eyebrow{display:none}
+  .intro-footer h2{font-size:22px}
+  .intro-footer #intro-description{font-size:12px;line-height:1.5}
+  .intro-progress-row{margin-top:12px}
+}
+@media(prefers-reduced-motion:reduce){.intro-leaving{animation:none}.intro-dialog *{transition:none}}

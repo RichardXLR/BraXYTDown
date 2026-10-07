@@ -1,0 +1,17 @@
+:root{--onda-bg:#071225;--onda-panel:#0e1e35;--onda-muted:#a0b3ca;--onda-accent:#72caff;--onda-line:#263e5b;--onda-text:#f0f7ff;--onda-ease:cubic-bezier(.22,1,.36,1)}
+[hidden]{display:none!important}
+:focus-visible{outline:2px solid var(--onda-accent);outline-offset:4px}
+button,a,input,select,summary,textarea{-webkit-tap-highlight-color:transparent}
+button,a{touch-action:manipulation}
+[data-workspace-panel] h1,[data-workspace-panel] h2{outline:none}
+[data-workspace-tab][data-attention]::after{content:'';width:7px;height:7px;border-radius:50%;background:var(--onda-accent);box-shadow:0 0 12px #72caff40;flex:none;margin-left:auto}
+[data-workspace-tab][data-attention=error]::after{background:#f0aa95}
+.panel-enter{animation:onda-panel-in .4s var(--onda-ease) both}
+[data-reveal]{animation:onda-panel-in .65s var(--onda-ease) both}
+[data-reveal="2"]{animation-delay:.08s}
+[data-reveal="3"]{animation-delay:.15s}
+[data-reveal="4"]{animation-delay:.22s}
+@keyframes onda-panel-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation:none!important;transition-duration:0s!important}.panel-enter,[data-reveal]{opacity:1;transform:none}}
+
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}

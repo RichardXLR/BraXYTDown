@@ -1,0 +1,12 @@
+.git/
+.venv/
+__pycache__/
+.pytest_cache/
+tests/
+artifacts/
+scripts/verify_*.py
+README.md
+requirements-dev.txt
+node_modules/
+.github/
+.autocura/

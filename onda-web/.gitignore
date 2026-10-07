@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.vercel/
+.env*
+!.env.example
+artifacts/
+bin/
+node_modules/
+toolchain.json
+toolchain.json.pending
+autocura-report.json
+*.pyc
