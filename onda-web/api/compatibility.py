@@ -83,7 +83,7 @@ def validate_provider(provider, url):
 
 
 def release_status():
-    fallback = {"mode": "deployment", "automated": False, "state": "not_configured",
+    fallback = {"mode": "deployment", "automated": False, "snapshot_only": True, "state": "not_configured",
                 "message": "Atualizações usam um pacote completo testado antes da publicação. "
                            "A rotina automática depende da conexão do repositório e das credenciais do mantenedor."}
     try:
@@ -94,13 +94,16 @@ def release_status():
         # This is a build snapshot, not live deployment or quarantine history.
         config = report.get("selfHealing", report)
         if isinstance(config, dict):
-            aliases = {"strategy": "mode", "automation_enabled": "automated", "status": "state"}
+            aliases = {"strategy": "mode", "status": "state"}
             for source, target in aliases.items():
                 if source in config:
                     fallback[target] = config[source]
-            for key in ("mode", "automated", "state", "message"):
+            for key in ("mode", "state", "message"):
                 if key in config:
                     fallback[key] = config[key]
+            # Only /api/maintenance can confirm a current workflow execution.
+            # A persisted build report remains a snapshot even after activation.
+            fallback["snapshot_automation_enabled"] = config.get("automation_enabled") is True
     except (OSError, ValueError, TypeError):
         pass
     return fallback

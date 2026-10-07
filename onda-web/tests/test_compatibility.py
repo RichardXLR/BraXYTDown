@@ -1,4 +1,5 @@
 import pytest
+import json
 from fastapi.testclient import TestClient
 
 from api import compatibility, engine, index, security
@@ -21,6 +22,19 @@ def test_compatibility_snapshot_distinguishes_automation_from_manual_checks(clie
     assert data['selfHealing']['automated'] is False
     assert 'browserMode' not in data
     assert response.headers['cache-control'] == 'no-store'
+
+
+@pytest.mark.parametrize('enabled', [False, True])
+def test_persisted_snapshot_never_confirms_live_automation(monkeypatch, tmp_path, enabled):
+    (tmp_path / 'public').mkdir()
+    (tmp_path / 'public' / 'autocura.json').write_text(json.dumps({
+        'automation_enabled': enabled, 'automated': enabled, 'status': 'passed',
+        'execution': {'repository': 'RichardXLR/BraXYTDown', 'run_id': '42'}}))
+    monkeypatch.setattr(compatibility, 'ROOT', tmp_path)
+    data = compatibility.release_status()
+    assert data['automated'] is False
+    assert data['snapshot_only'] is True
+    assert data['snapshot_automation_enabled'] is enabled
 
 
 def test_manual_check_uses_worker_and_does_not_save_or_echo_cookies(client, monkeypatch):

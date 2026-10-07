@@ -41,6 +41,18 @@ def test_successful_job_requires_its_own_persisted_report(monkeypatch):
     assert result['schedule'] == 'Diariamente às 05:23 UTC'
 
 
+def test_real_report_exposes_nested_release_gate_and_existing_platform_block(monkeypatch):
+    gate = {'status': 'passed', 'youtube_verified': False, 'accepted_existing_blocks': ['youtube_canary']}
+    remote_evidence(monkeypatch,
+        run={'id': 42, 'status': 'completed', 'conclusion': 'success'},
+        report={'automation_enabled': True,
+                'execution': {'repository': maintenance.REPOSITORY, 'run_id': '42'},
+                'last_check': {'release_gate': gate}})
+    result = maintenance.inspect_maintenance()
+    assert result['automated'] is True
+    assert result['release_gate'] == gate
+
+
 @pytest.mark.parametrize('status,conclusion,expected', [
     ('in_progress', None, 'checking'), ('completed', 'failure', 'attention_required'),
     ('completed', 'cancelled', 'attention_required'), ('completed', 'timed_out', 'attention_required')])

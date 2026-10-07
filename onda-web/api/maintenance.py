@@ -87,7 +87,8 @@ def inspect_maintenance():
             result.update(state='attention_required', message='A última execução de manutenção falhou. Consulte o workflow; a configuração ou compatibilidade precisa de revisão.')
             return result
         execution = report.get('execution') or {}
-        gate = report.get('release_gate')
+        last_report = report.get('last_check')
+        gate = report.get('release_gate') or (last_report.get('release_gate') if isinstance(last_report, dict) else None)
         result['release_gate'] = gate
         result['quarantined_versions'] = len(report.get('quarantine', [])) if isinstance(report.get('quarantine'), list) else 0
         result['components'] = report.get('components')
