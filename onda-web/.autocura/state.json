@@ -1,6 +1,4 @@
 {
-  "automated": true,
-  "automation_enabled": true,
   "baseline_platform_check": {
     "checked_at": "2026-10-07T20:40:38.854620+00:00",
     "checks": [
@@ -16,25 +14,6 @@
       }
     ],
     "deployment_id": "dpl_CzzJ8YQhCdVRuF47RdDWFbUw4Yth"
-  },
-  "canaries": [
-    {
-      "name": "me_at_zoo_metadata",
-      "purpose": "metadata_only",
-      "url": "https://www.youtube.com/watch?v=jNQXAC9IVRw"
-    },
-    {
-      "license": "CC BY 3.0; Blender Foundation",
-      "name": "big_buck_bunny_metadata",
-      "purpose": "metadata_only",
-      "url": "https://www.youtube.com/watch?v=aqz-KE-bpKQ"
-    }
-  ],
-  "components": "all_pinned_python_dependencies",
-  "execution": {
-    "repository": "RichardXLR/BraXYTDown",
-    "run_id": "37683714982",
-    "workflow": "Onda AutoCura 3.0"
   },
   "history": [
     {
@@ -229,17 +208,8 @@
     },
     "status": "passed"
   },
-  "message": "Todas as conversões e regressões devem passar. No modo baseline, um bloqueio idêntico do YouTube já presente na versão anterior continua indicado como bloqueado e não impede atualizações dos componentes.",
-  "mode": "deployment",
-  "name": "AutoCura 3.0",
   "quarantine": [],
-  "schedule": "23 5 * * *",
-  "schema": 3,
-  "snapshot_at": "2026-10-07T20:40:51.108125+00:00",
-  "snapshot_only": true,
-  "state": "passed",
+  "schema": 2,
   "status": "passed",
-  "strategy": "immutable_deployment",
-  "versions": {},
-  "youtube_policy": "baseline"
+  "updated_at": "2026-10-07T20:40:51.105159+00:00"
 }
