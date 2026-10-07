@@ -2,7 +2,7 @@
   "automated": true,
   "automation_enabled": true,
   "baseline_platform_check": {
-    "checked_at": "2026-10-07T20:40:38.854620+00:00",
+    "checked_at": "2026-10-07T20:46:04.365860+00:00",
     "checks": [
       {
         "code": "platform_blocked",
@@ -33,7 +33,7 @@
   "components": "all_pinned_python_dependencies",
   "execution": {
     "repository": "RichardXLR/BraXYTDown",
-    "run_id": "37683714982",
+    "run_id": "37684419007",
     "workflow": "Onda AutoCura 3.0"
   },
   "history": [
@@ -235,10 +235,10 @@
   "quarantine": [],
   "schedule": "23 5 * * *",
   "schema": 3,
-  "snapshot_at": "2026-10-07T20:40:51.108125+00:00",
+  "snapshot_at": "2026-10-07T20:46:38.712522+00:00",
   "snapshot_only": true,
-  "state": "passed",
-  "status": "passed",
+  "state": "failed",
+  "status": "failed",
   "strategy": "immutable_deployment",
   "versions": {},
   "youtube_policy": "baseline"

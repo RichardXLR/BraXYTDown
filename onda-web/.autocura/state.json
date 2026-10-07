@@ -1,6 +1,6 @@
 {
   "baseline_platform_check": {
-    "checked_at": "2026-10-07T20:40:38.854620+00:00",
+    "checked_at": "2026-10-07T20:46:04.365860+00:00",
     "checks": [
       {
         "code": "platform_blocked",
@@ -208,8 +208,9 @@
     },
     "status": "passed"
   },
+  "last_error": "candidate_command_failed",
   "quarantine": [],
   "schema": 2,
-  "status": "passed",
-  "updated_at": "2026-10-07T20:40:51.105159+00:00"
+  "status": "failed",
+  "updated_at": "2026-10-07T20:46:38.709687+00:00"
 }
