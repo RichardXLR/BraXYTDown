@@ -105,6 +105,25 @@ def test_promotion_is_after_all_checks_and_durable_pending_journal(factory, tmp_
     assert (tmp_path / "requirements.txt").read_text() == "new verified pins\n"
 
 
+def test_vercel_candidate_uses_remote_production_build_without_assigning_domains(monkeypatch, tmp_path):
+    from scripts import autocura
+    monkeypatch.setenv('VERCEL_TOKEN', 'fake-ci-token')
+    monkeypatch.setenv('VERCEL_PROJECT_ID', 'prj_test')
+    monkeypatch.setenv('VERCEL_ORG_ID', 'team_test')
+    calls = []
+    def invoke(command, **options):
+        calls.append((command, options))
+        return 'https://candidate.vercel.app' if command[1] == 'deploy' else ''
+    monkeypatch.setattr(autocura, 'run', invoke)
+    provider = Vercel(tmp_path)
+    monkeypatch.setattr(provider, 'inspect', lambda host: dict(NEW) if host == 'candidate.vercel.app' else pytest.fail('Unexpected deployment'))
+    assert provider.stage() == NEW
+    assert [command[1] for command, _ in calls] == ['pull', 'deploy']
+    command, options = calls[-1]
+    assert '--prod' in command and '--skip-domain' in command and '--prebuilt' not in command
+    assert options['credentials'] is True and options['error_code'] == 'vercel_deploy_failed'
+
+
 @pytest.mark.parametrize("status", ["failed", "blocked"])
 def test_failed_candidate_never_changes_production_and_restores_pins(factory, tmp_path, status):
     manager, provider, _, _ = factory((status,))

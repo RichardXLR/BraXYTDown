@@ -50,6 +50,12 @@ jobs:
           python -m pip install pytest==8.4.2 httpx==0.28.1
           python -m pytest -q
           npm install -g vercel@62.7.0
+      - name: Verify Vercel CLI connection before preparing an update
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID || 'team_n6dJgfB2eKLbYATPalhDgptx' }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID || 'prj_uFRebtKoS8lCrM9fqxXMJkgYDGfr' }}
+        run: vercel pull --yes --environment=production
       - name: Build an immutable candidate, verify it, and promote or recover
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}

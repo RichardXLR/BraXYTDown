@@ -712,12 +712,13 @@ class Vercel:
         return self.inspect(target["id"])
 
     def stage(self):
-        # Production configuration, with domains deliberately unassigned. Promoting
-        # a preview would rebuild with different environment variables.
-        run(["vercel", "pull", "--yes", "--environment=production"], directory=self.root, credentials=True)
-        run(["vercel", "build", "--prod"], directory=self.root, timeout=1200, credentials=True)
-        output = run(["vercel", "deploy", "--prebuilt", "--prod", "--skip-domain", "--yes"],
-                     directory=self.root, timeout=900, credentials=True)
+        # Build the reviewed hash-locked sources in Vercel's production runtime,
+        # with domains deliberately unassigned until every remote gate passes.
+        # Local prebuilt Python output can depend on the runner's global tools.
+        run(["vercel", "pull", "--yes", "--environment=production"], directory=self.root, credentials=True,
+            error_code="vercel_pull_failed")
+        output = run(["vercel", "deploy", "--prod", "--skip-domain", "--yes"],
+                     directory=self.root, timeout=900, credentials=True, error_code="vercel_deploy_failed")
         url = deployment_url(output.splitlines()[-1])
         # Look up the deployment URL; IDs and ownership are validated before any mutation.
         return self.inspect(urllib.parse.urlsplit(url).hostname)
