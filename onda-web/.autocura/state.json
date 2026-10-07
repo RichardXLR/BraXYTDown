@@ -208,7 +208,7 @@
     },
     "status": "passed"
   },
-  "last_error": "candidate_command_failed",
+  "last_error": "http_409",
   "pending": {
     "candidate": {
       "id": "dpl_73eoBRtP56wdbiP3tQ5zoFiGpvjA",
@@ -249,6 +249,6 @@
   },
   "quarantine": [],
   "schema": 2,
-  "status": "promotion_pending",
-  "updated_at": "2026-10-07T20:53:16.241251+00:00"
+  "status": "blocked",
+  "updated_at": "2026-10-07T20:53:20.632088+00:00"
 }
