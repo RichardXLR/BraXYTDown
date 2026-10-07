@@ -55,7 +55,7 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID || 'team_n6dJgfB2eKLbYATPalhDgptx' }}
           VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID || 'prj_uFRebtKoS8lCrM9fqxXMJkgYDGfr' }}
-        run: vercel pull --yes --environment=production
+        run: vercel pull --yes --environment=preview
       - name: Build an immutable candidate, verify it, and promote or recover
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -70,6 +70,7 @@ jobs:
           # a new extraction failure or any converter/application regression.
           AUTOCURA_YOUTUBE_POLICY: baseline
           AUTOCURA_REPOSITORY_SUBDIRECTORY: onda-web
+          AUTOCURA_PRODUCTION_URL: https://onda-audio.vercel.app
           GITHUB_TOKEN: ${{ github.token }}
           CURE_COMMAND: ${{ inputs.command || 'release' }}
           CURE_FORCE: ${{ inputs.force || false }}

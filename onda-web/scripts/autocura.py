@@ -40,6 +40,9 @@ MAX_RESPONSE = 8 * 1024 * 1024
 
 class CureError(RuntimeError):
     """A safe error code; never include raw HTTP or subprocess output."""
+    def __init__(self, code, *, http_status=None):
+        super().__init__(code)
+        self.http_status = http_status
 
 
 def now():
@@ -137,12 +140,15 @@ class HTTP:
             # API error codes are useful for distinguishing platform blocks from
             # a broken converter. Never propagate raw error bodies or cookies.
             try:
-                code = json.loads(exc.read(MAX_RESPONSE)).get("code", "")
+                body = json.loads(exc.read(MAX_RESPONSE))
+                code = body.get("code", "")
+                if not code and isinstance(body.get("error"), dict):
+                    code = body["error"].get("code", "")
             except (ValueError, AttributeError, OSError):
                 code = ""
             if re.fullmatch(r"[a-z_]{1,80}", str(code)):
-                raise CureError(code) from None
-            raise CureError(f"http_{exc.code}") from None
+                raise CureError(code, http_status=exc.code) from None
+            raise CureError(f"http_{exc.code}", http_status=exc.code) from None
         except (urllib.error.URLError, TimeoutError, OSError):
             raise CureError("network_unavailable") from None
 
@@ -686,6 +692,8 @@ class Vercel:
         self.token = os.environ.get("VERCEL_TOKEN", "")
         self.project = os.environ.get("VERCEL_PROJECT_ID", "")
         self.team = os.environ.get("VERCEL_ORG_ID") or os.environ.get("VERCEL_TEAM_ID", "")
+        self.production_alias = urllib.parse.urlsplit(deployment_url(
+            os.environ.get("AUTOCURA_PRODUCTION_URL", "https://onda-audio.vercel.app"))).hostname
         if not self.token or not self.project or not self.team:
             raise CureError("vercel_credentials_not_configured")
 
@@ -706,18 +714,21 @@ class Vercel:
         project = self.api("/v9/projects/" + urllib.parse.quote(self.project, safe=""))
         if project.get("id") != self.project:
             raise CureError("wrong_vercel_project")
-        target = project.get("targets", {}).get("production")
+        # A latest production build is not proof that the user's domain moved.
+        alias = self.api("/v4/aliases/" + urllib.parse.quote(self.production_alias, safe=""))
+        if alias.get("projectId") != self.project:
+            raise CureError("wrong_production_alias_project")
+        target = alias.get("deploymentId") or (alias.get("deployment") or {}).get("id")
         if not target:
             return None
-        return self.inspect(target["id"])
+        return self.inspect(target)
 
     def stage(self):
-        # Build the reviewed hash-locked sources in Vercel's production runtime,
-        # with domains deliberately unassigned until every remote gate passes.
-        # Local prebuilt Python output can depend on the runner's global tools.
-        run(["vercel", "pull", "--yes", "--environment=production"], directory=self.root, credentials=True,
+        # Build a separate preview from the reviewed hash-locked sources.
+        # Only explicit promotion can move the production domain after tests.
+        run(["vercel", "pull", "--yes", "--environment=preview"], directory=self.root, credentials=True,
             error_code="vercel_pull_failed")
-        output = run(["vercel", "deploy", "--prod", "--skip-domain", "--yes"],
+        output = run(["vercel", "deploy", "--yes"],
                      directory=self.root, timeout=900, credentials=True, error_code="vercel_deploy_failed")
         url = deployment_url(output.splitlines()[-1])
         # Look up the deployment URL; IDs and ownership are validated before any mutation.
@@ -725,12 +736,22 @@ class Vercel:
 
     def promote(self, deployment):
         ready = self.inspect(deployment["id"])
-        self.api(f'/v10/projects/{self.project}/promote/{ready["id"]}', payload={}, method="POST")
+        try:
+            self.api(f'/v10/projects/{self.project}/promote/{ready["id"]}', payload={}, method="POST")
+        except CureError as error:
+            current = self.current() if error.http_status == 409 else None
+            if not current or current["id"] != ready["id"]:
+                raise
         self.wait_current(ready["id"])
 
     def rollback(self, deployment):
         ready = self.inspect(deployment["id"])
-        self.api(f'/v1/projects/{self.project}/rollback/{ready["id"]}', payload={}, method="POST")
+        try:
+            self.api(f'/v1/projects/{self.project}/rollback/{ready["id"]}', payload={}, method="POST")
+        except CureError as error:
+            current = self.current() if error.http_status == 409 else None
+            if not current or current["id"] != ready["id"]:
+                raise
         self.wait_current(ready["id"])
 
     def wait_current(self, expected_id):

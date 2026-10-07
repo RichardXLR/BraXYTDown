@@ -105,7 +105,7 @@ def test_promotion_is_after_all_checks_and_durable_pending_journal(factory, tmp_
     assert (tmp_path / "requirements.txt").read_text() == "new verified pins\n"
 
 
-def test_vercel_candidate_uses_remote_production_build_without_assigning_domains(monkeypatch, tmp_path):
+def test_vercel_candidate_uses_separate_remote_preview_without_assigning_production(monkeypatch, tmp_path):
     from scripts import autocura
     monkeypatch.setenv('VERCEL_TOKEN', 'fake-ci-token')
     monkeypatch.setenv('VERCEL_PROJECT_ID', 'prj_test')
@@ -120,7 +120,8 @@ def test_vercel_candidate_uses_remote_production_build_without_assigning_domains
     assert provider.stage() == NEW
     assert [command[1] for command, _ in calls] == ['pull', 'deploy']
     command, options = calls[-1]
-    assert '--prod' in command and '--skip-domain' in command and '--prebuilt' not in command
+    assert '--prod' not in command and '--skip-domain' not in command and '--prebuilt' not in command
+    assert '--environment=preview' in calls[0][0]
     assert options['credentials'] is True and options['error_code'] == 'vercel_deploy_failed'
 
 
@@ -701,6 +702,52 @@ def test_provider_refuses_to_promote_another_project(tmp_path, monkeypatch):
     provider = Vercel(tmp_path, WrongProject())
     with pytest.raises(CureError, match="not_ready_for_this_project"):
         provider.promote(NEW)
+
+
+def test_current_deployment_follows_the_public_alias_instead_of_latest_build(tmp_path, monkeypatch):
+    monkeypatch.setenv('VERCEL_TOKEN', 'fake')
+    monkeypatch.setenv('VERCEL_PROJECT_ID', 'prj_test')
+    monkeypatch.setenv('VERCEL_ORG_ID', 'team_test')
+    class Mapping:
+        def json(self, url, **options):
+            if '/projects/' in url:
+                return {'id': 'prj_test', 'targets': {'production': {'id': NEW['id']}}}
+            if '/aliases/' in url:
+                return {'projectId': 'prj_test', 'deploymentId': OLD['id']}
+            assert OLD['id'] in url
+            return {**OLD, 'projectId': 'prj_test'}
+    assert Vercel(tmp_path, Mapping()).current() == OLD
+
+
+@pytest.mark.parametrize('operation,target', [('promote', NEW), ('rollback', OLD)])
+@pytest.mark.parametrize('already_mapped', [True, False])
+def test_conflicts_are_idempotent_only_when_the_actual_alias_matches(tmp_path, monkeypatch, operation, target, already_mapped):
+    monkeypatch.setenv('VERCEL_TOKEN', 'fake')
+    monkeypatch.setenv('VERCEL_PROJECT_ID', 'prj_test')
+    monkeypatch.setenv('VERCEL_ORG_ID', 'team_test')
+    provider = Vercel(tmp_path)
+    monkeypatch.setattr(provider, 'inspect', lambda _: dict(target))
+    monkeypatch.setattr(provider, 'current', lambda: dict(target) if already_mapped else {'id': 'dpl_other'})
+    def conflict(*args, **options):
+        raise CureError('conflict', http_status=409)
+    monkeypatch.setattr(provider, 'api', conflict)
+    if already_mapped:
+        getattr(provider, operation)(target)
+    else:
+        with pytest.raises(CureError, match='conflict'):
+            getattr(provider, operation)(target)
+
+
+def test_nested_vercel_error_retains_status_without_disclosing_message(monkeypatch):
+    body = b'{"error":{"code":"conflict","message":"token=SECRET"}}'
+    class Opener:
+        def open(self, *args, **kwargs):
+            raise urllib.error.HTTPError('https://api.vercel.com', 409, 'secret', {}, io.BytesIO(body))
+    monkeypatch.setattr('urllib.request.build_opener', lambda *args: Opener())
+    with pytest.raises(CureError) as caught:
+        HTTP().json('https://api.vercel.com/v10/projects/test/promote/test')
+    assert str(caught.value) == 'conflict' and caught.value.http_status == 409
+    assert 'SECRET' not in str(caught.value)
 
 
 def test_missing_credentials_are_not_claimed_enabled(tmp_path, monkeypatch):
