@@ -1,5 +1,6 @@
 """No duration ceiling; compatible media takes the real FFmpeg remux path."""
 from pathlib import Path
+import re
 import subprocess
 
 import imageio_ffmpeg
@@ -123,3 +124,46 @@ def test_unknown_duration_reads_finite_media_to_eof(tagged_video, tmp_path, monk
                                   engine.MediaSettings(media_type="video"))
     assert original_probe(target, security.Guard())["duration"] >= 2
     assert elementary_stream(target, "v") == elementary_stream(tagged_video, "v")
+
+
+@pytest.mark.parametrize("extension", list(engine.FORMATS))
+def test_unknown_duration_cut_after_eof_rejects_header_only_audio(tmp_path, monkeypatch, extension):
+    source = tmp_path / "source.wav"
+    source.write_bytes((Path(__file__).resolve().parents[1] / "public" / "canary.wav").read_bytes())
+    original_probe = engine.probe_media
+    def unknown_input_duration(path, guard):
+        result = original_probe(path, guard)
+        if path == source:
+            result["duration"] = None
+        return result
+    monkeypatch.setattr(engine, "probe_media", unknown_input_duration)
+    with pytest.raises(security.AudioError) as raised:
+        engine.convert_audio(source, tmp_path, extension, "source" if extension in engine.LOSSLESS else 192,
+                             security.Guard(), engine.MediaSettings(trim_start=3))
+    assert raised.value.code == "conversion_failed"
+
+
+@pytest.mark.parametrize("zero_progress_time", [False, True])
+def test_single_video_frame_at_pts_zero_is_valid_even_with_zero_progress_time(tmp_path, monkeypatch, zero_progress_time):
+    source = tmp_path / "single-frame.mp4"
+    ffmpeg("-y", "-f", "lavfi", "-i", "color=blue:size=32x32:rate=1", "-frames:v", "1",
+           "-c:v", "libx264", "-preset", "ultrafast", "-threads", "1", source)
+    if zero_progress_time:
+        # Runtime versions can report the last frame's PTS rather than its end
+        # time. Keep the real encoding/frame counter while exercising that
+        # valid zero-timestamp report, without faking any output media bytes.
+        read_text = Path.read_text
+        def last_pts_progress(path, *args, **kwargs):
+            text = read_text(path, *args, **kwargs)
+            return re.sub(r"(?m)^out_time_us=\d+$", "out_time_us=0", text) if path.name == "progress.log" else text
+        monkeypatch.setattr(Path, "read_text", last_pts_progress)
+    target = engine.convert_video(source, tmp_path, "mp4", "source", security.Guard(),
+                                  engine.MediaSettings(media_type="video", mute=True, trim_end=.1))
+    progress = (tmp_path / "progress.log").read_text()
+    assert "frame=1\n" in progress
+    if zero_progress_time:
+        assert "out_time_us=0\n" in progress
+    timestamps = ffmpeg("-i", target, "-map", "0:v:0", "-vf", "showinfo", "-f", "null", "-", text=True).stderr
+    assert re.search(r"n:\s*0\s+pts:\s*0\s+pts_time:0\s", timestamps)
+    decoded = ffmpeg("-i", target, "-map", "0:v:0", "-pix_fmt", "rgb24", "-f", "rawvideo", "-").stdout
+    assert len(decoded) == 32 * 32 * 3

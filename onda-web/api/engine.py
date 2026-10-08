@@ -557,6 +557,14 @@ def run_conversion(command, target, directory, guard):
                 time.sleep(.1)
         if process.returncode != 0 or not target.exists() or target.stat().st_size == 0:
             raise AudioError("A mídia não contém as faixas necessárias ou não pode ser convertida.", "conversion_failed", 422)
+        # A successful mux can still create only a container header when a
+        # requested cut starts after EOF and the source has no known duration.
+        # One video frame at PTS zero is valid even when its out_time_us is zero.
+        progress = progress_path.read_text(errors="replace") if progress_path.is_file() else ""
+        frames = re.findall(r"^frame=(\d+)$", progress, re.M)
+        times = re.findall(r"^out_time_us=(-?\d+)$", progress, re.M)
+        if not any(int(value) > 0 for value in frames + times):
+            raise AudioError("O trecho escolhido não contém áudio ou vídeo. Confira o início e o fim do corte.", "conversion_failed", 422)
         if target.stat().st_size > MAX_OUTPUT:
             raise AudioError("A mídia convertida ultrapassa 100 MB. Escolha uma resolução menor ou uma mídia mais curta.", "output_too_large", 413)
         guard.check()
