@@ -41,10 +41,23 @@
       "at": "2026-10-07T20:40:51.105153+00:00",
       "deployment_id": "dpl_CzzJ8YQhCdVRuF47RdDWFbUw4Yth",
       "event": "verified"
+    },
+    {
+      "at": "2026-10-08T01:01:50.928966+00:00",
+      "deployment_id": "dpl_2RZb8LFVTjeJ8AMkUAtsEsTj9H3T",
+      "event": "promoted",
+      "versions": {
+        "deno": "2.9.7",
+        "fastapi": "0.142.4",
+        "imageio-ffmpeg": "0.6.0",
+        "publicsuffixlist": "1.0.2.20261007",
+        "uvicorn": "0.54.0",
+        "yt-dlp": "2026.8.19"
+      }
     }
   ],
   "last_check": {
-    "checked_at": "2026-10-08T01:01:37.022068+00:00",
+    "checked_at": "2026-10-08T01:01:50.928917+00:00",
     "checks": [
       {
         "name": "runtime",
@@ -60,9 +73,9 @@
         }
       },
       {
+        "code": "platform_blocked",
         "name": "me_at_zoo_metadata",
-        "purpose": "metadata_only",
-        "status": "passed"
+        "status": "blocked"
       },
       {
         "code": "platform_blocked",
@@ -219,6 +232,7 @@
     },
     "release_gate": {
       "accepted_existing_blocks": [
+        "me_at_zoo_metadata",
         "big_buck_bunny_metadata"
       ],
       "baseline_deployment_id": "dpl_CzzJ8YQhCdVRuF47RdDWFbUw4Yth",
@@ -248,11 +262,18 @@
   ],
   "schedule": "23 5 * * *",
   "schema": 3,
-  "snapshot_at": "2026-10-08T01:01:37.023525+00:00",
+  "snapshot_at": "2026-10-08T01:01:50.930178+00:00",
   "snapshot_only": true,
-  "state": "promotion_pending",
-  "status": "promotion_pending",
+  "state": "passed",
+  "status": "passed",
   "strategy": "immutable_deployment",
-  "versions": {},
+  "versions": {
+    "deno": "2.9.7",
+    "fastapi": "0.142.4",
+    "imageio-ffmpeg": "0.6.0",
+    "publicsuffixlist": "1.0.2.20261007",
+    "uvicorn": "0.54.0",
+    "yt-dlp": "2026.8.19"
+  },
   "youtube_policy": "baseline"
 }
