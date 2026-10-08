@@ -8,6 +8,7 @@ validation and for selecting a supported alternative representation.
 from __future__ import annotations
 
 import errno
+import http.client
 import math
 import re
 import socket
@@ -17,6 +18,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 
 from .security import AudioError, Guard
+from yt_dlp.networking.exceptions import IncompleteRead
 
 
 MAX_ATTEMPTS = 3
@@ -192,7 +194,7 @@ def retry_kind(exc) -> str | None:
         return "transient"
     transient_errnos = {errno.ETIMEDOUT, errno.ECONNRESET, errno.ECONNABORTED,
                         errno.ECONNREFUSED, errno.EHOSTUNREACH, errno.ENETUNREACH, errno.EPIPE}
-    if any(isinstance(item, (TimeoutError, ConnectionError, socket.gaierror))
+    if any(isinstance(item, (TimeoutError, ConnectionError, socket.gaierror, http.client.IncompleteRead, IncompleteRead))
            or isinstance(item, OSError) and item.errno in transient_errnos for item in chain):
         return "transient"
     if any(token in text for text in texts for token in (

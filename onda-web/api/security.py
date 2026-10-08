@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 
 from yt_dlp.networking import Response
 from yt_dlp.networking._urllib import RedirectHandler, UrllibRH
-from yt_dlp.networking.exceptions import HTTPError, RequestError
+from yt_dlp.networking.exceptions import HTTPError, RequestError, IncompleteRead
 
 
 class AudioError(Exception):
@@ -140,14 +140,36 @@ class BoundedResponse(Response):
         raw = getattr(self.fp, "fp", None)
         # read1 performs at most one socket read, so a slow sender cannot extend
         # the deadline indefinitely by trickling bytes into a sized read().
-        if isinstance(raw, http.client.HTTPResponse):
-            socket_stream = getattr(getattr(raw, "fp", None), "raw", None)
-            connection_socket = getattr(socket_stream, "_sock", None)
-            if connection_socket:
-                connection_socket.settimeout(min(8, max(.1, self.guard.remaining)))
-            data = raw.read1(min(amt, 1024 * 1024))
-        else:
-            data = self.fp.read(min(amt, 1024 * 1024))
+        try:
+            if isinstance(raw, http.client.HTTPResponse):
+                socket_stream = getattr(getattr(raw, "fp", None), "raw", None)
+                connection_socket = getattr(socket_stream, "_sock", None)
+                if connection_socket:
+                    connection_socket.settimeout(min(8, max(.1, self.guard.remaining)))
+                data = raw.read1(min(amt, 1024 * 1024))
+            else:
+                data = self.fp.read(min(amt, 1024 * 1024))
+        except (http.client.IncompleteRead, RequestError) as exc:
+            # Response adapters can wrap the partial read in TransportError.
+            # Inspect both cause links once, without counting a nested error
+            # twice or letting an unusual cause graph loop indefinitely.
+            pending, seen = [exc], set()
+            while pending and len(seen) < 8:
+                error = pending.pop()
+                if id(error) in seen:
+                    continue
+                seen.add(id(error))
+                if isinstance(error, (http.client.IncompleteRead, IncompleteRead)):
+                    partial = error.partial
+                    size = partial if isinstance(partial, int) else len(partial)
+                    # These bytes cannot be kept, but still consume the master
+                    # request budget before a recovery attempt starts.
+                    self.guard.count(max(0, size))
+                    break
+                pending.extend(cause for cause in (
+                    getattr(error, "cause", None), error.__cause__
+                ) if isinstance(cause, BaseException))
+            raise
         self.guard.count(len(data))
         return data
 

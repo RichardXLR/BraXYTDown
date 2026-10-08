@@ -1,5 +1,6 @@
 """Recovery must preserve aggregate limits, cancellation, and access controls."""
 import errno
+import http.client
 import io
 import socket
 import threading
@@ -121,6 +122,7 @@ def test_parallel_attempt_count_cannot_reset_or_race_aggregate_budget():
 
 @pytest.mark.parametrize("error", [
     TimeoutError("timed out"), ConnectionResetError("reset"),
+    http.client.IncompleteRead(b"partial", 64),
     ConnectionAbortedError("aborted"), socket.gaierror(-3, "temporary DNS failure"),
     OSError(errno.EPIPE, "pipe"), OSError(errno.ENETUNREACH, "network"),
     AudioError("Origin timed out", "upstream_timeout", 504),

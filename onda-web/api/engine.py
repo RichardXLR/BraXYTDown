@@ -153,16 +153,32 @@ class SafeYoutubeDL(yt_dlp.YoutubeDL):
             return result
         except Exception as exc:
             error = translate_error(exc, self.guard)
-            error.recovery_phase = "transfer"
-            error.recovery_format_id = str(info.get("format_id") or "")[:128]
+            if not getattr(error, "recovery_phase", None):
+                error.recovery_phase = "transfer"
+            if not getattr(error, "recovery_format_id", None):
+                error.recovery_format_id = str(info.get("format_id") or "")[:128]
             # Preserve the upstream cause for distinguishing an expired stream
             # URL from an actual sign-in requirement. Never expose it to clients.
+            if error is exc:
+                raise
             raise error from exc
 
     def _native_dl(self, name, info, subtitle=False, test=False):
         downloader = get_suitable_downloader(info, self.params)
         if downloader not in (HttpFD, HlsFD, DashSegmentsFD):
             raise AudioError("Essa mídia exige um método de transferência não suportado.", "unsupported_transfer", 422)
+        if downloader is HttpFD:
+            # HttpFD's internal range retries cannot verify that a resumed
+            # representation is unchanged, and accept approximate 416 sizes.
+            # A failed native HTTP track must instead restart in the next
+            # isolated attempt. Direct links use our validated If-Range path.
+            params = self.params
+            self.params = {**params, "continuedl": False, "http_chunk_size": 0, "retries": 0}
+            info = {**info, "downloader_options": {**info.get("downloader_options", {}), "http_chunk_size": 0}}
+            try:
+                return super().dl(name, info, subtitle=subtitle, test=test)
+            finally:
+                self.params = params
         if downloader is HlsFD:
             manifest = info.get("hls_media_playlist_data")
             if manifest is None:
@@ -312,7 +328,10 @@ def inspect_media(url: str, guard: Guard, cookies: str | None = None, media_type
             raise AudioError("Não foi possível identificar esse áudio.")
         return metadata(info, url, source)
     except Exception as exc:
-        raise translate_error(exc, guard) from exc
+        error = translate_error(exc, guard)
+        if error is exc:
+            raise
+        raise error from exc
     finally:
         if cookiejar is not None:
             cookiejar.clear()
@@ -907,6 +926,8 @@ def acquire_with_recovery(url, directory, audio_format, guard, settings, cookies
             if (kind is None or number == MAX_ATTEMPTS or already_exhausted
                     or guard.remaining < 8):
                 error.recovery_exhausted = bool(kind) or already_exhausted
+                if error is exc:
+                    raise
                 raise error from exc
             format_id = getattr(exc, "recovery_format_id", "")
             if kind == "refresh" and refreshes == 0:
@@ -918,6 +939,8 @@ def acquire_with_recovery(url, directory, audio_format, guard, settings, cookies
                 profile = "youtube_hls" if source_name == "YouTube" else "native_alternative"
             if not wait_for_retry(guard, number, exc):
                 error.recovery_exhausted = True
+                if error is exc:
+                    raise
                 raise error from exc
         finally:
             attempt_guard.close_sockets()
@@ -958,4 +981,7 @@ def prepare_download(url, directory, audio_format, quality, guard, cookies: str 
         source.unlink(missing_ok=True)
         return target, details
     except Exception as exc:
-        raise translate_error(exc, guard) from exc
+        error = translate_error(exc, guard)
+        if error is exc:
+            raise
+        raise error from exc

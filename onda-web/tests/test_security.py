@@ -1,14 +1,15 @@
 import io
+import http.client
 from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
 from yt_dlp.networking import Request, Response
 from yt_dlp.networking._urllib import UrllibRH
-from yt_dlp.networking.exceptions import HTTPError
+from yt_dlp.networking.exceptions import HTTPError, IncompleteRead, TransportError
 
 from api.engine import SafeYoutubeDL, options, source_for
-from api.security import AudioError, Guard, PublicRH, PublicRedirectHandler, pinned_connection, public_url
+from api.security import AudioError, Guard, PublicRH, PublicRedirectHandler, BoundedResponse, pinned_connection, public_url
 import api.security as security
 
 
@@ -67,6 +68,21 @@ def test_error_response_cannot_bypass_byte_budget(monkeypatch):
     with pytest.raises(AudioError) as budget_error:
         raised.value.response.read(2048)
     assert budget_error.value.code == "source_too_large"
+
+
+@pytest.mark.parametrize("error", [http.client.IncompleteRead(b"partial", 30), IncompleteRead(7, 30)])
+@pytest.mark.parametrize("budget,expected", [(20, 7), (5, 7)])
+def test_partial_bytes_in_a_failed_read_still_consume_the_shared_budget(error, budget, expected):
+    class Interrupted(io.BytesIO):
+        def read(self, _amount=-1):
+            raise error
+    guard = Guard(maximum_bytes=budget)
+    response = BoundedResponse(Response(Interrupted(b""), "https://cdn.example.com/media.mp4", {}), guard)
+    with pytest.raises(AudioError if budget < expected else TransportError) as failed:
+        response.read(64)
+    assert guard.received == expected
+    if budget < expected:
+        assert failed.value.code == "source_too_large"
 
 
 def test_only_guarded_handler_and_no_external_ffmpeg():
