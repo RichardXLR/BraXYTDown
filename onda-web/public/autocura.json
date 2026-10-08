@@ -2,7 +2,7 @@
   "automated": true,
   "automation_enabled": true,
   "baseline_platform_check": {
-    "checked_at": "2026-10-08T01:18:14.844780+00:00",
+    "checked_at": "2026-10-08T06:47:54.148503+00:00",
     "checks": [
       {
         "code": "platform_blocked",
@@ -15,7 +15,7 @@
         "status": "blocked"
       }
     ],
-    "deployment_id": "dpl_2RZb8LFVTjeJ8AMkUAtsEsTj9H3T"
+    "deployment_id": "dpl_GYzz97HzmSint8pRjGLbK6BiG5Kp"
   },
   "canaries": [
     {
@@ -33,7 +33,7 @@
   "components": "all_pinned_python_dependencies",
   "execution": {
     "repository": "RichardXLR/BraXYTDown",
-    "run_id": "37712160468",
+    "run_id": "37739510204",
     "workflow": "Onda AutoCura 3.0"
   },
   "history": [
@@ -91,10 +91,17 @@
     }
   ],
   "last_check": {
-    "checked_at": "2026-10-08T01:19:56.266066+00:00",
+    "checked_at": "2026-10-08T06:49:30.428614+00:00",
     "checks": [
       {
         "name": "runtime",
+        "status": "passed"
+      },
+      {
+        "anonymous_download": "denied",
+        "authentication": "machine_token",
+        "name": "runtime_authentication",
+        "provider": "clerk",
         "status": "passed"
       },
       {
@@ -249,7 +256,7 @@
       "youtube_status": "blocked"
     },
     "platform_baseline": {
-      "checked_at": "2026-10-08T01:18:14.844780+00:00",
+      "checked_at": "2026-10-08T06:47:54.148503+00:00",
       "checks": [
         {
           "code": "platform_blocked",
@@ -262,14 +269,14 @@
           "status": "blocked"
         }
       ],
-      "deployment_id": "dpl_2RZb8LFVTjeJ8AMkUAtsEsTj9H3T"
+      "deployment_id": "dpl_GYzz97HzmSint8pRjGLbK6BiG5Kp"
     },
     "release_gate": {
       "accepted_existing_blocks": [
         "me_at_zoo_metadata",
         "big_buck_bunny_metadata"
       ],
-      "baseline_deployment_id": "dpl_2RZb8LFVTjeJ8AMkUAtsEsTj9H3T",
+      "baseline_deployment_id": "dpl_GYzz97HzmSint8pRjGLbK6BiG5Kp",
       "status": "passed",
       "youtube_policy": "baseline",
       "youtube_verified": false
@@ -296,10 +303,10 @@
   ],
   "schedule": "23 5 * * *",
   "schema": 3,
-  "snapshot_at": "2026-10-08T01:19:56.267330+00:00",
+  "snapshot_at": "2026-10-08T06:49:30.430105+00:00",
   "snapshot_only": true,
-  "state": "passed",
-  "status": "passed",
+  "state": "promotion_pending",
+  "status": "promotion_pending",
   "strategy": "immutable_deployment",
   "versions": {
     "annotated-doc": "0.0.5",
