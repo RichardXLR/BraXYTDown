@@ -348,9 +348,12 @@ def acquire_media(url: str, directory: Path, guard: Guard, audio_format: str, co
     source_name = source_for(url)
     cookiejar = parse_netscape(cookies, url, direct_media=source_name == "Arquivo direto")
     try:
-        public_url(url)
         if source_name == "Arquivo direto":
+            # source_for already validates the authority. Resolve and pin
+            # direct media inside its bounded transfer attempts, so an initial
+            # temporary DNS failure can recover before any TCP connection.
             return direct_download(url, directory, guard)
+        public_url(url)
         with SafeYoutubeDL(options(guard, directory), guard, cookiejar=cookiejar) as downloader:
             info = downloader.extract_info(url, download=False)
             if not info:
@@ -489,10 +492,10 @@ def acquire_video_media(url: str, directory: Path, guard: Guard, video_resolutio
     source_name = source_for(url)
     cookiejar = parse_netscape(cookies, url, direct_media=source_name == "Arquivo direto")
     try:
-        public_url(url)
         if source_name == "Arquivo direto":
             path, details = direct_download(url, directory, guard)
             return VideoSources(path), details
+        public_url(url)
         opts = options(guard, directory)
         # Extraction lists every format. Downloads below receive individual
         # streams, not the bestvideo+bestaudio merger path.

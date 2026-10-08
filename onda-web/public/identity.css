@@ -144,20 +144,20 @@
 }
 
 /* These are explicit classes assigned through Clerk's appearance API. */
-.account-auth-form .onda-clerk-root,
-.account-auth-form .onda-clerk-card-box {
+#account-auth-form .onda-clerk-root,
+#account-auth-form .onda-clerk-card-box {
   width: 100% !important;
   max-width: 100% !important;
 }
 
-.account-auth-form .onda-clerk-card {
+#account-auth-form .onda-clerk-card {
   padding: 14px 1px !important;
   background: transparent !important;
   border: 0 !important;
   box-shadow: none !important;
 }
 
-.account-auth-form .onda-clerk-card-box {
+#account-auth-form .onda-clerk-card-box {
   border-radius: 15px !important;
   background: transparent !important;
   box-shadow: none !important;
@@ -416,6 +416,9 @@ body[data-theme="light"] .creator-photo-label {
 
 /* Cinematic opening ------------------------------------------------------- */
 .intro-dialog {
+  width: 100vw;
+  height: 100dvh;
+  overflow: hidden;
   background: #050d1b;
   color: #f3f7fc;
   font-family: inherit;
@@ -431,13 +434,45 @@ body[data-theme="light"] .creator-photo-label {
 }
 
 .intro-inner {
-  width: min(960px, 100%);
-  padding: 24px 36px 22px;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  padding: 0;
+  display: block;
+  isolation: isolate;
+}
+
+.intro-inner::before,
+.intro-inner::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 150px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.intro-inner::before {
+  top: 0;
+  background: linear-gradient(#050d1ba8, transparent);
+}
+
+.intro-inner::after {
+  bottom: 0;
+  background: linear-gradient(transparent, #050d1be6);
 }
 
 .intro-header {
+  position: absolute;
+  top: max(26px, env(safe-area-inset-top));
+  left: max(32px, env(safe-area-inset-left));
+  right: max(32px, env(safe-area-inset-right));
+  z-index: 2;
+  width: auto;
   min-height: 44px;
-  margin-bottom: 19px;
+  margin: 0;
 }
 
 .intro-wordmark {
@@ -446,6 +481,7 @@ body[data-theme="light"] .creator-photo-label {
   font-size: 28px;
   font-weight: 750;
   letter-spacing: -1.6px;
+  text-shadow: 0 2px 14px #0005;
 }
 
 .intro-wordmark > span {
@@ -458,10 +494,10 @@ body[data-theme="light"] .creator-photo-label {
   gap: 10px;
   min-height: 44px;
   padding: 11px 17px;
-  border: 1px solid #263b56;
+  border: 1px solid #7497bc45;
   border-radius: 13px;
-  background: #0c1c32;
-  color: #d2e1f5;
+  background: #08172cdb;
+  color: #e4efff;
   font-size: 12px;
   font-weight: 550;
   letter-spacing: 0;
@@ -483,11 +519,16 @@ body[data-theme="light"] .creator-photo-label {
 
 .intro-stage,
 .intro-stage[data-size="mobile"] {
-  width: min(650px, 100%, max(100px, calc(100svh - 280px)));
-  aspect-ratio: 1;
-  border-radius: 24px;
-  background: #fff;
-  box-shadow: 0 0 0 1px #3d6f973b, 0 26px 65px #0005;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  aspect-ratio: auto;
+  border-radius: 0;
+  background: #050d1b;
+  box-shadow: none;
 }
 
 .intro-stage video {
@@ -495,18 +536,45 @@ body[data-theme="light"] .creator-photo-label {
   height: 100%;
   object-fit: contain;
   object-position: center;
+  background: #050d1b;
 }
 
 .intro-play {
-  bottom: 22px;
+  top: 50%;
+  bottom: auto;
+  transform: translate(-50%, -50%);
+  z-index: 3;
   background: #0a203aef;
   border-color: #7da9d559;
   box-shadow: 0 8px 25px #0003;
 }
 
+.intro-play svg {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+  stroke: none;
+}
+
 .intro-footer {
-  gap: 22px;
-  margin-top: 22px;
+  position: absolute;
+  right: max(32px, env(safe-area-inset-right));
+  bottom: max(68px, calc(env(safe-area-inset-bottom) + 54px));
+  z-index: 2;
+  width: auto;
+  margin: 0;
+  gap: 0;
+  align-items: center;
+}
+
+/* Keep the dialog's accessible title without competing with its film. */
+.intro-footer > div {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .intro-eyebrow {
@@ -538,20 +606,26 @@ body[data-theme="light"] .creator-photo-label {
 }
 
 .intro-progress-row {
+  position: absolute;
+  left: max(32px, env(safe-area-inset-left));
+  right: max(32px, env(safe-area-inset-right));
+  bottom: max(23px, calc(env(safe-area-inset-bottom) + 14px));
+  z-index: 2;
+  width: auto;
   gap: 12px;
   min-height: 18px;
-  margin-top: 20px;
+  margin: 0;
 }
 
 .intro-progress {
   height: 3px;
   color: #58aaff;
   accent-color: #58aaff;
-  background: #172c45;
+  background: #89a9d22e;
 }
 
 .intro-progress::-webkit-progress-bar {
-  background: #172c45;
+  background: #89a9d22e;
 }
 
 .intro-progress::-webkit-progress-value {
@@ -563,17 +637,24 @@ body[data-theme="light"] .creator-photo-label {
 }
 
 .intro-duration {
-  color: #90a8c4;
+  color: #c0d2e8;
   font-size: 11px;
 }
 
 .intro-hint {
-  margin-top: 9px;
-  color: #90a8c4;
+  position: absolute;
+  left: max(32px, env(safe-area-inset-left));
+  bottom: max(56px, calc(env(safe-area-inset-bottom) + 44px));
+  z-index: 2;
+  max-width: calc(100% - 64px);
+  margin: 0;
+  color: #c0d2e8;
   font-size: 11px;
+  text-align: left;
+  pointer-events: none;
 }
 
-/* Smaller displays retain the full square film and generous touch targets. */
+/* Smaller displays preserve comfortable controls and their safe areas. */
 @media (max-width: 1100px) {
   .account-gate {
     grid-template-columns: minmax(0, 1fr) minmax(330px, 410px);
@@ -634,20 +715,30 @@ body[data-theme="light"] .creator-photo-label {
 }
 
 @media (max-width: 700px) {
-  .intro-inner { padding: 21px 21px 20px; }
-  .intro-header { margin-bottom: 20px; gap: 14px; }
+  .intro-header {
+    top: max(19px, env(safe-area-inset-top));
+    left: max(20px, env(safe-area-inset-left));
+    right: max(20px, env(safe-area-inset-right));
+    gap: 14px;
+  }
   .intro-wordmark { font-size: 25px; }
   .intro-skip { padding-inline: 13px; font-size: 11px; }
-  .intro-stage,
-  .intro-stage[data-size="mobile"] {
-    width: min(480px, 100%, max(100px, calc(100svh - 330px)));
-    border-radius: 20px;
+  .intro-footer {
+    right: max(20px, env(safe-area-inset-right));
+    bottom: max(78px, calc(env(safe-area-inset-bottom) + 64px));
   }
-  .intro-footer { margin-top: 21px; align-items: flex-start; flex-direction: column; gap: 13px; }
-  .intro-footer h2 { font-size: 24px; }
-  .intro-eyebrow { font-size: 9px; letter-spacing: 1.5px; }
   .intro-sound { font-size: 11px; }
-  .intro-progress-row { margin-top: 17px; }
+  .intro-progress-row {
+    left: max(20px, env(safe-area-inset-left));
+    right: max(20px, env(safe-area-inset-right));
+    bottom: max(21px, calc(env(safe-area-inset-bottom) + 12px));
+  }
+  .intro-hint {
+    left: max(20px, env(safe-area-inset-left));
+    bottom: max(53px, calc(env(safe-area-inset-bottom) + 44px));
+    max-width: calc(100% - 40px);
+    font-size: 10px;
+  }
 }
 
 @media (max-width: 420px) {
@@ -683,25 +774,11 @@ body[data-theme="light"] .creator-photo-label {
   .credits-detail-grid { grid-template-columns: 1fr; gap: 19px; padding: 25px 3px 8px; }
 }
 
-@media (max-height: 700px) and (min-width: 701px) {
-  .intro-inner { padding-top: 16px; padding-bottom: 16px; }
-  .intro-header { margin-bottom: 12px; }
-  .intro-stage,
-  .intro-stage[data-size="mobile"] { width: min(480px, 100%, max(100px, calc(100svh - 240px))); }
-  .intro-footer { margin-top: 16px; }
-  .intro-footer h2 { font-size: 23px; }
-  .intro-progress-row { margin-top: 13px; }
-}
-
-@media (max-height: 720px) and (max-width: 700px) {
-  .intro-inner { padding-top: 15px; padding-bottom: 15px; }
-  .intro-header { margin-bottom: 15px; }
-  .intro-stage,
-  .intro-stage[data-size="mobile"] { width: min(480px, 100%, max(100px, calc(100svh - 290px))); }
-  .intro-footer { margin-top: 16px; gap: 10px; }
-  .intro-eyebrow { display: none; }
-  .intro-footer h2 { font-size: 22px; }
-  .intro-progress-row { margin-top: 12px; }
+@media (max-height: 500px) and (min-width: 701px) {
+  .intro-header { top: max(16px, env(safe-area-inset-top)); }
+  .intro-footer { bottom: max(57px, calc(env(safe-area-inset-bottom) + 44px)); }
+  .intro-progress-row { bottom: max(16px, calc(env(safe-area-inset-bottom) + 10px)); }
+  .intro-hint { bottom: max(47px, calc(env(safe-area-inset-bottom) + 36px)); }
 }
 
 /* Motion preferences apply to decoration without changing functionality. */
@@ -745,7 +822,7 @@ body[data-motion="off"] .creator-instagram:hover {
 }
 
 /* Clerk's public appearance API assigns these classes to its controls. */
-.account-auth-form .onda-clerk-input {
+#account-auth-form .onda-clerk-input {
   min-height: 47px !important;
   padding: 12px 14px !important;
   border: 1px solid var(--polish-line) !important;
@@ -756,11 +833,11 @@ body[data-motion="off"] .creator-instagram:hover {
   font-family: inherit !important;
   font-size: 14px !important;
 }
-.account-auth-form .onda-clerk-input:focus {
+#account-auth-form .onda-clerk-input:focus {
   border-color: var(--polish-accent) !important;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--polish-accent) 10%, transparent) !important;
 }
-.account-auth-form .onda-clerk-primary {
+#account-auth-form .onda-clerk-primary {
   min-height: 47px !important;
   border: 1px solid #ffffff18 !important;
   border-radius: 11px !important;
@@ -771,7 +848,7 @@ body[data-motion="off"] .creator-instagram:hover {
   font-weight: 750 !important;
   box-shadow: 0 5px 16px -9px var(--polish-button-end) !important;
 }
-.account-auth-form .onda-clerk-social {
+#account-auth-form .onda-clerk-social {
   min-height: 44px !important;
   border: 1px solid var(--polish-line) !important;
   border-radius: 11px !important;
@@ -779,12 +856,12 @@ body[data-motion="off"] .creator-instagram:hover {
   color: var(--polish-heading) !important;
   box-shadow: none !important;
 }
-.account-auth-form .onda-clerk-provider-icon {
+#account-auth-form .onda-clerk-provider-icon {
   width: 18px !important;
   height: 18px !important;
   fill: currentColor;
   stroke: none;
 }
 @media (max-width: 760px) {
-  .account-auth-form .onda-clerk-input { font-size: 16px !important; }
+  #account-auth-form .onda-clerk-input { font-size: 16px !important; }
 }

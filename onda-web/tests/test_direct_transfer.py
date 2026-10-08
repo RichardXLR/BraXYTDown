@@ -1,13 +1,14 @@
 """Real response/Guard tests for bounded recovery of owned direct media."""
 import io
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 from yt_dlp.networking import Response
 from yt_dlp.networking._urllib import UrllibRH
-from yt_dlp.networking.exceptions import HTTPError
+from yt_dlp.networking.exceptions import HTTPError, RequestError
 
-from api import direct_transfer, engine
+from api import direct_transfer, engine, security
 from api.security import AudioError, Guard
 
 
@@ -271,3 +272,190 @@ def test_response_verification_runs_before_every_attempt(monkeypatch, tmp_path, 
     direct_transfer.download_direct(URL, tmp_path, Guard(), handler_factory=engine.direct_handler,
         verify_response=verify, title_factory=engine.direct_title)
     assert observed == [(200, URL, 0), (206, URL, 0)]
+
+
+def resolving_transport(monkeypatch, phase, replies, dns_replies):
+    """Exercise production DNS validation, pinning and PublicRH error wrapping.
+
+    Only resolver/TCP/HTTP IO is substituted. The direct transfer and Guard
+    still choose their own attempts, validate resumes and count body bytes.
+    """
+    requests, lookups = [], []
+    answers = iter(dns_replies)
+    sockets = Mock(return_value=Mock())
+
+    def resolve(host, port, **_kwargs):
+        lookups.append((host, port))
+        result = next(answers)
+        if isinstance(result, Exception):
+            raise result
+        return [(security.socket.AF_INET, security.socket.SOCK_STREAM, 6, "", (result, port))]
+
+    def send(handler, request):
+        requests.append(request)
+        if phase == "connection":
+            connection = security.pinned_connection(security.http.client.HTTPConnection, handler.guard)(
+                "media.example.com", timeout=8)
+            connection.connect()
+        else:
+            original = security.urllib.request.Request(request.url)
+            security.PublicRedirectHandler(handler.guard).redirect_request(
+                original, None, 302, "Found", {}, "https://cdn.example.com/owned-canary.mp4")
+        return replies[len(requests) - 1]
+
+    monkeypatch.setattr(security.socket, "getaddrinfo", resolve)
+    monkeypatch.setattr(security.socket, "create_connection", sockets)
+    monkeypatch.setattr(UrllibRH, "_send", send)
+    monkeypatch.setattr(direct_transfer, "wait_for_retry", lambda guard, _attempt, _exc=None: (guard.check() or True))
+    return requests, lookups, sockets
+
+
+def temporary_dns_failure():
+    return security.socket.gaierror(security.socket.EAI_AGAIN, "temporary resolver failure")
+
+
+@pytest.mark.parametrize("phase", ["connection", "redirect"])
+def test_temporary_dns_failure_recovers_before_saving_complete_owned_media(monkeypatch, tmp_path, owned_media, phase):
+    requests, lookups, sockets = resolving_transport(monkeypatch, phase,
+        [None, response(owned_media)], [temporary_dns_failure(), "93.184.216.34"])
+    guard = Guard(maximum_bytes=len(owned_media))
+    started = guard.started
+    path, details = download(tmp_path, guard)
+    assert path.read_bytes() == owned_media
+    assert len(requests) == len(lookups) == 2
+    assert guard.started == started and guard.received == len(owned_media) and guard.error is None
+    assert details["recovery"] == {"attempts": 2, "resumed": False, "method": "direct_http"}
+    if phase == "connection":
+        assert sockets.call_args.args[0] == ("93.184.216.34", 80)
+
+
+@pytest.mark.parametrize("phase", ["connection", "redirect"])
+def test_dns_failure_during_resume_keeps_valid_partial_and_original_byte_budget(monkeypatch, tmp_path, owned_media, phase):
+    prefix = 8192
+    requests, lookups, _sockets = resolving_transport(monkeypatch, phase,
+        [response(owned_media[:prefix], len(owned_media)), None,
+         response(owned_media[prefix:], len(owned_media), status=206, start=prefix)],
+        ["93.184.216.34", temporary_dns_failure(), "93.184.216.34"])
+    guard = Guard(maximum_bytes=len(owned_media))
+    started = guard.started
+    path, details = download(tmp_path, guard)
+    assert path.read_bytes() == owned_media
+    assert len(requests) == len(lookups) == 3
+    assert all(request.headers["Range"] == f"bytes={prefix}-" and request.headers["If-Range"] == ETAG
+               for request in requests[1:])
+    assert guard.received == len(owned_media) and guard.started == started
+    assert details["recovery"] == {"attempts": 3, "resumed": True, "method": "direct_http"}
+
+
+@pytest.mark.parametrize("phase", ["connection", "redirect"])
+def test_dns_recovery_revalidates_private_answers_and_stops_before_tcp(monkeypatch, tmp_path, owned_media, phase):
+    requests, lookups, sockets = resolving_transport(monkeypatch, phase,
+        [None, response(owned_media)], [temporary_dns_failure(), "10.0.0.5"])
+    guard = Guard()
+    with pytest.raises(AudioError) as failed:
+        download(tmp_path, guard)
+    assert failed.value.code == "unsafe_url" and guard.error is failed.value
+    assert len(requests) == len(lookups) == 2
+    sockets.assert_not_called()
+    assert guard.received == 0 and not (tmp_path / "source.media").exists()
+
+
+@pytest.mark.parametrize("phase", ["connection", "redirect"])
+def test_repeated_dns_failures_are_bounded_and_never_produce_a_saved_file(monkeypatch, tmp_path, phase):
+    requests, lookups, sockets = resolving_transport(monkeypatch, phase,
+        [None, None, None], [temporary_dns_failure() for _ in range(3)])
+    guard = Guard()
+    started = guard.started
+    with pytest.raises(RequestError) as failed:
+        download(tmp_path, guard)
+    assert failed.value.cause.code == "dns_failed"
+    assert failed.value.recovery_exhausted is True and failed.value.recovery_attempts == 3
+    assert len(requests) == len(lookups) == 3
+    sockets.assert_not_called()
+    assert guard.received == 0 and guard.started == started and guard.error is None
+    assert not (tmp_path / "source.media").exists()
+
+
+@pytest.mark.parametrize("phase", ["connection", "redirect"])
+def test_dns_retry_cannot_reset_or_ignore_original_deadline(monkeypatch, tmp_path, phase):
+    requests, lookups, sockets = resolving_transport(monkeypatch, phase,
+        [None], [temporary_dns_failure()])
+    guard = Guard()
+
+    def expire(original_guard, _attempt, _exc=None):
+        assert original_guard is guard
+        original_guard.started -= original_guard.seconds + 1
+        original_guard.check()
+
+    monkeypatch.setattr(direct_transfer, "wait_for_retry", expire)
+    with pytest.raises(AudioError) as failed:
+        download(tmp_path, guard)
+    assert failed.value.code == "timeout"
+    assert len(requests) == len(lookups) == 1
+    sockets.assert_not_called()
+    assert guard.received == 0 and not (tmp_path / "source.media").exists()
+
+
+def acquire_direct(media_type, directory, guard, url=URL):
+    settings = engine.MediaSettings(media_type=media_type)
+    return engine.acquire_with_recovery(url, directory, "mp4" if media_type == "video" else "mp3",
+                                        guard, settings, None)
+
+
+@pytest.mark.parametrize("media_type", ["audio", "video"])
+@pytest.mark.parametrize("phase", ["connection", "redirect"])
+def test_full_direct_acquisition_recovers_initial_dns_failure(monkeypatch, tmp_path, owned_media, media_type, phase):
+    requests, lookups, sockets = resolving_transport(monkeypatch, phase,
+        [None, response(owned_media)], [temporary_dns_failure(), "93.184.216.34"])
+    guard = Guard(maximum_bytes=len(owned_media))
+    started = guard.started
+    source, details = acquire_direct(media_type, tmp_path, guard)
+    path = source.video if media_type == "video" else source
+    assert path.read_bytes() == owned_media and details["recovery"]["attempts"] == 2
+    assert len(requests) == len(lookups) == 2
+    assert guard.received == len(owned_media) and guard.started == started and guard.error is None
+    if media_type == "video":
+        assert source.audio is None
+    if phase == "connection":
+        assert sockets.call_args.args[0] == ("93.184.216.34", 80)
+
+
+@pytest.mark.parametrize("media_type", ["audio", "video"])
+@pytest.mark.parametrize("phase", ["connection", "redirect"])
+def test_full_direct_acquisition_revalidates_dns_after_temporary_failure(monkeypatch, tmp_path, owned_media, media_type, phase):
+    requests, lookups, sockets = resolving_transport(monkeypatch, phase,
+        [None, response(owned_media)], [temporary_dns_failure(), "10.0.0.5"])
+    guard = Guard()
+    with pytest.raises(AudioError) as failed:
+        acquire_direct(media_type, tmp_path, guard)
+    assert failed.value.code == "unsafe_url" and guard.error is failed.value
+    assert len(requests) == len(lookups) == 2
+    sockets.assert_not_called()
+    assert guard.received == 0 and not (tmp_path / "source.media").exists()
+
+
+@pytest.mark.parametrize("media_type", ["audio", "video"])
+def test_full_direct_acquisition_refuses_private_dns_before_any_tcp(monkeypatch, tmp_path, owned_media, media_type):
+    requests, lookups, sockets = resolving_transport(monkeypatch, "connection",
+        [response(owned_media)], ["10.0.0.5"])
+    guard = Guard()
+    with pytest.raises(AudioError) as failed:
+        acquire_direct(media_type, tmp_path, guard)
+    assert failed.value.code == "unsafe_url" and guard.error is failed.value
+    assert len(requests) == len(lookups) == 1
+    sockets.assert_not_called()
+    assert guard.received == 0 and not (tmp_path / "source.media").exists()
+
+
+@pytest.mark.parametrize("media_type", ["audio", "video"])
+@pytest.mark.parametrize("url", ["https://127.0.0.1/owned.mp4", "ftp://media.example.com/owned.mp4",
+                                 "https://user:secret@media.example.com/owned.mp4"])
+def test_full_direct_acquisition_still_validates_original_url_before_transport(monkeypatch, tmp_path, media_type, url):
+    requests, lookups, sockets = resolving_transport(monkeypatch, "connection", [], [])
+    guard = Guard()
+    with pytest.raises(AudioError) as failed:
+        acquire_direct(media_type, tmp_path, guard, url)
+    assert failed.value.code == "unsafe_url"
+    assert requests == lookups == []
+    sockets.assert_not_called()
+    assert guard.received == 0 and not (tmp_path / "source.media").exists()

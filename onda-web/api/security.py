@@ -183,7 +183,11 @@ def pinned_connection(base, guard: Guard):
             try:
                 _, addresses = public_url(f"{scheme}://{hostname}:{self.port}/")
             except AudioError as exc:
-                guard.error = exc
+                # A failed DNS lookup is a recoverable transport failure, not
+                # proof of an unsafe address. The next bounded attempt must
+                # resolve and validate every answer again before connecting.
+                if exc.code != "dns_failed":
+                    guard.error = exc
                 raise
             # TLS still verifies the original hostname. The TCP socket never re-resolves it.
             def connect_pinned(_address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None):
@@ -231,7 +235,8 @@ class PublicRedirectHandler(RedirectHandler):
         try:
             public_url(newurl)
         except AudioError as exc:
-            self.guard.error = exc
+            if exc.code != "dns_failed":
+                self.guard.error = exc
             raise
         redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
         if urllib.parse.urlsplit(req.full_url).netloc != urllib.parse.urlsplit(newurl).netloc:
@@ -283,6 +288,9 @@ class PublicRH(UrllibRH):
                 raise AudioError("A origem retornou uma transferência incompatível. Tente outro link.", "unsupported_transfer", 422)
             return BoundedResponse(response, self.guard)
         except AudioError as exc:
-            self.guard.error = exc
+            # Keep permission/safety/byte failures definitive while allowing
+            # temporary resolver failures through the existing recovery loop.
+            if exc.code != "dns_failed":
+                self.guard.error = exc
             # yt-dlp requires a networking exception; retain the original for the API.
             raise RequestError(cause=exc) from exc

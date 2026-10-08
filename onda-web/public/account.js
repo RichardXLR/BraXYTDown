@@ -350,6 +350,7 @@
     document.body.dataset.account = 'error';
   }
   const appearance = {
+    options: { socialButtonsVariant: 'blockButton' },
     variables: { colorPrimary: '#7cbcff', colorBackground: '#0c1c32', colorText: '#f2f7ff', colorTextSecondary: '#b3c7dd', colorInputBackground: '#081426', colorInputText: '#f2f7ff', colorNeutral: '#c9def2', colorDanger: '#ffb4ae', borderRadius: '1rem', fontFamily: 'Manrope, system-ui, sans-serif' },
     elements: { rootBox: 'onda-clerk-root', cardBox: 'onda-clerk-card-box', card: 'onda-clerk-card', userButtonPopoverCard: 'onda-clerk-popover', userButtonAvatarBox: 'onda-account-avatar', formFieldInput: 'onda-clerk-input', formButtonPrimary: 'onda-clerk-primary', socialButtonsIconButton: 'onda-clerk-social', socialButtonsBlockButton: 'onda-clerk-social', socialButtonsProviderIcon: 'onda-clerk-provider-icon' },
   };
