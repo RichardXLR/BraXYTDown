@@ -7,6 +7,7 @@
 .save-file-icon{display:grid;place-items:center;flex-shrink:0;width:58px;height:58px;border:1px solid #fff4;background:#ffffff15;border-radius:17px;box-shadow:inset 0 1px 0 #fff3}
 .save-file-icon svg{width:27px;height:27px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .save-file-copy{display:grid;gap:7px;min-width:0}.save-file-eyebrow{color:#ffe2df;font-size:9px;letter-spacing:1.8px;font-weight:600}.save-file-copy strong{font-size:28px;letter-spacing:-.8px;font-weight:650;line-height:1.2}.save-file-copy>span:last-child{color:#ffe0dd;font-size:12px;line-height:1.5;overflow-wrap:anywhere}.save-file-arrow{margin-left:auto;font-size:25px;align-self:center;color:#ffe3e1}
+.save-file-arrow svg{display:block;width:25px;height:25px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .save-file-action:hover{transform:translateY(-3px);box-shadow:0 28px 95px #e42c3b75,0 7px 26px #09091377,inset 0 1px 0 #ffd6d677}.save-file-action:active{transform:scale(.98)}.save-file-action:focus-visible{outline:3px solid #fff;outline-offset:7px}
 @keyframes save-enter{from{opacity:0;transform:translateY(15px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes save-backdrop{from{opacity:0}to{opacity:1}}
