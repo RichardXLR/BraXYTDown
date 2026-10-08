@@ -48,7 +48,7 @@ def transport_client(monkeypatch, tmp_path, transport_bytes, separate_streams):
         return {"title": "Trecho de transporte", "duration": 2.02, "thumbnail": None,
                 "source": "Arquivo direto", "webpage_url": url}
 
-    def acquire_video(url, directory, guard, video_resolution="source", cookies=None, mute=False):
+    def acquire_video(url, directory, guard, video_resolution="source", cookies=None, mute=False, video_format="mp4"):
         guard.check()
         video = directory / "source-video.ts"
         if mode["separate"]:

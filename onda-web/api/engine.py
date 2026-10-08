@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import functools
+import copy
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 import logging
 import math
@@ -21,6 +23,7 @@ from yt_dlp.downloader import get_suitable_downloader
 from yt_dlp.downloader.http import HttpFD
 from yt_dlp.downloader.hls import HlsFD
 from yt_dlp.downloader.dash import DashSegmentsFD
+from yt_dlp.cookies import YoutubeDLCookieJar
 from .cookies import RequestCookieJar, parse_netscape
 
 from .security import AudioError, Guard, PublicRH, public_url
@@ -51,6 +54,14 @@ VIDEO_FORMATS = {
     "webm": ("libvpx-vp9", "libopus", "video/webm"),
     "mkv": ("libx264", "aac", "video/x-matroska"),
     "mov": ("libx264", "aac", "video/quicktime"),
+}
+# These containers can carry the original compressed stream. Preserving a
+# compatible UHD stream is much faster than decoding and encoding every frame.
+VIDEO_COPY_CODECS = {
+    "mp4": {"h264", "hevc", "av1", "vp9"},
+    "mov": {"h264", "hevc"},
+    "mkv": {"h264", "hevc", "av1", "vp9", "vp8"},
+    "webm": {"vp9", "vp8", "av1"},
 }
 NATIVE_PROTOCOLS = {"http", "https", "m3u8_native", "http_dash_segments"}
 INPUT_FORMATS = "aac,aiff,asf,avi,flac,flv,matroska,webm,mov,mp4,m4a,3gp,3g2,mj2,mp3,mpeg,mpegts,ogg,wav"
@@ -178,7 +189,7 @@ def options(guard: Guard, directory: Path | None = None):
         "noplaylist": True, "extract_flat": False, "skip_download": False,
         "cachedir": False, "proxy": "", "socket_timeout": 8,
         "retries": 1, "fragment_retries": 1, "extractor_retries": 1,
-        "concurrent_fragment_downloads": 4, "http_chunk_size": 1024 * 1024,
+        "concurrent_fragment_downloads": 4, "http_chunk_size": 10 * 1024 * 1024,
         "max_filesize": guard.maximum_bytes,
         "progress_hooks": [progress], "hls_prefer_native": True,
         "fixup": "never", "writethumbnail": False, "writeinfojson": False,
@@ -350,12 +361,43 @@ def video_dimensions_supported(width: int | None, height: int | None) -> bool:
             and width * height <= MAX_VIDEO_PIXELS)
 
 
-def select_video_formats(info: dict, resolution: str, available_bytes: int, mute=False):
+def canonical_video_codec(codec: str | None) -> str:
+    """Normalize extractor codec strings before choosing a native stream."""
+    codec = (codec or "").lower()
+    if codec.startswith(("avc1", "avc3", "h264")):
+        return "h264"
+    if codec.startswith(("hev1", "hvc1", "hevc", "h265")):
+        return "hevc"
+    if codec.startswith(("av01", "av1")):
+        return "av1"
+    if codec.startswith(("vp09", "vp9")):
+        return "vp9"
+    if codec.startswith(("vp08", "vp8")):
+        return "vp8"
+    return codec
+
+
+def native_video_score(item: dict, video_format: str, cap: int) -> int:
+    codec = canonical_video_codec(item.get("vcodec"))
+    if codec not in VIDEO_COPY_CODECS[video_format] or (item.get("fps") or 0) > 30:
+        return 0
+    width, height = item.get("width"), item.get("height")
+    if width and height and (min(width, height) > cap or max(width, height) > (int(cap * 16 / 9) // 2) * 2):
+        return 0
+    # At the same resolution, prefer widely playable native H.264 for MP4/MOV.
+    # Higher-resolution VP9/AV1/HEVC still wins over a lower-resolution source.
+    return 2 if codec == "h264" and video_format in ("mp4", "mov") else 1
+
+
+def select_video_formats(info: dict, resolution: str, available_bytes: int, mute=False, video_format="mp4"):
     """Select native streams ourselves; yt-dlp never gets a merge request."""
     safe = [item for item in info.get("formats", [info]) if item.get("protocol") in NATIVE_PROTOCOLS
             and not item.get("has_drm") and item.get("url")]
     audio = [item for item in safe if item.get("vcodec") == "none" and item.get("acodec") not in (None, "none")]
-    best_audio = max(audio, key=lambda item: (item.get("abr") or item.get("tbr") or 0, item.get("asr") or 0), default=None)
+    audio_codec = "opus" if video_format == "webm" else "aac"
+    best_audio = max(audio, key=lambda item: (item.get("abr") or item.get("tbr") or 0,
+                                            (item.get("acodec") or "").startswith(audio_codec),
+                                            item.get("asr") or 0), default=None)
     videos = [item for item in safe if item.get("vcodec") not in (None, "none")]
     if not videos:
         raise AudioError("Esse link não contém uma faixa de vídeo disponível.", "no_video", 422)
@@ -369,7 +411,8 @@ def select_video_formats(info: dict, resolution: str, available_bytes: int, mute
     for height in caps:
         candidates = [item for item in bounded_videos if video_resolution_edge(item) <= height]
         candidates.sort(key=lambda item: (video_resolution_edge(item), (item.get("width") or 0) * (item.get("height") or 0),
-                                          item.get("vcodec") != "none" and item.get("acodec") == "none",
+                                          native_video_score(item, video_format, cap),
+                                          item.get("acodec") not in (None, "none"),
                                           item.get("tbr") or item.get("vbr") or 0), reverse=True)
         for video in candidates:
             # Muxed formats already include sound. Video-only formats receive
@@ -394,7 +437,17 @@ def select_video_formats(info: dict, resolution: str, available_bytes: int, mute
     raise AudioError("A origem do vídeo ultrapassa 128 MB, mesmo em uma resolução menor. Use um vídeo menor.", "source_too_large", 413)
 
 
-def acquire_video_media(url: str, directory: Path, guard: Guard, video_resolution="source", cookies=None, mute=False):
+def clone_download_cookies(cookiejar):
+    """Each parallel downloader owns its jar, including imported scope policy."""
+    cloned = (RequestCookieJar(cookiejar._policy.scopes) if isinstance(cookiejar, RequestCookieJar)
+              else YoutubeDLCookieJar())
+    for cookie in cookiejar:
+        cloned.set_cookie(copy.copy(cookie))
+    return cloned
+
+
+def acquire_video_media(url: str, directory: Path, guard: Guard, video_resolution="source", cookies=None, mute=False,
+                        video_format="mp4"):
     source_name = source_for(url)
     cookiejar = parse_netscape(cookies, url, direct_media=source_name == "Arquivo direto")
     try:
@@ -411,9 +464,12 @@ def acquire_video_media(url: str, directory: Path, guard: Guard, video_resolutio
             if not info:
                 raise AudioError("Não foi possível identificar esse vídeo.", "no_video", 422)
             details = metadata(info, url, source_name)
-            video, audio = select_video_formats(info, str(video_resolution), guard.maximum_bytes - guard.received, mute)
-            video_path, audio_path = directory / "source-video.media", None
-            for item, path in ((video, video_path), (audio, directory / "source-audio.media")):
+            video, audio = select_video_formats(info, str(video_resolution), guard.maximum_bytes - guard.received, mute,
+                                                video_format=video_format)
+            video_path = directory / "source-video.media"
+            audio_path = directory / "source-audio.media" if audio else None
+            streams = []
+            for item, path in ((video, video_path), (audio, audio_path)):
                 if item is None:
                     continue
                 guard.check()
@@ -422,11 +478,42 @@ def acquire_video_media(url: str, directory: Path, guard: Guard, video_resolutio
                                ("formats", "requested_formats", "requested_downloads", "url", "protocol", "ext", "format_id")}
                 stream_info.update(item)
                 stream_info["http_headers"] = downloader._calc_headers(stream_info)
-                success, _ = downloader.dl(str(path), stream_info)
+                # Resolve both stream destinations before opening either one.
+                # Parallel work still shares Guard's aggregate byte/deadline
+                # accounting and uses the same pinned public network handler.
+                public_url(stream_info["url"])
+                streams.append((stream_info, path))
+            streams = [(stream_info, path, clone_download_cookies(downloader.cookiejar))
+                       for stream_info, path in streams]
+
+            def download_stream(stream):
+                stream_info, path, stream_cookies = stream
+                guard.check()
+                with SafeYoutubeDL(dict(opts), guard, cookiejar=stream_cookies) as stream_downloader:
+                    success, _ = stream_downloader.dl(str(path), stream_info)
                 if not success or not path.is_file() or not path.stat().st_size:
                     raise AudioError("A origem não entregou o vídeo completo. Tente outra resolução ou origem.", "download_failed", 422)
-                if item is audio:
-                    audio_path = path
+                return path
+
+            try:
+                if len(streams) == 1:
+                    download_stream(streams[0])
+                else:
+                    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="onda-track") as pool:
+                        futures = [pool.submit(download_stream, stream) for stream in streams]
+                        try:
+                            for future in as_completed(futures):
+                                future.result()
+                        except Exception as exc:
+                            with guard.byte_lock:
+                                guard.error = guard.error or translate_error(exc, guard)
+                            guard.abort()
+                            for future in futures:
+                                future.cancel()
+                            raise
+            finally:
+                for _, _, stream_cookies in streams:
+                    stream_cookies.clear()
             paths = [video_path] + ([audio_path] if audio_path else [])
             if sum(path.stat().st_size for path in paths) > guard.maximum_bytes:
                 raise AudioError("As faixas de origem do vídeo ultrapassam 128 MB.", "source_too_large", 413)
@@ -439,6 +526,24 @@ def acquire_video_media(url: str, directory: Path, guard: Guard, video_resolutio
 
 def input_command(source: Path):
     return ["-protocol_whitelist", "file,pipe", "-format_whitelist", INPUT_FORMATS, "-i", str(source)]
+
+
+@functools.lru_cache(maxsize=1)
+def video_worker_threads() -> int:
+    """Use available CPU without allocating unbounded UHD frame workers."""
+    try:
+        available = len(os.sched_getaffinity(0))
+    except (AttributeError, OSError):
+        available = os.cpu_count() or 1
+    try:
+        quota, period = Path("/sys/fs/cgroup/cpu.max").read_text().split()
+        if quota != "max" and int(period) > 0:
+            available = min(available, max(1, math.ceil(int(quota) / int(period))))
+    except (OSError, ValueError):
+        pass
+    # Two workers improve cloud encoding without the memory cost of FFmpeg's
+    # host-CPU autodetection, which can exceed the function's actual CPU quota.
+    return max(1, min(2, available))
 
 
 def sanitize_transport_metadata(source: Path, guard: Guard):
@@ -531,7 +636,7 @@ def probe_media(source: Path, guard: Guard):
             "fps": float(fps[1]) if fps else None, "video_index": int(video_stream[1]) if video_stream else 0,
             "video_codec": video.split()[0].rstrip(",") if video else None,
             "audio_codec": audio.split()[0].rstrip(",") if audio else None,
-            "pixel_format": "yuv420p" if re.search(r",\s*yuv420p(?:[,(\s]|$)", video or "") else None,
+            "pixel_format": (match[1] if (match := re.search(r",\s*(yuv420p(?:10le)?)(?:[,(\s]|$)", video or "")) else None),
             "sample_aspect_ratio": (int(aspect[1]), int(aspect[2])) if aspect else None,
             "rotation": float(rotation[1]) if rotation else 0}
 
@@ -654,14 +759,14 @@ def convert_video(source: VideoSources | Path, directory: Path, video_format: st
                "force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1")
     fps = min(inspected["fps"] or 30, 30)
     video_codec, audio_codec, _ = VIDEO_FORMATS[video_format]
-    compatible_video_codec = "vp9" if video_format == "webm" else "h264"
+    compatible_video_codecs = VIDEO_COPY_CODECS[video_format]
     compatible_audio_codec = "opus" if video_format == "webm" else "aac"
     # Copy only streams whose decoded presentation already meets the output
     # contract. Seeking, scaling, rotation and normalization retain the precise
     # encode path; copying would otherwise silently lose the requested changes.
     copy_video = (not start and output_duration is None
-                  and inspected.get("video_codec") == compatible_video_codec
-                  and inspected.get("pixel_format") == "yuv420p"
+                  and inspected.get("video_codec") in compatible_video_codecs
+                  and inspected.get("pixel_format") in ("yuv420p", "yuv420p10le")
                   and inspected.get("fps") is not None and inspected["fps"] <= 30
                   and inspected["width"] % 2 == inspected["height"] % 2 == 0
                   and min(inspected["width"], inspected["height"]) <= cap
@@ -671,19 +776,24 @@ def convert_video(source: VideoSources | Path, directory: Path, video_format: st
     copy_audio = (quality == "source" and not start and output_duration is None
                   and not settings.normalize_audio
                   and audio_inspected.get("audio_codec") == compatible_audio_codec)
-    # Prefer encoding over a copy that is already known to exceed the output
-    # budget. Count all source bytes conservatively, plus newly encoded audio.
+    # Reserve a small container overhead before copying, without forcing a
+    # full UHD encode for a 95–99 MB source that fits the 100 MB output budget.
+    # Count all source bytes conservatively, plus newly encoded audio; the
+    # running conversion still enforces the exact hard output-size limit.
     estimated_output = sources.video.stat().st_size
     if sources.audio and not settings.mute:
         estimated_output += sources.audio.stat().st_size
     if not settings.mute and not copy_audio and inspected["duration"]:
         estimated_output += inspected["duration"] * (192 if quality == "source" else int(quality)) * 1000 / 8
-    if estimated_output > MAX_OUTPUT * .95:
+    if estimated_output > MAX_OUTPUT * .99:
         copy_video = False
     target = directory / f"video.{video_format}"
+    threads = video_worker_threads()
     command = [imageio_ffmpeg.get_ffmpeg_exe(), "-hide_banner", "-loglevel", "warning", "-nostats", "-nostdin", "-y"]
+    command += ["-filter_threads", str(threads), "-threads", str(threads)]
     command += input_command(sources.video)
     if sources.audio and not settings.mute:
+        command += ["-threads", "1"]
         command += input_command(sources.audio)
     # Seek once after every input. Fast input seeking may skip the only TS
     # keyframe and still return success with an audio-only output.
@@ -705,6 +815,8 @@ def convert_video(source: VideoSources | Path, directory: Path, video_format: st
                           else max(.1, inspected["duration"] - start) if inspected["duration"] else None)
     if copy_video:
         command += ["-c:v", "copy"]
+        if inspected.get("video_codec") == "hevc" and video_format in ("mp4", "mov"):
+            command += ["-tag:v", "hvc1"]
     else:
         # Increase the encoding budget for QHD/UHD rather than squeezing 4K
         # into the former 1080p bitrate. Actual output pixels determine the
@@ -717,11 +829,12 @@ def convert_video(source: VideoSources | Path, directory: Path, video_format: st
                                                     - (0 if settings.mute else 320)))
                          if effective_duration else bitrate_ceiling)
         command += ["-vf", filters, "-r", f"{fps:g}", "-c:v", video_codec, "-pix_fmt", "yuv420p",
-                    "-b:v", f"{video_bitrate}k", "-threads", "1"]
+                    "-b:v", f"{video_bitrate}k", "-threads:v", str(threads), "-threads:a", "1"]
         if video_codec == "libx264":
             command += ["-preset", "ultrafast", "-maxrate", f"{video_bitrate}k", "-bufsize", f"{video_bitrate * 2}k"]
         else:
-            command += ["-deadline", "realtime", "-cpu-used", "8", "-row-mt", "1"]
+            command += ["-deadline", "realtime", "-cpu-used", "8", "-row-mt", "1",
+                        "-tile-columns", "1" if threads > 1 else "0"]
     if output_duration is not None:
         command += ["-t", str(output_duration)]
     if video_format in ("mp4", "mov"):
@@ -742,7 +855,7 @@ def prepare_download(url, directory, audio_format, quality, guard, cookies: str 
     try:
         if settings.media_type == "video":
             sources, details = acquire_video_media(url, directory, guard, settings.video_resolution,
-                                                   cookies=cookies, mute=settings.mute)
+                                                   cookies=cookies, mute=settings.mute, video_format=audio_format)
             target = convert_video(sources, directory, audio_format, quality, guard, settings)
             inputs = ([sources.video, sources.audio] if isinstance(sources, VideoSources) else [sources])
             for path in inputs:

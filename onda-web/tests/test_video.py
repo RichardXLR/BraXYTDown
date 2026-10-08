@@ -45,7 +45,7 @@ def video_bytes(tmp_path_factory):
 
 @pytest.fixture
 def video_client(monkeypatch, tmp_path, video_bytes):
-    def local_media(_url, directory, guard, video_resolution="source", cookies=None, mute=False):
+    def local_media(_url, directory, guard, video_resolution="source", cookies=None, mute=False, video_format="mp4"):
         guard.check()
         source = directory / "source.mp4"
         source.write_bytes(video_bytes)
@@ -210,7 +210,7 @@ def test_native_separate_video_audio_downloads_and_merges_only_local_files(monke
     with TestClient(index.app) as client:
         response = video_request(client)
     assert response.status_code == 200, response.text
-    assert requested == ["https://cdn.example.com/video.mp4", "https://cdn.example.com/audio.m4a"]
+    assert sorted(requested) == ["https://cdn.example.com/audio.m4a", "https://cdn.example.com/video.mp4"]
     output = probe_download(response, tmp_path, "mp4")
     assert output["has_audio"]
     assert (output["width"], output["height"]) == (320, 180)
@@ -235,7 +235,27 @@ def test_secondary_stream_cannot_target_private_network(monkeypatch, native_stre
         response = video_request(client)
     assert response.status_code == 400
     assert response.json()["code"] == "unsafe_url"
-    assert requested == ["https://cdn.example.com/video.mp4"]
+    assert requested == []
+
+
+def test_separate_tracks_download_concurrently_without_losing_video_or_audio(monkeypatch, tmp_path, native_streams):
+    import threading
+    from yt_dlp.networking._urllib import UrllibRH
+    requested = mock_native_upstream(monkeypatch, native_streams)
+    original_send = UrllibRH._send
+    both_started = threading.Barrier(2)
+    def simultaneous_send(self, request):
+        # Sequential acquisition would time out here. Both actual native
+        # transfers must start before either response can be returned.
+        both_started.wait(timeout=3)
+        return original_send(self, request)
+    monkeypatch.setattr(UrllibRH, "_send", simultaneous_send)
+    with TestClient(index.app) as client:
+        response = video_request(client)
+    assert response.status_code == 200, response.text
+    assert len(requested) == 2
+    inspected = probe_download(response, tmp_path, "mp4")
+    assert inspected["has_audio"] and (inspected["width"], inspected["height"]) == (320, 180)
 
 
 def test_single_high_resolution_source_can_be_reduced_to_requested_360p(tmp_path):
@@ -291,6 +311,32 @@ def test_uhd_source_falls_back_to_qhd_when_combined_streams_exceed_byte_budget()
     selected, selected_audio = engine.select_video_formats(
         {"duration": 30, "formats": [uhd, qhd, audio]}, "2160", engine.MAX_SOURCE, mute=True)
     assert selected is uhd
+    assert selected_audio is None
+
+
+def test_native_selection_prefers_compatible_codec_without_lowering_resolution():
+    av1 = dict(high_resolution_stream(3840, 2160), vcodec="av01.0.12M.08", tbr=10000)
+    h264 = dict(high_resolution_stream(3840, 2160), vcodec="avc1.640032", tbr=9000)
+    vp9 = dict(high_resolution_stream(3840, 2160), vcodec="vp09.00.51.08", tbr=8000)
+    for container, expected in [("mp4", h264), ("mov", h264), ("webm", av1)]:
+        selected, _ = engine.select_video_formats({"formats": [av1, h264, vp9]}, "2160", engine.MAX_SOURCE,
+                                                  mute=True, video_format=container)
+        assert selected is expected
+    # A lower-resolution H.264 alternative must never displace available 4K.
+    lower_h264 = high_resolution_stream(1920, 1080)
+    selected, _ = engine.select_video_formats({"formats": [lower_h264, av1]}, "2160", engine.MAX_SOURCE,
+                                              mute=True, video_format="mp4")
+    assert selected is av1
+
+
+def test_compatible_muxed_source_avoids_a_second_track_download():
+    separate = high_resolution_stream(3840, 2160)
+    combined = dict(separate, acodec="aac", tbr=10000)
+    audio = {"protocol": "https", "vcodec": "none", "acodec": "aac", "abr": 192,
+             "url": "https://cdn.example.com/audio.m4a"}
+    selected, selected_audio = engine.select_video_formats(
+        {"formats": [separate, combined, audio]}, "2160", engine.MAX_SOURCE, video_format="mp4")
+    assert selected is combined
     assert selected_audio is None
 
 

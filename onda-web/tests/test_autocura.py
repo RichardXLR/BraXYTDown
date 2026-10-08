@@ -781,7 +781,7 @@ def test_release_gate_uses_real_api_editing_and_local_converters(monkeypatch):
 
     public = Path(__file__).resolve().parents[1] / "public"
 
-    def acquire_video(url, directory, guard, video_resolution="source", cookies=None, mute=False):
+    def acquire_video(url, directory, guard, video_resolution="source", cookies=None, mute=False, video_format="mp4"):
         guard.check()
         source = directory / "source.mp4"
         source.write_bytes((public / "canary.mp4").read_bytes())

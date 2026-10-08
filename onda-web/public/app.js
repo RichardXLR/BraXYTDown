@@ -998,6 +998,7 @@
       if (activeController || !['audio', 'video'].includes(type)) return false;
       form.elements.media_type.value = type;
       updateChoices();
+      saveDraft();
       return true;
     },
     get type() { return selectedMediaType(); },

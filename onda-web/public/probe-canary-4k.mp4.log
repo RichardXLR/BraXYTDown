@@ -1,0 +1,19 @@
+Input #0, mov,mp4,m4a,3gp,3g2,mj2, from '/workspace/onda/public/canary-4k.mp4':
+  Metadata:
+    major_brand     : isom
+    minor_version   : 512
+    compatible_brands: isomiso2mp41
+    artist          : ONDA_CANARY_PRIVATE
+    encoder         : Lavf61.1.100
+    comment         : ONDA_CANARY_PRIVATE
+  Duration: 00:00:02.00, start: 0.000000, bitrate: 8690 kb/s
+  Stream #0:0[0x1](und): Video: vp9 (Profile 0) (vp09 / 0x39307076), yuv420p(tv, progressive), 3840x2160, 8616 kb/s, SAR 1:1 DAR 16:9, 10 fps, 10 tbr, 16k tbn (default)
+      Metadata:
+        handler_name    : VideoHandler
+        vendor_id       : [0][0][0][0]
+        encoder         : Lavc61.3.100 libvpx-vp9
+  Stream #0:1[0x2](por): Audio: aac (LC) (mp4a / 0x6134706D), 48000 Hz, mono, fltp, 64 kb/s (default)
+      Metadata:
+        handler_name    : SoundHandler
+        vendor_id       : [0][0][0][0]
+At least one output file must be specified

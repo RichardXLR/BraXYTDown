@@ -167,3 +167,84 @@ def test_single_video_frame_at_pts_zero_is_valid_even_with_zero_progress_time(tm
     assert re.search(r"n:\s*0\s+pts:\s*0\s+pts_time:0\s", timestamps)
     decoded = ffmpeg("-i", target, "-map", "0:v:0", "-pix_fmt", "rgb24", "-f", "rawvideo", "-").stdout
     assert len(decoded) == 32 * 32 * 3
+
+
+@pytest.mark.parametrize("encoder,codec,pixels,extension", [
+    ("libvpx-vp9", "vp9", "yuv420p", "mp4"),
+    ("libvpx-vp9", "vp9", "yuv420p10le", "mp4"),
+    ("libvpx-vp9", "vp9", "yuv420p", "mkv"),
+    ("libx265", "hevc", "yuv420p10le", "mp4"),
+    ("libx265", "hevc", "yuv420p10le", "mov"),
+    ("libx265", "hevc", "yuv420p10le", "mkv"),
+    ("libaom-av1", "av1", "yuv420p", "mp4"),
+    ("libaom-av1", "av1", "yuv420p10le", "mp4"),
+    ("libaom-av1", "av1", "yuv420p", "webm"),
+])
+def test_native_modern_codecs_remux_without_reencoding_or_losing_10bit_samples(tmp_path, encoder, codec, pixels, extension):
+    encoders = ffmpeg("-encoders", text=True).stdout
+    if encoder not in encoders:
+        pytest.skip(f"Bundled FFmpeg does not offer {encoder}")
+    source = tmp_path / "native.mkv"
+    settings = ["-cpu-used", "8", "-row-mt", "1"] if encoder != "libx265" else [
+        "-preset", "ultrafast", "-x265-params", "pools=1:frame-threads=1:log-level=error"]
+    ffmpeg("-y", "-f", "lavfi", "-i", f"testsrc2=size=160x90:rate=10,format={pixels}",
+           "-frames:v", "3", "-c:v", encoder, "-threads", "1", "-pix_fmt", pixels,
+           *settings, "-metadata", "comment=private-native-codec-fixture", source)
+    result = engine.convert_video(source, tmp_path, extension, "source", security.Guard(),
+                                  engine.MediaSettings(media_type="video", mute=True))
+    inspected = engine.probe_media(result, security.Guard())
+    assert inspected["video_codec"] == codec
+    assert inspected["pixel_format"] == pixels
+    assert (inspected["width"], inspected["height"]) == (160, 90)
+    def samples(path):
+        return ffmpeg("-v", "error", "-i", path, "-map", "0:v:0", "-pix_fmt", pixels,
+                      "-f", "hash", "-hash", "sha256", "-").stdout
+    assert samples(source) == samples(result)
+    metadata = ffmpeg("-i", result, "-f", "ffmetadata", "-", text=True)
+    assert "private-native-codec-fixture" not in metadata.stdout + metadata.stderr
+    if codec == "hevc" and extension in ("mp4", "mov"):
+        assert "hvc1" in metadata.stderr
+
+
+def test_parallel_download_cookie_jars_preserve_scopes_and_clear_independently():
+    import urllib.request
+    from api.cookies import parse_netscape
+    jar = parse_netscape("# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t0\tsession\ttest-value\n",
+                         "https://www.youtube.com/watch?v=BaW_jenozKc")
+    first = engine.clone_download_cookies(jar)
+    second = engine.clone_download_cookies(jar)
+    first.clear()
+    assert len(jar) == len(second) == 1
+    for destination, expected in [("https://www.youtube.com/", "session=test-value"),
+                                  ("https://evil.example.com/", None), ("http://www.youtube.com/", None)]:
+        request = urllib.request.Request(destination)
+        second.add_cookie_header(request)
+        assert request.get_header("Cookie") == expected
+    with pytest.raises(RuntimeError):
+        second.save("unused-cookie-file")
+    second.clear()
+    jar.clear()
+
+
+def test_compatible_video_between_95_and_99_percent_of_size_budget_keeps_fast_remux(tagged_video, tmp_path, monkeypatch):
+    monkeypatch.setattr(engine, "MAX_OUTPUT", round(tagged_video.stat().st_size / .97))
+    result = engine.convert_video(tagged_video, tmp_path, "mp4", "source", security.Guard(),
+                                  engine.MediaSettings(media_type="video"))
+    assert result.stat().st_size <= engine.MAX_OUTPUT
+    assert elementary_stream(result, "v") == elementary_stream(tagged_video, "v")
+    assert elementary_stream(result, "a") == elementary_stream(tagged_video, "a")
+
+
+@pytest.mark.parametrize("quota,expected", [("100000 100000", 1), ("200000 100000", 2),
+                                           ("50000 100000", 1), ("max 100000", 2)])
+def test_uhd_workers_respect_cloud_cpu_quota_instead_of_host_cpu_count(monkeypatch, quota, expected):
+    read_text = Path.read_text
+    def cpu_quota(path, *args, **kwargs):
+        return quota if str(path) == "/sys/fs/cgroup/cpu.max" else read_text(path, *args, **kwargs)
+    monkeypatch.setattr(engine.os, "sched_getaffinity", lambda _pid: set(range(64)))
+    monkeypatch.setattr(Path, "read_text", cpu_quota)
+    engine.video_worker_threads.cache_clear()
+    try:
+        assert engine.video_worker_threads() == expected
+    finally:
+        engine.video_worker_threads.cache_clear()
