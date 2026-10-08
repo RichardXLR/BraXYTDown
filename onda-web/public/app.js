@@ -25,7 +25,7 @@
   const LOSSLESS = new Set(['wav', 'flac', 'aiff']);
   const FORMATS = new Set(['mp3', 'm4a', 'wav', 'flac', 'ogg', 'opus', 'aac', 'aiff']);
   const VIDEO_FORMATS = new Set(['mp4', 'webm', 'mkv', 'mov']);
-  const VIDEO_RESOLUTIONS = new Set(['source', '1080', '720', '480', '360']);
+  const VIDEO_RESOLUTIONS = new Set(['source', '2160', '1440', '1080', '720', '480', '360']);
   const QUALITIES = new Set(['128', '192', '256', '320', 'source']);
   const EXAMPLE_URL = new URL('/canary.wav', window.location.origin).href;
   const VIDEO_EXAMPLE_URL = new URL('/canary.mp4', window.location.origin).href;
@@ -320,7 +320,7 @@
     $('quality-chips').hidden = lossless;
     $('lossless-choice').hidden = !lossless;
     $('button-format').textContent = format.toUpperCase();
-    $('quality-note').textContent = video ? 'Até Full HD e 30 fps. A orientação é preservada; fontes menores não são ampliadas.' : lossless
+    $('quality-note').textContent = video ? 'Até 4K (2160p) e 30 fps. A orientação é preservada; fontes menores não são ampliadas.' : lossless
       ? 'Formato sem perda. A conversão não aumenta a qualidade da fonte.'
       : 'O arquivo final depende da qualidade do áudio de origem.';
     if (!video && !lossless) lastQuality = form.elements.quality.value;
@@ -328,7 +328,7 @@
     $('studio-format-count').textContent = video ? '4 formatos de vídeo' : '8 formatos de áudio';
     $('card-mode-title').textContent = video ? 'VÍDEO POR LINK' : 'ÁUDIO POR LINK';
     $('hero-media-word').textContent = video ? 'seu vídeo.' : 'seu som.';
-    $('download-limits').textContent = video ? 'Sem limite por duração · Full HD / 30 fps · até 100 MB por arquivo' : 'Sem limite por duração · até 100 MB por arquivo';
+    $('download-limits').textContent = video ? 'Sem limite por duração · 4K / 30 fps · até 100 MB por arquivo' : 'Sem limite por duração · até 100 MB por arquivo';
     document.body.dataset.mediaType = type;
     updateTools();
     if (currentMediaType !== type) {
@@ -680,7 +680,7 @@
       const date = new Date(entry.timestamp).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
       const type = entry.media_type === 'video' ? 'video' : 'audio';
       const options = entry.options;
-      const qualityLabel = type === 'video' ? options?.video_resolution && options.video_resolution !== 'source' ? `${options.video_resolution}p` : 'Original até Full HD'
+      const qualityLabel = type === 'video' ? options?.video_resolution && options.video_resolution !== 'source' ? `${options.video_resolution}p` : 'Original até 4K'
         : entry.quality === 'source' ? 'Formato sem perda' : `${entry.quality} kbps`;
       const adjustments = [];
       if (options?.trim_start != null || options?.trim_end != null) adjustments.push(`Trecho ${timeForInput(options.trim_start) || 'início'}–${timeForInput(options.trim_end) || 'fim'}`);

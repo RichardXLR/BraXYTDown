@@ -28,6 +28,10 @@ from .security import AudioError, Guard, PublicRH, public_url
 LOGGER = logging.getLogger("onda")
 MAX_OUTPUT = 100 * 1024 * 1024
 MAX_SOURCE = 128 * 1024 * 1024
+VIDEO_RESOLUTIONS = ("source", "360", "480", "720", "1080", "1440", "2160")
+MAX_VIDEO_SHORT_EDGE = 2160
+MAX_VIDEO_LONG_EDGE = 3840
+MAX_VIDEO_PIXELS = MAX_VIDEO_SHORT_EDGE * MAX_VIDEO_LONG_EDGE
 # No media-length cap: size, execution time and decoded dimensions remain
 # bounded by the actual resources available to this stateless function.
 MAX_DURATION = LOSSLESS_DURATION = VIDEO_DURATION = None
@@ -331,6 +335,21 @@ def estimated_size(item: dict, duration: float | None) -> float | None:
     return float(bitrate) * 1000 * duration / 8 if bitrate and duration else None
 
 
+def video_resolution_edge(item: dict) -> int:
+    """Use the short edge so landscape and portrait resolutions agree."""
+    width, height = item.get("width"), item.get("height")
+    return min(width, height) if width and height else height or width or 0
+
+
+def video_dimensions_supported(width: int | None, height: int | None) -> bool:
+    """Bound known dimensions; verify incomplete extractor metadata after download."""
+    if not width or not height:
+        return (width or height or 0) <= MAX_VIDEO_LONG_EDGE
+    return (min(width, height) <= MAX_VIDEO_SHORT_EDGE
+            and max(width, height) <= MAX_VIDEO_LONG_EDGE
+            and width * height <= MAX_VIDEO_PIXELS)
+
+
 def select_video_formats(info: dict, resolution: str, available_bytes: int, mute=False):
     """Select native streams ourselves; yt-dlp never gets a merge request."""
     safe = [item for item in info.get("formats", [info]) if item.get("protocol") in NATIVE_PROTOCOLS
@@ -340,25 +359,16 @@ def select_video_formats(info: dict, resolution: str, available_bytes: int, mute
     videos = [item for item in safe if item.get("vcodec") not in (None, "none")]
     if not videos:
         raise AudioError("Esse link não contém uma faixa de vídeo disponível.", "no_video", 422)
-    def resolution_edge(item):
-        width, height = item.get("width"), item.get("height")
-        return min(width, height) if width and height else height or width or 0
-
-    def fits_dimensions(item):
-        width, height = item.get("width"), item.get("height")
-        return (resolution_edge(item) <= 1080 and
-                (not width or not height or width * height <= 1920 * 1080 and max(width, height) <= 1920))
-
-    cap = 1080 if resolution == "source" else int(resolution)
-    bounded_videos = [item for item in videos if fits_dimensions(item)]
+    cap = MAX_VIDEO_SHORT_EDGE if resolution == "source" else int(resolution)
+    bounded_videos = [item for item in videos if video_dimensions_supported(item.get("width"), item.get("height"))]
     if not bounded_videos:
-        raise AudioError("A origem só oferece vídeo acima de 1080p. Use outro link ou uma origem com resolução menor.", "unavailable_resolution", 422)
+        raise AudioError("A origem só oferece vídeo acima de 2160p (4K UHD). Use uma origem com resolução de até 4K.", "unavailable_resolution", 422)
     # Size estimates reserve a little room for metadata/manifests. When needed,
     # choose a smaller source before spending the shared transfer budget.
-    caps = list(dict.fromkeys([cap] + [level for level in (720, 480, 360) if level < cap]))
+    caps = list(dict.fromkeys([cap] + [level for level in (1440, 1080, 720, 480, 360) if level < cap]))
     for height in caps:
-        candidates = [item for item in bounded_videos if resolution_edge(item) <= height]
-        candidates.sort(key=lambda item: (resolution_edge(item), (item.get("width") or 0) * (item.get("height") or 0),
+        candidates = [item for item in bounded_videos if video_resolution_edge(item) <= height]
+        candidates.sort(key=lambda item: (video_resolution_edge(item), (item.get("width") or 0) * (item.get("height") or 0),
                                           item.get("vcodec") != "none" and item.get("acodec") == "none",
                                           item.get("tbr") or item.get("vbr") or 0), reverse=True)
         for video in candidates:
@@ -371,9 +381,9 @@ def select_video_formats(info: dict, resolution: str, available_bytes: int, mute
             if all(value is not None for value in sizes) and sum(sizes) > available_bytes * .96:
                 continue
             return video, separate_audio
-    # The requested resolution describes the output. A single 720p/1080p
-    # source can still be downloaded safely and reduced to 360p/480p locally.
-    for video in sorted(bounded_videos, key=lambda item: (resolution_edge(item), item.get("tbr") or 0)):
+    # The requested resolution describes the output. A single source up to
+    # 4K UHD can still be downloaded safely and reduced to a smaller size locally.
+    for video in sorted(bounded_videos, key=lambda item: (video_resolution_edge(item), item.get("tbr") or 0)):
         separate_audio = None if mute or video.get("acodec") not in (None, "none") else best_audio
         sizes = [estimated_size(video, info.get("duration"))]
         if separate_audio:
@@ -625,8 +635,8 @@ def convert_video(source: VideoSources | Path, directory: Path, video_format: st
         raise AudioError("Esse arquivo não contém uma faixa de vídeo válida.", "no_video", 422)
     if min(inspected["width"], inspected["height"]) < 2:
         raise AudioError("As dimensões desse vídeo não são suportadas.", "no_video", 422)
-    if inspected["width"] * inspected["height"] > 1920 * 1080 or max(inspected["width"], inspected["height"]) > 1920:
-        raise AudioError("A fonte ultrapassa a resolução de 1080p suportada. Use uma origem com resolução menor.", "unavailable_resolution", 422)
+    if not video_dimensions_supported(inspected["width"], inspected["height"]):
+        raise AudioError("A fonte ultrapassa a resolução de 2160p (4K UHD) suportada. Use uma origem de até 4K.", "unavailable_resolution", 422)
     start, output_duration = validate_trim(settings, inspected["duration"])
     audio_inspected = inspected
     if sources.audio:
@@ -634,7 +644,7 @@ def convert_video(source: VideoSources | Path, directory: Path, video_format: st
         if not audio_inspected["audio"]:
             raise AudioError("A origem não entregou uma faixa de áudio válida.", "no_audio", 422)
         validate_trim(settings, audio_inspected["duration"])
-    cap = 1080 if settings.video_resolution == "source" else int(settings.video_resolution)
+    cap = MAX_VIDEO_SHORT_EDGE if settings.video_resolution == "source" else int(settings.video_resolution)
     # Bounds never increase the source dimensions. H.264 requires even pixels.
     long_edge = (int(cap * 16 / 9) // 2) * 2
     # iw/ih are evaluated after FFmpeg's automatic display-matrix rotation.
@@ -696,8 +706,16 @@ def convert_video(source: VideoSources | Path, directory: Path, video_format: st
     if copy_video:
         command += ["-c:v", "copy"]
     else:
-        video_bitrate = (max(64, min(3500, int(MAX_OUTPUT * .8 * 8 / effective_duration / 1000)
-                                          - (0 if settings.mute else 320))) if effective_duration else 3500)
+        # Increase the encoding budget for QHD/UHD rather than squeezing 4K
+        # into the former 1080p bitrate. Actual output pixels determine the
+        # ceiling; choosing 4K for a smaller source never increases its size.
+        scale = min(1, cap / min(inspected["width"], inspected["height"]),
+                    long_edge / max(inspected["width"], inspected["height"]))
+        output_pixels = inspected["width"] * inspected["height"] * scale * scale
+        bitrate_ceiling = max(3500, round(3500 * output_pixels / (1920 * 1080)))
+        video_bitrate = (max(64, min(bitrate_ceiling, int(MAX_OUTPUT * .8 * 8 / effective_duration / 1000)
+                                                    - (0 if settings.mute else 320)))
+                         if effective_duration else bitrate_ceiling)
         command += ["-vf", filters, "-r", f"{fps:g}", "-c:v", video_codec, "-pix_fmt", "yuv420p",
                     "-b:v", f"{video_bitrate}k", "-threads", "1"]
         if video_codec == "libx264":

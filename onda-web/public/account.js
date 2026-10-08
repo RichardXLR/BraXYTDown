@@ -22,7 +22,7 @@
     accent: ['blue', 'cyan', 'violet'], theme: ['dark', 'light', 'system'], density: ['comfortable', 'compact'],
     media_type: ['audio', 'video'], format: ['mp3', 'm4a', 'wav', 'flac', 'ogg', 'opus', 'aac', 'aiff'],
     quality: ['128', '192', '256', '320'], video_format: ['mp4', 'webm', 'mkv', 'mov'],
-    video_resolution: ['source', '1080', '720', '480', '360'],
+    video_resolution: ['source', '2160', '1440', '1080', '720', '480', '360'],
   });
   const preferencesDefault = Object.freeze({ accent: 'blue', theme: 'dark', density: 'comfortable', motion: true, intro: true });
   const draftDefault = Object.freeze({

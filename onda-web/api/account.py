@@ -70,7 +70,7 @@ class Draft(StrictModel):
     format: Literal["mp3", "m4a", "wav", "flac", "ogg", "opus", "aac", "aiff"] = "mp3"
     quality: Literal["128", "192", "256", "320"] = "320"
     video_format: Literal["mp4", "webm", "mkv", "mov"] = "mp4"
-    video_resolution: Literal["source", "1080", "720", "480", "360"] = "source"
+    video_resolution: Literal["source", "2160", "1440", "1080", "720", "480", "360"] = "source"
     url: str = Field(default="", max_length=4096)
     trim_start: str = Field(default="", max_length=32)
     trim_end: str = Field(default="", max_length=32)
@@ -93,7 +93,7 @@ class Draft(StrictModel):
 
 
 class HistoryOptions(StrictModel):
-    video_resolution: Literal["source", "1080", "720", "480", "360"] = "source"
+    video_resolution: Literal["source", "2160", "1440", "1080", "720", "480", "360"] = "source"
     trim_start: float | None = Field(default=None, ge=0, le=MAX_SAFE_INTEGER, allow_inf_nan=False)
     trim_end: float | None = Field(default=None, gt=0, le=MAX_SAFE_INTEGER, allow_inf_nan=False)
     strip_metadata: bool = True
@@ -300,13 +300,17 @@ class BlobAccountStore:
     def read(self, user_id: str) -> StoredAccount | None:
         path = account_path(user_id)
         url = f"https://{self.credentials.store_id}.private.blob.vercel-storage.com/{path}?cache=0"
-        status, headers, body = blob_http("GET", url, headers={"Authorization": f"Bearer {self.credentials.token}"})
+        # Conditional writes need the validator of the original Blob bytes.
+        # CDN compression can change/ weaken the HTTP ETag even though
+        # requests transparently decodes the JSON. Keep its representation.
+        status, headers, body = blob_http("GET", url, headers={
+            "Authorization": f"Bearer {self.credentials.token}", "Accept-Encoding": "identity"})
         if status == 404:
             return None
         if status != 200:
             blob_error(status, body)
         etag = next((value for key, value in headers.items() if key.lower() == "etag"), "")
-        if not etag or len(etag) > 256 or any(ord(character) < 32 for character in etag):
+        if not etag or etag.startswith("W/") or len(etag) > 256 or any(ord(character) < 32 for character in etag):
             raise unavailable()
         try:
             document = AccountDocument.model_validate(parse_json(body))

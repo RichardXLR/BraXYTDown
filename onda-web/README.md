@@ -35,12 +35,12 @@ Testes anteriores na Vercel confirmaram extração de TikTok e conversão de fon
 Limites de processamento:
 
 - Áudio e vídeo: sem rejeição por duração e sem truncamento automático. Fontes finitas sem duração conhecida também são aceitas, até o fim do arquivo.
-- Vídeo: origem e saída limitadas a Full HD, em horizontal até 1920×1080 e em vertical até 1080×1920, com saída de até 30 fps.
+- Vídeo: origem e saída de até 4K (2160p), em horizontal até 3840×2160 e em vertical até 2160×3840, com saída de até 30 fps. Também é possível escolher 1440p (QHD).
 - Origem: 128 MB agregados entre as faixas. Saída: 100 MB.
 - Prazo de trabalho: 240 segundos; espera do cliente: 280 segundos; Function: 300 segundos.
 - Duas tarefas concorrentes por instância. Fragmentos HLS/DASH podem ser transferidos com até quatro trabalhadores, compartilhando o mesmo orçamento de bytes e cancelamento.
 
-A resolução nunca amplia a fonte. Fontes acima de Full HD são recusadas; extratores podem escolher uma versão menor quando disponível. Faixas separadas são baixadas pelo transporte validado e unidas localmente. FFmpeg recebe somente arquivos locais. Faixas compatíveis são copiadas para o contêiner de saída sem recodificação quando atendem aos ajustes escolhidos, preservando os pacotes e reduzindo o processamento. Cortes precisos, normalização, mudanças de bitrate, rotação, resolução e codecs incompatíveis usam conversão. Áudio sem perda compatível preserva os samples originais; outras conversões sem perda geram estéreo 44,1 kHz/16 bits. Converter uma fonte comprimida não recupera dados perdidos. O limite por instância não substitui um limitador distribuído em instalações com tráfego elevado. A aceitação sem limite por duração não elimina os limites de tamanho e prazo da hospedagem.
+A resolução nunca amplia a fonte. Fontes acima de 4K são recusadas; extratores podem escolher uma versão menor quando disponível. Downloads em 1440p e 2160p precisam de uma fonte nessa resolução e continuam sujeitos aos limites de 128 MB na origem, 100 MB na saída e 240 segundos de processamento; o serviço não promete converter arquivos 4K de qualquer tamanho. Faixas separadas são baixadas pelo transporte validado e unidas localmente. FFmpeg recebe somente arquivos locais. Faixas compatíveis são copiadas para o contêiner de saída sem recodificação quando atendem aos ajustes escolhidos, preservando os pacotes e reduzindo o processamento. Cortes precisos, normalização, mudanças de bitrate, rotação, resolução e codecs incompatíveis usam conversão. Áudio sem perda compatível preserva os samples originais; outras conversões sem perda geram estéreo 44,1 kHz/16 bits. Converter uma fonte comprimida não recupera dados perdidos. O limite por instância não substitui um limitador distribuído em instalações com tráfego elevado. A aceitação sem limite por duração não elimina os limites de tamanho e prazo da hospedagem.
 
 ## Ferramentas de mídia
 
@@ -48,7 +48,7 @@ A resolução nunca amplia a fonte. Fontes acima de Full HD são recusadas; extr
 - **Limpeza de metadados:** ligada por padrão; remove tags pessoais/de autoria, localização, capas/anexos e capítulos. Subtítulos não são incluídos. Campos técnicos gerados pelo contêiner/codificador podem permanecer. Textos e imagens presentes no conteúdo não são alterados.
 - **Normalização:** filtro de volume com alvo de −16 LUFS, em uma passagem, quando solicitado. O resultado depende da fonte.
 - **Vídeo sem áudio:** remove a faixa sonora; fontes silenciosas também são aceitas.
-- **Resolução:** original limitada a Full HD, 1080p, 720p, 480p ou 360p. Em vertical, o lado curto define esses níveis; em horizontal, a altura. Proporção e orientação são preservadas.
+- **Resolução:** original limitada a 4K, 2160p (4K), 1440p (QHD), 1080p, 720p, 480p ou 360p. Em vertical, o lado curto define esses níveis; em horizontal, a altura. Proporção e orientação são preservadas.
 
 MP4, MKV e MOV usam H.264/AAC; WebM usa VP9/Opus. MKV/MOV podem exigir um reprodutor externo ao navegador, mesmo quando o arquivo é válido para salvar.
 

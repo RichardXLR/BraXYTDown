@@ -7,6 +7,7 @@ playable single file. Preview descriptors are deliberately ephemeral.
 from __future__ import annotations
 
 import functools
+import math
 import re
 import urllib.parse
 from pathlib import Path
@@ -180,12 +181,14 @@ def _candidate_formats(info):
         size = item.get("filesize") or item.get("filesize_approx")
         if isinstance(size, (int, float)) and size > engine.MAX_SOURCE:
             continue
-        height = item.get("height") or 0
-        if isinstance(height, (int, float)) and height > 1080:
+        width, height = (int(value) if type(value) in (int, float) and math.isfinite(value) and value > 0 else 0
+                         for value in (item.get("width"), item.get("height")))
+        if not engine.video_dimensions_supported(width, height):
             continue
         # Prefer a muxed video over an audio-only alternative; 720p balances
         # preview quality and bandwidth, without downloading a video to inspect.
-        rank = (media_type == "video", min(height, 720), -abs(height - 720))
+        edge = engine.video_resolution_edge({"width": width, "height": height})
+        rank = (media_type == "video", min(edge, 720), -abs(edge - 720))
         result.append((rank, item, media_type))
     return [(item, kind) for _, item, kind in sorted(result, key=lambda item: item[0], reverse=True)]
 

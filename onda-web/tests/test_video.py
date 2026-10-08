@@ -119,8 +119,9 @@ def test_real_video_conversion_formats_and_cleanup(video_client, tmp_path, exten
     assert all(not path.exists() for path in video_client.created_directories)
 
 
-def test_video_trim_mute_and_resolution_never_upscales(video_client, tmp_path):
-    response = video_request(video_client, video_resolution="720", trim_start=0.4, trim_end=1.2, mute=True)
+@pytest.mark.parametrize("resolution", ["720", "1440", "2160"])
+def test_video_trim_mute_and_resolution_never_upscales(video_client, tmp_path, resolution):
+    response = video_request(video_client, video_resolution=resolution, trim_start=0.4, trim_end=1.2, mute=True)
     assert response.status_code == 200, response.text
     details = probe_download(response, tmp_path, "mp4")
     assert (details["width"], details["height"]) == (320, 180)
@@ -156,7 +157,7 @@ def test_video_normalize_audio_changes_loudness(video_client, tmp_path, video_by
 
 @pytest.mark.parametrize("options", [
     {"format": "mp3"},
-    {"video_resolution": "2160"},
+    {"video_resolution": "4320"},
     {"trim_start": -1},
     {"trim_start": 1.2, "trim_end": 0.4},
     {"trim_start": 0.4, "trim_end": 0.4},
@@ -258,6 +259,102 @@ def test_source_estimate_uses_720p_when_1080p_exceeds_budget():
     fits = dict(common, height=720, filesize=2 * 1024 * 1024)
     selected, _ = engine.select_video_formats({"duration": 30, "formats": [too_big, fits]}, "source", engine.MAX_SOURCE)
     assert selected is fits
+
+
+def high_resolution_stream(width, height, size=1024):
+    return {"protocol": "https", "vcodec": "h264", "acodec": "none",
+            "url": f"https://cdn.example.com/{width}x{height}.mp4", "width": width, "height": height,
+            "filesize": size}
+
+
+@pytest.mark.parametrize("resolution,expected", [("1440", 1440), ("2160", 2160), ("source", 2160)])
+@pytest.mark.parametrize("portrait", [False, True])
+def test_qhd_uhd_native_selection_uses_requested_resolution_and_orientation(resolution, expected, portrait):
+    def stream(width, height):
+        return high_resolution_stream(*(height, width) if portrait else (width, height))
+    items = [stream(1920, 1080), stream(2560, 1440), stream(3840, 2160)]
+    selected, audio = engine.select_video_formats({"duration": .3, "formats": items}, resolution, engine.MAX_SOURCE, mute=True)
+    assert engine.video_resolution_edge(selected) == expected
+    assert audio is None
+
+
+def test_uhd_source_falls_back_to_qhd_when_combined_streams_exceed_byte_budget():
+    uhd = high_resolution_stream(3840, 2160, engine.MAX_SOURCE * .94)
+    qhd = high_resolution_stream(2560, 1440, engine.MAX_SOURCE * .7)
+    audio = {"protocol": "https", "vcodec": "none", "acodec": "aac", "abr": 192,
+             "url": "https://cdn.example.com/audio.m4a", "filesize": engine.MAX_SOURCE * .03}
+    selected, selected_audio = engine.select_video_formats(
+        {"duration": 30, "formats": [uhd, qhd, audio]}, "2160", engine.MAX_SOURCE)
+    assert selected is qhd
+    assert selected_audio is audio
+    # Muting avoids the additional audio download and permits the 4K source.
+    selected, selected_audio = engine.select_video_formats(
+        {"duration": 30, "formats": [uhd, qhd, audio]}, "2160", engine.MAX_SOURCE, mute=True)
+    assert selected is uhd
+    assert selected_audio is None
+
+
+@pytest.mark.parametrize("width,height", [(7680, 4320), (4096, 2160), (2160, 4096), (3840, 3840)])
+def test_stream_dimensions_above_4k_uhd_are_rejected_before_download(width, height):
+    with pytest.raises(security.AudioError) as raised:
+        engine.select_video_formats({"formats": [high_resolution_stream(width, height)]}, "2160", engine.MAX_SOURCE)
+    assert raised.value.code == "unavailable_resolution"
+
+
+@pytest.fixture(scope="module")
+def uhd_sources(tmp_path_factory):
+    directory = tmp_path_factory.mktemp("uhd-fixture")
+    result = {}
+    for orientation, dimensions in [("landscape", "3840x2160"), ("portrait", "2160x3840")]:
+        path = directory / f"{orientation}.mp4"
+        ffmpeg("-y", "-f", "lavfi", "-i", f"color=blue:size={dimensions}:rate=10", "-t", "0.3",
+               "-c:v", "libx264", "-preset", "ultrafast", "-threads", "1", "-pix_fmt", "yuv420p",
+               "-metadata", "comment=private-4k-fixture", path)
+        result[orientation] = path
+    return result
+
+
+@pytest.mark.parametrize("orientation,expected", [("landscape", (3840, 2160)), ("portrait", (2160, 3840))])
+def test_original_uhd_remux_preserves_every_encoded_video_packet_and_strips_metadata(uhd_sources, tmp_path, orientation, expected):
+    source = uhd_sources[orientation]
+    output = engine.convert_video(source, tmp_path, "mp4", "source", security.Guard(),
+                                  engine.MediaSettings(media_type="video", mute=True))
+    inspected = engine.probe_media(output, security.Guard())
+    assert (inspected["width"], inspected["height"]) == expected
+    def packets(path):
+        return subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-v", "error", "-i", str(path), "-map", "0:v:0",
+                               "-c:v", "copy", "-f", "h264", "-"], capture_output=True, timeout=30, check=True).stdout
+    assert packets(source) == packets(output)
+    tags = ffmpeg("-i", output, "-f", "ffmetadata", "-")
+    assert "private-4k-fixture" not in tags.stdout + tags.stderr
+
+
+@pytest.mark.parametrize("orientation,expected", [("landscape", (2560, 1440)), ("portrait", (1440, 2560))])
+def test_4k_can_be_downscaled_to_true_1440p_with_aspect_ratio_preserved(uhd_sources, tmp_path, orientation, expected):
+    source = uhd_sources[orientation]
+    output = engine.convert_video(source, tmp_path, "mp4", 192, security.Guard(),
+                                  engine.MediaSettings(media_type="video", video_resolution="1440", mute=True))
+    inspected = engine.probe_media(output, security.Guard())
+    assert (inspected["width"], inspected["height"]) == expected
+    assert inspected["fps"] == 10
+
+
+@pytest.mark.parametrize("extension", ["mp4", "mkv", "mov", "webm"])
+def test_4k_output_is_supported_by_every_video_container(uhd_sources, tmp_path, extension):
+    output = engine.convert_video(uhd_sources["landscape"], tmp_path, extension, 192, security.Guard(),
+                                  engine.MediaSettings(media_type="video", video_resolution="2160", mute=True))
+    inspected = engine.probe_media(output, security.Guard())
+    assert (inspected["width"], inspected["height"]) == (3840, 2160)
+    assert inspected["video_codec"] == ("vp9" if extension == "webm" else "h264")
+
+
+def test_4k_precise_trim_reencodes_at_2160p(uhd_sources, tmp_path):
+    output = engine.convert_video(uhd_sources["landscape"], tmp_path, "mp4", 192, security.Guard(),
+                                  engine.MediaSettings(media_type="video", video_resolution="2160", mute=True,
+                                                       trim_start=.1, trim_end=.3))
+    inspected = engine.probe_media(output, security.Guard())
+    assert (inspected["width"], inspected["height"]) == (3840, 2160)
+    assert .15 <= inspected["duration"] <= .25
 
 
 def test_metadata_text_cannot_spoof_video_stream_selection(tmp_path, video_bytes):

@@ -221,3 +221,10 @@ def test_cancelled_request_waits_for_worker_exit():
         assert completed.is_set()
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("resolution", ["1440", "2160"])
+def test_download_contract_accepts_high_resolution_video(client, resolution):
+    request = index.DownloadInput(url="https://sample.example.com/video.mp4", media_type="video", video_resolution=resolution)
+    assert request.settings().video_resolution == resolution
+    assert resolution in client.get("/api/health").json()["videoResolutions"]

@@ -396,3 +396,41 @@ def test_http_transport_network_error_is_redacted(monkeypatch):
         account.blob_http("PUT", account.BLOB_API, headers={"Authorization": "Bearer placeholder"})
     assert error.value.status == 503
     assert "provider-token-secret" not in str(error.value)
+
+
+def test_conditional_write_uses_the_original_blob_representation(monkeypatch):
+    original = account.AccountDocument(revision=1)
+    raw = account.encode_document(original)
+    etag = '"original-blob-version"'
+    def negotiated_blob(method, url, *, headers, body=None):
+        if method == "GET":
+            validator = etag if headers.get("Accept-Encoding") == "identity" else 'W/"compressed-blob-version"'
+            return 200, {"ETag": validator}, raw
+        if headers.get("x-if-match") != etag:
+            return 412, {}, b'{"error":{"code":"precondition_failed"}}'
+        return 200, {}, b'{}'
+    monkeypatch.setattr(account, "blob_http", negotiated_blob)
+    store = account.BlobAccountStore(account.BlobCredentials("teststore", "placeholder"))
+    state = original.state.model_copy(update={"sound": True})
+    result = store.save("user_Synthetic", account.AccountWrite(schema=1, base_revision=1, state=state))
+    assert result.revision == 2 and result.state.sound is True
+
+
+def test_weak_blob_validator_is_not_used_for_conditional_overwrites(monkeypatch):
+    raw = account.encode_document(account.AccountDocument(revision=1))
+    monkeypatch.setattr(account, "blob_http", lambda *args, **kwargs: (200, {"etag": 'W/"weak-version"'}, raw))
+    store = account.BlobAccountStore(account.BlobCredentials("teststore", "placeholder"))
+    with pytest.raises(AudioError) as failure:
+        store.read("user_Synthetic")
+    assert failure.value.status == 503
+
+
+@pytest.mark.parametrize("resolution", ["1440", "2160"])
+def test_high_resolution_selection_survives_account_roundtrip(client, state, resolution):
+    state["draft"].update(media_type="video", video_resolution=resolution)
+    state["history"] = [{"url": "https://sample.example.com/4k.mp4", "media_type": "video", "format": "mp4", "quality": "source", "timestamp": 1, "options": {"video_resolution": resolution}}]
+    response = put(client, state)
+    assert response.status_code == 200
+    restored = client.get("/api/account/state", headers={"x-test-user": "user_Alice"}).json()["state"]
+    assert restored["draft"]["video_resolution"] == resolution
+    assert restored["history"][0]["options"]["video_resolution"] == resolution

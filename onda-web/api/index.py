@@ -55,7 +55,7 @@ class LinkInput(BaseModel):
 class DownloadInput(LinkInput):
     format: Literal["mp3", "m4a", "wav", "flac", "ogg", "opus", "aac", "aiff", "mp4", "webm", "mkv", "mov"] = "mp3"
     quality: Literal[128, 192, 256, 320, "source"] = 192
-    video_resolution: Literal["source", "1080", "720", "480", "360"] = "source"
+    video_resolution: Literal["source", "2160", "1440", "1080", "720", "480", "360"] = "source"
     trim_start: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     trim_end: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     strip_metadata: bool = Field(default=True, strict=True)
@@ -123,7 +123,7 @@ async def health():
         deployment_id = None
     return {"ok": True, "formats": list(FORMATS), "maxDuration": MAX_DURATION,
             "videoFormats": list(VIDEO_FORMATS), "maxVideoDuration": VIDEO_DURATION,
-            "videoResolutions": ["source", "1080", "720", "480", "360"],
+            "videoResolutions": ["source", "2160", "1440", "1080", "720", "480", "360"],
             "maxLosslessDuration": LOSSLESS_DURATION, "maxSourceMB": 128, "maxOutputMB": 100,
             "durationLimited": False, "operationTimeoutSeconds": 240,
             "auth": auth_capabilities(),

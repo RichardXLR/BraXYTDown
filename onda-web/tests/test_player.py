@@ -85,7 +85,7 @@ def test_progressive_selection_requires_browser_codecs_and_mixed_video_audio():
     audio = format_item(ext="m4a", vcodec="none", height=None)
     rejected = [format_item(protocol="m3u8_native"), format_item(acodec="none"),
                 format_item(vcodec="av01.0.05M.08"), format_item(has_drm=True),
-                format_item(url="http://cdn.example.com/v.mp4"), format_item(height=2160),
+                format_item(url="http://cdn.example.com/v.mp4"), format_item(height=4320),
                 format_item(filesize=engine.MAX_SOURCE + 1)]
     candidates = player._candidate_formats({"formats": rejected + [audio, accepted]})
     assert candidates == [(accepted, "video"), (audio, "audio")]
@@ -227,3 +227,15 @@ def test_media_candidate_private_dns_is_rejected(monkeypatch):
     with pytest.raises(AudioError) as error:
         player.resolve_player("https://example.com/watch/123", "onda-audio.vercel.app", Guard())
     assert error.value.code == "unsafe_url"
+
+
+@pytest.mark.parametrize("width,height", [(2560,1440),(3840,2160),(1440,2560),(2160,3840)])
+def test_progressive_preview_accepts_qhd_and_uhd_if_they_are_the_only_native_video(width,height):
+    high = format_item(width=width,height=height)
+    assert player._candidate_formats({"formats":[high]}) == [(high,"video")]
+
+
+def test_preview_keeps_bandwidth_efficient_source_when_uhd_is_available():
+    small = format_item(width=1280,height=720)
+    uhd = format_item(width=3840,height=2160)
+    assert player._candidate_formats({"formats":[uhd,small]})[0] == (small,"video")
