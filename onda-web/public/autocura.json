@@ -33,7 +33,7 @@
   "components": "all_pinned_python_dependencies",
   "execution": {
     "repository": "RichardXLR/BraXYTDown",
-    "run_id": "37685124848",
+    "run_id": "37710587722",
     "workflow": "Onda AutoCura 3.0"
   },
   "history": [
@@ -232,13 +232,27 @@
   "message": "Todas as conversões e regressões devem passar. No modo baseline, um bloqueio idêntico do YouTube já presente na versão anterior continua indicado como bloqueado e não impede atualizações dos componentes.",
   "mode": "deployment",
   "name": "AutoCura 3.0",
-  "quarantine": [],
+  "quarantine": [
+    {
+      "created_at": "2026-10-08T01:00:05.516048+00:00",
+      "deployment_id": "dpl_73eoBRtP56wdbiP3tQ5zoFiGpvjA",
+      "reason": "unconfirmed_interrupted_promotion",
+      "versions": {
+        "deno": "2.9.7",
+        "fastapi": "0.142.3",
+        "imageio-ffmpeg": "0.6.0",
+        "publicsuffixlist": "1.0.2.20261007",
+        "uvicorn": "0.54.0",
+        "yt-dlp": "2026.8.19"
+      }
+    }
+  ],
   "schedule": "23 5 * * *",
   "schema": 3,
-  "snapshot_at": "2026-10-07T20:53:20.633485+00:00",
+  "snapshot_at": "2026-10-08T01:00:05.520104+00:00",
   "snapshot_only": true,
-  "state": "blocked",
-  "status": "blocked",
+  "state": "rolled_back",
+  "status": "rolled_back",
   "strategy": "immutable_deployment",
   "versions": {},
   "youtube_policy": "baseline"
