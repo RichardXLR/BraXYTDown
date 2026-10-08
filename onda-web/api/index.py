@@ -98,7 +98,11 @@ class DownloadInput(LinkInput):
 @app.exception_handler(AudioError)
 async def audio_error(_request, exc):
     LOGGER.warning("audio_request_failed code=%s status=%d", exc.code, exc.status)
-    return JSONResponse({"error": exc.message, "code": exc.code}, status_code=exc.status,
+    payload = {"error": exc.message, "code": exc.code}
+    attempts = getattr(exc, "recovery_attempts", None)
+    if isinstance(attempts, int) and 1 <= attempts <= 3:
+        payload["recovery"] = {"attempts": attempts, "exhausted": bool(getattr(exc, "recovery_exhausted", False))}
+    return JSONResponse(payload, status_code=exc.status,
                         headers={"Cache-Control": "no-store"})
 
 
@@ -126,6 +130,8 @@ async def health():
             "videoResolutions": ["source", "2160", "1440", "1080", "720", "480", "360"],
             "maxLosslessDuration": LOSSLESS_DURATION, "maxSourceMB": 128, "maxOutputMB": 100,
             "durationLimited": False, "operationTimeoutSeconds": 240,
+            "downloadRecovery": {"enabled": True, "maxAttempts": 3, "resume": True,
+                                 "nativeAlternatives": True, "requiresCompleteFile": True},
             "auth": auth_capabilities(),
             "deploymentId": deployment_id,
             "jsRuntime": next(iter(runtime_options()), None)}
@@ -162,6 +168,19 @@ def acquire_slot():
         raise AudioError("Estamos processando outras mídias. Aguarde alguns segundos e tente novamente.", "busy", 429)
 
 
+async def acquire_download_slot(request: Request):
+    for attempt in range(1, 4):
+        try:
+            acquire_slot()
+            return attempt > 1
+        except AudioError as exc:
+            if exc.code != "busy" or attempt == 3:
+                raise
+            await asyncio.sleep(.3 if attempt == 1 else .7)
+            if await request.is_disconnected():
+                raise AudioError("Download cancelado.", "cancelled", 499) from exc
+
+
 @app.post("/api/inspect")
 async def inspect_link(body: LinkInput, request: Request):
     acquire_slot()
@@ -185,7 +204,7 @@ def download_headers(title: str, audio_format: str, size: int):
 
 @app.post("/api/download")
 async def download_link(body: DownloadInput, request: Request):
-    acquire_slot()
+    queued = await acquire_download_slot(request)
     try:
         directory = Path(tempfile.mkdtemp(prefix="onda-", dir="/tmp"))
     except OSError as exc:
@@ -207,6 +226,16 @@ async def download_link(body: DownloadInput, request: Request):
         target, details = await run_guarded(request, guard, functools.partial(prepare_download, cookies=body.cookies, settings=body.settings()),
                                            body.url, directory, body.format, body.quality)
         headers = download_headers(details["title"], body.format, target.stat().st_size)
+        recovery = details.get("recovery", {})
+        attempts = recovery.get("attempts", 1)
+        if isinstance(attempts, int) and 1 <= attempts <= 3:
+            headers["X-Recovery-Attempts"] = str(attempts)
+        headers["X-Recovery-Resumed"] = "1" if recovery.get("resumed") is True else "0"
+        headers["X-Recovery-Conversion"] = "1" if recovery.get("conversion_recovered") is True else "0"
+        headers["X-Recovery-Queued"] = "1" if queued else "0"
+        resolution = details.get("output_resolution")
+        if isinstance(resolution, int) and 0 < resolution <= 2160:
+            headers["X-Media-Resolution"] = str(resolution)
 
         async def stream_file():
             try:

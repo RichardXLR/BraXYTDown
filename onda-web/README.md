@@ -52,6 +52,16 @@ A resolução nunca amplia a fonte. Fontes acima de 4K são recusadas; extratore
 
 Quando há recodificação, MP4, MKV e MOV usam H.264/AAC; WebM usa VP9/Opus. O caminho rápido pode preservar outros codecs compatíveis da origem. MKV/MOV podem exigir um reprodutor externo ao navegador, mesmo quando o arquivo é válido para salvar.
 
+## Recuperação automática de downloads
+
+O motor recupera falhas transitórias sem redefinir o prazo de 240 segundos nem o orçamento de 128 MB recebidos. Até três tentativas podem reextrair URLs assinadas expiradas ou selecionar outra faixa nativa do mesmo conteúdo. A seleção prioriza a resolução e a compatibilidade solicitadas; se a fonte disponível for menor, a resposta informa a resolução real. O fallback YouTube usa os clientes padrão e `web_safari` somente depois de uma falha recuperável, conforme o [guia oficial de PO Token](https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide).
+
+Arquivos diretos retomam com `Range` e `If-Range` somente quando ETag forte ou Last-Modified válido, URL, tamanho e intervalo confirmam a mesma representação. Caso a origem devolva um arquivo novo ou ignore a retomada, o parcial é descartado. Os bytes já consumidos continuam no orçamento. Conteúdo HTML, arquivos incompletos e fragmentos ausentes não são enviados como sucesso. Os protocolos continuam passando pelo transporte público validado; FFmpeg recebe apenas arquivos locais.
+
+Se um contêiner rejeitar a cópia de uma faixa compatível, há uma tentativa de conversão com o mesmo arquivo local, sem baixá-lo novamente. Uma ocupação breve dos workers também é retentada antes de iniciar o processamento. A interface informa a recuperação bem-sucedida e mostra a resolução real junto ao botão de salvar. `/api/health` divulga a disponibilidade desse mecanismo.
+
+Isso não garante qualquer download: login exigido pela origem, DRM, conteúdo removido, bloqueios de IP e limites reais permanecem impedimentos. A pesquisa não encontrou uma API pública gratuita universal autorizada: [Cobalt documenta que não há API hospedada pública disponível](https://github.com/imputnet/cobalt/blob/main/api/README.md), e instâncias públicas Piped/Invidious não forneceram streams utilizáveis nos testes. Não foram adicionados proxies públicos, serviços pagos ou envio de cookies para terceiros.
+
 ## Central de Compatibilidade e AutoCura 3.0
 
 A Central mostra as versões reais de yt-dlp, FFmpeg e Deno, extratores e limites. O teste manual permite selecionar qualquer extrator disponível ou mídia direta e inserir um link apropriado. Ele verifica **acesso aos metadados**, sem comprovar download completo, conversão ou autorização de direitos. O provedor escolhido é validado antes de acessar a fonte.

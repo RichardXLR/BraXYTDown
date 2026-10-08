@@ -94,6 +94,24 @@ def native_hls(directory, guard, info, concurrency=None):
         return downloader.dl(str(directory / "received.ts"), info)
 
 
+def test_missing_hls_fragment_is_a_failed_download_instead_of_an_incomplete_success(monkeypatch, tmp_path):
+    from yt_dlp.networking.exceptions import HTTPError
+    guard = Guard()
+    _original, info, _state, _ready = hls_origin(monkeypatch, guard, delay=.002)
+    original_send = UrllibRH._send
+
+    def missing_fragment(handler, request):
+        if request.url.endswith("segment-1.ts"):
+            raise HTTPError(Response(io.BytesIO(b"Not found"), request.url, {}, status=404))
+        return original_send(handler, request)
+
+    monkeypatch.setattr(UrllibRH, "_send", missing_fragment)
+    with pytest.raises(AudioError):
+        native_hls(tmp_path, guard, info)
+    assert not (tmp_path / "received.ts").exists()
+    guard.close_sockets()
+
+
 def test_parallel_native_hls_preserves_bytes_and_aggregate_budget(monkeypatch, tmp_path):
     timings = {}
     expected = None
@@ -196,7 +214,7 @@ def test_failed_parallel_hls_releases_api_slot_and_temporary_files(monkeypatch, 
         return str(directory)
 
     def acquire(_url, directory, guard, *_args, **_kwargs):
-        guard.maximum_bytes = SOURCE.stat().st_size // 2
+        (guard.parent if hasattr(guard, "parent") else guard).maximum_bytes = SOURCE.stat().st_size // 2
         _expected, info, _state, _ready = hls_origin(monkeypatch, guard, delay=.005)
         native_hls(directory, guard, info)
         pytest.fail("The combined native fragments must exceed the transfer budget")

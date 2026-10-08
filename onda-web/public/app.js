@@ -548,7 +548,7 @@
     const quality = selectedQuality();
     releaseFile();
     const controller = startOperation('download');
-    showStatus('loading', `Preparando seu ${mediaLabel(type)}`, 'Acessando a fonte e convertendo o arquivo. Esse tempo depende do conteúdo e dos ajustes.');
+    showStatus('loading', `Preparando seu ${mediaLabel(type)}`, 'Verificando a fonte e recuperando falhas temporárias automaticamente. O tempo depende do conteúdo e dos ajustes.');
     progressTrack.hidden = false;
     progressTrack.classList.add('indeterminate');
     progressFill.style.width = '0%';
@@ -604,8 +604,14 @@
       saveButton.href = objectURL;
       saveButton.download = filename;
       saveButton.hidden = false;
-      showStatus('success', `Seu ${mediaLabel(type)} está pronto`, `${format.toUpperCase()} · ${formatBytes(blob.size)}. Clique em “Salvar arquivo” para baixar no seu dispositivo.`);
-      $('save-file-detail').textContent = `${format.toUpperCase()} · ${formatBytes(blob.size)}`;
+      const attempts = Number(response.headers.get('X-Recovery-Attempts') || 1);
+      const recovered = (Number.isInteger(attempts) && attempts > 1 && attempts <= 3)
+        || response.headers.get('X-Recovery-Resumed') === '1' || response.headers.get('X-Recovery-Conversion') === '1'
+        || response.headers.get('X-Recovery-Queued') === '1';
+      const resolution = Number(response.headers.get('X-Media-Resolution'));
+      const outputDetail = `${format.toUpperCase()}${type === 'video' && resolution > 0 && resolution <= 2160 ? ` · ${resolution}p` : ''} · ${formatBytes(blob.size)}`;
+      showStatus('success', `Seu ${mediaLabel(type)} está pronto`, `${recovered ? 'Recuperado automaticamente. ' : ''}${outputDetail}. Clique em “Salvar arquivo” para baixar no seu dispositivo.`);
+      $('save-file-detail').textContent = outputDetail;
       saveOpen.hidden = false;
       saveDialog.showModal();
       saveButton.focus({ preventScroll: true });
