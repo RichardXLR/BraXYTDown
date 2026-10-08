@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#071225" />
+  <meta name="theme-color" content="#050d1b" />
   <meta property="og:image" content="/assets/onda-logo.webp" />
   <meta name="description" content="Seu estúdio de áudio e vídeo. Converta links públicos, escolha formatos e retome suas preferências com sua conta Onda." />
   <title>Onda — áudio e vídeo.</title>
@@ -14,6 +14,9 @@
   <link rel="stylesheet" href="/experience.css" />
   <link rel="stylesheet" href="/account.css" />
   <link rel="stylesheet" href="/save.css" />
+  <link rel="preload" href="/assets/fonts/manrope-latin-variable.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="/atelier.css" />
+  <link rel="stylesheet" href="/identity.css" />
   <script src="/clerk-portuguese.js" defer></script>
   <script src="/account.js" defer></script>
 </head>
@@ -130,10 +133,10 @@
                 <label class="choice selected"><input type="radio" name="video_resolution" value="source" checked /><span>Original<small>até 4K</small></span></label>
                 <label class="choice"><input type="radio" name="video_resolution" value="2160" /><span>2160p<small>4K</small></span></label>
                 <label class="choice"><input type="radio" name="video_resolution" value="1440" /><span>1440p<small>QHD</small></span></label>
-                <label class="choice"><input type="radio" name="video_resolution" value="1080" /><span>1080<small>p</small></span></label>
-                <label class="choice"><input type="radio" name="video_resolution" value="720" /><span>720<small>p</small></span></label>
-                <label class="choice"><input type="radio" name="video_resolution" value="480" /><span>480<small>p</small></span></label>
-                <label class="choice"><input type="radio" name="video_resolution" value="360" /><span>360<small>p</small></span></label>
+                <label class="choice"><input type="radio" name="video_resolution" value="1080" /><span>1080p<small>Full HD</small></span></label>
+                <label class="choice"><input type="radio" name="video_resolution" value="720" /><span>720p<small>HD</small></span></label>
+                <label class="choice"><input type="radio" name="video_resolution" value="480" /><span>480p<small>SD</small></span></label>
+                <label class="choice"><input type="radio" name="video_resolution" value="360" /><span>360p<small>Leve</small></span></label>
               </div></fieldset>
             </div>
             <details class="media-tools" id="media-tools">

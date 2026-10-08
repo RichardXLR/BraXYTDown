@@ -54,3 +54,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+Manrope variable font, self-hosted Latin subset
+Source: https://github.com/google/fonts/tree/main/ofl/manrope
+License: SIL Open Font License 1.1 (public/assets/fonts/OFL-Manrope.txt)

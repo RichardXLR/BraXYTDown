@@ -350,8 +350,8 @@
     document.body.dataset.account = 'error';
   }
   const appearance = {
-    variables: { colorPrimary: '#75c7ff', colorBackground: '#102039', colorText: '#eef7ff', colorTextSecondary: '#b3c7dd', colorInputBackground: '#09182c', colorInputText: '#eef7ff', colorNeutral: '#c9def2', colorDanger: '#ffb4ae', borderRadius: '0.75rem', fontFamily: 'Inter, system-ui, sans-serif' },
-    elements: { rootBox: 'onda-clerk-root', cardBox: 'onda-clerk-card-box', card: 'onda-clerk-card', userButtonPopoverCard: 'onda-clerk-popover', userButtonAvatarBox: 'onda-account-avatar' },
+    variables: { colorPrimary: '#7cbcff', colorBackground: '#0c1c32', colorText: '#f2f7ff', colorTextSecondary: '#b3c7dd', colorInputBackground: '#081426', colorInputText: '#f2f7ff', colorNeutral: '#c9def2', colorDanger: '#ffb4ae', borderRadius: '1rem', fontFamily: 'Manrope, system-ui, sans-serif' },
+    elements: { rootBox: 'onda-clerk-root', cardBox: 'onda-clerk-card-box', card: 'onda-clerk-card', userButtonPopoverCard: 'onda-clerk-popover', userButtonAvatarBox: 'onda-account-avatar', formFieldInput: 'onda-clerk-input', formButtonPrimary: 'onda-clerk-primary', socialButtonsIconButton: 'onda-clerk-social', socialButtonsBlockButton: 'onda-clerk-social', socialButtonsProviderIcon: 'onda-clerk-provider-icon' },
   };
   function unmountAuth() {
     if (!clerkLoaded) return;

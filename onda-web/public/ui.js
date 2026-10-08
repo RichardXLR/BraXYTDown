@@ -41,7 +41,7 @@
     Object.assign(document.body.dataset, { accent: preferences.accent, theme, density: preferences.density, motion: motionAllowed() ? 'on' : 'off' });
     document.documentElement.style.colorScheme = theme;
     const themeColor = document.querySelector('meta[name="theme-color"]');
-    if (themeColor) themeColor.content = theme === 'light' ? '#f2f7fc' : '#071225';
+    if (themeColor) themeColor.content = theme === 'light' ? '#f4f7fc' : '#050d1b';
     for (const [name, control] of Object.entries(preferenceControls)) {
       if (!control) continue;
       if (control.type === 'checkbox') control.checked = preferences[name];
