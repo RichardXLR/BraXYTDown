@@ -832,14 +832,18 @@ class DeploymentChecks:
         # a claim that YouTube extraction worked or that the block was removed.
         required = [check for check in checks if check["name"] not in accepted]
         result = "passed" if all(check["status"] == "passed" for check in required) else "failed" if any(check["status"] == "failed" for check in required) else "blocked"
+        youtube_required = youtube_names | ({"authorized_youtube_audio"} if self.youtube_audio_canary_url else set())
+        actual_youtube = {check["name"]: check for check in checks if check["name"] in youtube_required}
+        youtube_complete = bool(youtube_names) and youtube_required <= actual_youtube.keys()
+        youtube_verified = youtube_complete and all(check["status"] == "passed" for check in actual_youtube.values())
         return {"status": result, "checked_at": now(), "checks": checks,
                 "release_gate": {"status": result, "youtube_policy": self.youtube_policy,
                                  "accepted_existing_blocks": accepted,
                                  "baseline_deployment_id": (self.platform_baseline or {}).get("deployment_id"),
-                                 "youtube_verified": bool(youtube_names) and all(check["status"] == "passed" for check in checks if check["name"] in youtube_names or check["name"] == "authorized_youtube_audio")},
+                                 "youtube_verified": youtube_verified},
                 "platform_baseline": self.platform_baseline,
                 "coverage": {"youtube": "metadata_and_audio" if self.youtube_audio_canary_url else "metadata_only",
-                             "youtube_status": "not_tested" if not youtube_names else "passed" if all(check["status"] == "passed" for check in checks if check["name"] in youtube_names or check["name"] == "authorized_youtube_audio") else "blocked" if accepted else result,
+                             "youtube_status": "not_tested" if not youtube_complete else "passed" if youtube_verified else "blocked" if accepted else result,
                              "audio_conversion": "project_owned_tone", "video_conversion": "project_owned_clip"}}
 
 
@@ -924,7 +928,31 @@ class Vercel:
         current = self.current()
         if not current or current["id"] != deployment["id"]:
             raise CureError("production_mapping_not_confirmed")
-        return {**current, "url": "https://" + self.production_alias}
+        # The alias API can confirm a new mapping before all edge locations
+        # serve it. Wait for the application itself to identify the immutable
+        # candidate before running the full authenticated release gate.
+        deadline = time.monotonic() + 90
+        headers = {"Cache-Control": "no-cache", "Pragma": "no-cache"}
+        if bypass := os.environ.get("VERCEL_AUTOMATION_BYPASS_SECRET"):
+            headers["x-vercel-protection-bypass"] = bypass
+        while time.monotonic() < deadline:
+            url = "https://" + self.production_alias + "/api/health?" + urllib.parse.urlencode({
+                "autocura_deployment": deployment["id"], "nonce": time.monotonic_ns(),
+            })
+            try:
+                health = self.http.json(url, headers=headers,
+                                        timeout=min(10, max(1, deadline - time.monotonic())))
+                if (isinstance(health, dict) and health.get("ok") is True
+                        and health.get("deploymentId") == deployment["id"]):
+                    return {**current, "url": "https://" + self.production_alias}
+            except CureError:
+                # A transient response during propagation must not bypass
+                # identity verification or weaken the subsequent checks.
+                pass
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                time.sleep(min(2, remaining))
+        raise CureError("production_runtime_identity_not_confirmed")
 
     def wait_current(self, expected_id):
         deadline = time.monotonic() + 90
@@ -1118,8 +1146,9 @@ class AutoCura:
                     self.state.setdefault("history", []).append({"event": "promoted", "at": now(), "versions": versions, "deployment_id": candidate["id"]})
                     self.save(durable=True, include_requirements=True)
                     committed = True
-                except Exception:
+                except Exception as exc:
                     # Keep the durable pending journal if rollback itself fails.
+                    self.state["last_error"] = str(exc) if isinstance(exc, CureError) else "post_promotion_failed"
                     self.provider.rollback(previous)
                     if self.state.get("last_check", {}).get("status") == "failed":
                         self.quarantine(versions, "post_promotion_compatibility_failed", candidate)
@@ -1200,7 +1229,9 @@ def main():
         else:
             result = manager.test()
         print(json.dumps({"status": result["status"], "updated_at": result.get("updated_at")}, ensure_ascii=False))
-        return 0 if result["status"] in {"passed", "rolled_back"} else 1
+        successful = result["status"] == "passed" or (
+            arguments.command == "rollback" and result["status"] == "rolled_back")
+        return 0 if successful else 1
     except CureError as exc:
         print(json.dumps({"status": "disabled" if "not_configured" in str(exc) else "failed", "code": str(exc)}))
         return 1

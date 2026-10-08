@@ -46,6 +46,7 @@
   let clerkUnsubscribe = null;
   let authGeneration = 0;
   let changeSequence = 0;
+  let historyReplacement = null;
   let saveTimer = null;
   let maximumWaitTimer = null;
   let retryTimer = null;
@@ -115,12 +116,13 @@
       if (!raw || new TextEncoder().encode(raw).length > 40000) return null;
       const value = JSON.parse(raw);
       const snapshot = validatedSnapshot(value);
-      return { ...snapshot, pending: Array.isArray(value.pending) ? value.pending.filter((path) => paths.has(path)) : [] };
+      const pending = Array.isArray(value.pending) ? value.pending.filter((path) => paths.has(path)) : [];
+      return { ...snapshot, pending, history_reset: value.history_reset === true && pending.includes('history') };
     } catch { return null; }
   }
   function saveCache() {
     if (!userId || !accountReady) return;
-    try { localStorage.setItem(cacheKey(), JSON.stringify({ schema: 1, revision, state, pending: [...dirty.keys()] })); } catch { /* Cloud synchronization still works when device storage is unavailable. */ }
+    try { localStorage.setItem(cacheKey(), JSON.stringify({ schema: 1, revision, state, pending: [...dirty.keys()], history_reset: historyReplacement !== null && dirty.has('history') })); } catch { /* Cloud synchronization still works when device storage is unavailable. */ }
   }
   function getPath(source, path) { return path.split('.').reduce((value, name) => value[name], source); }
   function setPath(target, path, value) {
@@ -128,9 +130,27 @@
     if (parts.length === 1) target[parts[0]] = copy(value);
     else target[parts[0]][parts[1]] = copy(value);
   }
+  function mergeHistory(remote, local) {
+    // A blank local history is an explicit removal, not an empty contribution.
+    if (local.length === 0) return [];
+    const seen = new Set();
+    const entries = [...local, ...remote].sort((a, b) => b.timestamp - a.timestamp);
+    return entries.filter((entry) => {
+      const options = entry.options || {};
+      const identity = JSON.stringify([entry.url, entry.media_type, entry.format, entry.quality,
+        options.video_resolution ?? 'source', options.trim_start ?? null, options.trim_end ?? null,
+        options.strip_metadata !== false, options.normalize_audio === true, options.mute === true]);
+      if (seen.has(identity)) return false;
+      seen.add(identity);
+      return true;
+    }).slice(0, 5).map(copy);
+  }
   function mergePending(remote, local) {
     const merged = copy(remote);
-    for (const path of dirty.keys()) setPath(merged, path, getPath(local, path));
+    for (const path of dirty.keys()) {
+      const value = path === 'history' && historyReplacement === null ? mergeHistory(remote.history, local.history) : getPath(local, path);
+      setPath(merged, path, value);
+    }
     return merged;
   }
   function announceState() {
@@ -175,6 +195,7 @@
     for (const path of changed) {
       if (JSON.stringify(getPath(state, path)) === JSON.stringify(getPath(candidate, path))) continue;
       dirty.set(path, ++changeSequence);
+      if (path === 'history' && candidate.history.length === 0) historyReplacement = changeSequence;
       hasChanges = true;
     }
     if (!hasChanges) return;
@@ -275,6 +296,8 @@
           if (!response.ok) { await response.body?.cancel(); throw new Error('A sincronização ficou pendente.'); }
           const saved = validatedSnapshot(await response.json());
           if (generation !== authGeneration) return false;
+          // An older in-flight write cannot acknowledge a more recent clear.
+          if (historyReplacement !== null && sentChanges.get('history') >= historyReplacement) historyReplacement = null;
           for (const [path, version] of sentChanges) if (dirty.get(path) === version) dirty.delete(path);
           revision = saved.revision;
           state = mergePending(saved.state, state);
@@ -364,7 +387,7 @@
   function resetAccount() {
     cancelTimers(); abortRequests(); accountReady = false;
     try { if (cacheKey()) localStorage.removeItem(cacheKey()); } catch { /* Active state is still cleared from memory. */ }
-    state = defaults(); revision = 0; dirty.clear(); inFlight = null;
+    state = defaults(); revision = 0; dirty.clear(); historyReplacement = null; inFlight = null;
     dispatchEvent(new CustomEvent('onda:auth', { detail: { signedIn: false } }));
     workspace.hidden = true; workspace.inert = true; gate.hidden = false;
     document.body.removeAttribute('data-theme'); document.body.removeAttribute('data-accent');
@@ -382,6 +405,7 @@
     const cache = readCache();
     state = cache?.state || defaults(); revision = cache?.revision || 0; dirty.clear();
     for (const path of cache?.pending || []) dirty.set(path, ++changeSequence);
+    historyReplacement = cache?.history_reset ? dirty.get('history') : null;
     try {
       try {
         const remote = await readRemote();
@@ -494,6 +518,11 @@
     const local = state;
     revision = other.revision;
     state = mergePending(other.state, local);
+    if (other.history_reset && historyReplacement === null) {
+      state.history = copy(other.state.history);
+      historyReplacement = ++changeSequence;
+      dirty.set('history', historyReplacement);
+    }
     for (const path of other.pending) if (!dirty.has(path)) dirty.set(path, ++changeSequence);
     announceState();
     if (dirty.size) queueSave(); else status('saved');

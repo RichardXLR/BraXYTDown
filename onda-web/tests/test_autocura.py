@@ -230,6 +230,39 @@ def test_after_promotion_checks_use_the_actual_public_domain(factory):
     assert seen == [NEW["url"], "https://onda-audio.vercel.app"]
 
 
+@pytest.mark.parametrize('failure,expected', [
+    (CureError('production_runtime_identity_not_confirmed'), 'production_runtime_identity_not_confirmed'),
+    (RuntimeError('secret-request-body-must-not-be-recorded'), 'post_promotion_failed'),
+])
+def test_failed_runtime_readiness_persists_safe_reason_and_recovers_previous_release(factory, failure, expected):
+    manager, provider, _, records = factory()
+
+    def not_ready(_deployment):
+        raise failure
+
+    provider.production_view = not_ready
+    state = manager.release()
+    assert state['status'] == 'rolled_back' and state['last_error'] == expected
+    assert provider.active == OLD and 'pending' not in state
+    assert records[-1]['last_error'] == expected
+    assert 'secret-request-body-must-not-be-recorded' not in json.dumps(records)
+
+
+@pytest.mark.parametrize('command,expected_exit', [('release', 1), ('rollback', 0)])
+def test_cli_reports_failed_release_as_failure_after_durable_recovery_but_manual_rollback_as_success(factory, monkeypatch, capsys, command, expected_exit):
+    from scripts import autocura
+    manager, provider, _, records = factory(('passed', 'failed') if command == 'release' else ('passed', 'passed'))
+    if command == 'rollback':
+        manager.release()
+    monkeypatch.setattr('sys.argv', ['autocura', command, '--root', str(manager.root)])
+    monkeypatch.setattr(autocura, 'Vercel', lambda root: provider)
+    monkeypatch.setattr(autocura, 'RepositoryCheckpoint', lambda root: manager.checkpoint)
+    monkeypatch.setattr(autocura, 'AutoCura', lambda *args, **kwargs: manager)
+    assert autocura.main() == expected_exit
+    assert records[-1]['status'] == 'rolled_back' and provider.active == OLD
+    assert json.loads(capsys.readouterr().out)['status'] == 'rolled_back'
+
+
 def test_failure_to_rollback_keeps_journal_for_next_run(factory):
     manager, provider, _, _ = factory(("passed", "failed"))
 
@@ -938,6 +971,59 @@ def test_production_view_refuses_a_stale_alias(tmp_path, monkeypatch):
         provider.production_view(NEW)
 
 
+def production_readiness_provider(tmp_path, monkeypatch, responses):
+    monkeypatch.setenv('VERCEL_TOKEN', 'fake')
+    monkeypatch.setenv('VERCEL_PROJECT_ID', 'prj_test')
+    monkeypatch.setenv('VERCEL_ORG_ID', 'team_test')
+    monkeypatch.delenv('VERCEL_AUTOMATION_BYPASS_SECRET', raising=False)
+    clock, calls = [0.0], []
+    monkeypatch.setattr('scripts.autocura.time.monotonic', lambda: clock[0])
+    monkeypatch.setattr('scripts.autocura.time.monotonic_ns', lambda: int(clock[0] * 1_000_000_000))
+    monkeypatch.setattr('scripts.autocura.time.sleep', lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+
+    class Edges:
+        def json(self, url, **options):
+            calls.append((url, options))
+            result = responses[min(len(calls) - 1, len(responses) - 1)]
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+    provider = Vercel(tmp_path, Edges())
+    monkeypatch.setattr(provider, 'current', lambda: dict(NEW))
+    return provider, calls, clock
+
+
+def test_production_view_waits_for_edge_to_serve_the_candidate_without_sending_clerk_credentials(tmp_path, monkeypatch):
+    provider, calls, clock = production_readiness_provider(tmp_path, monkeypatch, [
+        {'ok': True},  # Older release had no immutable identity.
+        {'ok': True, 'deploymentId': OLD['id']},
+        CureError('network_unavailable'),
+        {'ok': True, 'deploymentId': NEW['id']},
+    ])
+    assert provider.production_view(NEW) == {**NEW, 'url': 'https://onda-audio.vercel.app'}
+    assert len(calls) == 4 and clock[0] == 6
+    assert len({url for url, _ in calls}) == len(calls)
+    for url, options in calls:
+        parsed = urllib.parse.urlsplit(url)
+        assert parsed.hostname == 'onda-audio.vercel.app' and parsed.path == '/api/health'
+        assert urllib.parse.parse_qs(parsed.query)['autocura_deployment'] == [NEW['id']]
+        assert options['headers'] == {'Cache-Control': 'no-cache', 'Pragma': 'no-cache'}
+        assert 0 < options['timeout'] <= 10
+
+
+@pytest.mark.parametrize('response', [
+    {'ok': True, 'deploymentId': OLD['id']},
+    {'ok': False, 'deploymentId': NEW['id']},
+    CureError('network_unavailable'),
+])
+def test_production_view_never_accepts_stale_or_failed_runtime_and_has_a_bounded_deadline(tmp_path, monkeypatch, response):
+    provider, calls, clock = production_readiness_provider(tmp_path, monkeypatch, [response])
+    with pytest.raises(CureError, match='production_runtime_identity_not_confirmed'):
+        provider.production_view(NEW)
+    assert clock[0] == 90 and len(calls) == 45
+
+
 @pytest.mark.parametrize('operation,target', [('promote', NEW), ('rollback', OLD)])
 @pytest.mark.parametrize('already_mapped', [True, False])
 @pytest.mark.parametrize('status', [409, 422])
@@ -1223,6 +1309,8 @@ def test_machine_release_cannot_remove_login_requirement_or_allow_unauthenticate
     expected = "runtime_authentication_missing" if fault == "auth_signal_missing" else "runtime_anonymous_download_gate_failed"
     assert result["checks"][-1]["code"] == expected
     assert credentials.calls == 0
+    assert result['coverage']['youtube_status'] == 'not_tested'
+    assert result['release_gate']['youtube_verified'] is False
 
 
 def test_machine_token_is_not_created_or_sent_to_an_unverified_vercel_project():

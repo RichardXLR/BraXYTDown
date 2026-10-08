@@ -118,12 +118,16 @@ async def default_headers(request, call_next):
 
 @app.get("/api/health")
 async def health():
+    deployment_id = os.environ.get("VERCEL_DEPLOYMENT_ID", "")
+    if not re.fullmatch(r"dpl_[A-Za-z0-9]{1,100}", deployment_id):
+        deployment_id = None
     return {"ok": True, "formats": list(FORMATS), "maxDuration": MAX_DURATION,
             "videoFormats": list(VIDEO_FORMATS), "maxVideoDuration": VIDEO_DURATION,
             "videoResolutions": ["source", "1080", "720", "480", "360"],
             "maxLosslessDuration": LOSSLESS_DURATION, "maxSourceMB": 128, "maxOutputMB": 100,
             "durationLimited": False, "operationTimeoutSeconds": 240,
             "auth": auth_capabilities(),
+            "deploymentId": deployment_id,
             "jsRuntime": next(iter(runtime_options()), None)}
 
 

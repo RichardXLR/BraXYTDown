@@ -68,6 +68,19 @@ def test_health_and_inspect(client):
     assert response.headers["cache-control"] == "no-store"
 
 
+@pytest.mark.parametrize('deployment_id,expected', [
+    ('dpl_ImmutableCandidate123', 'dpl_ImmutableCandidate123'),
+    ('not-a-deployment', None),
+    ('', None),
+])
+def test_health_identifies_only_the_platform_deployment_not_request_values(client, monkeypatch, deployment_id, expected):
+    monkeypatch.setenv('VERCEL_DEPLOYMENT_ID', deployment_id)
+    response = client.get('/api/health?deploymentId=dpl_RequestSpoof',
+                          headers={'x-vercel-deployment-id': 'dpl_RequestSpoof'})
+    assert response.json()['deploymentId'] == expected
+    assert response.headers['cache-control'] == 'no-store'
+
+
 @pytest.mark.parametrize("audio_format,signature", [
     ("mp3", b"ID3"), ("m4a", b"ftyp"), ("wav", b"RIFF"), ("flac", b"fLaC"),
     ("ogg", b"OggS"), ("opus", b"OggS"), ("aac", b"\xff"), ("aiff", b"FORM"),
