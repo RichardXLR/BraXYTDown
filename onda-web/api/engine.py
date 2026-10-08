@@ -174,8 +174,8 @@ class SafeYoutubeDL(yt_dlp.YoutubeDL):
             # isolated attempt. Direct links use our validated If-Range path.
             params = self.params
             self.params = {**params, "continuedl": False, "http_chunk_size": 0, "retries": 0}
-            info = {**info, "downloader_options": {**info.get("downloader_options", {}), "http_chunk_size": 0}}
             try:
+                info = {**info, "downloader_options": {**(info.get("downloader_options") or {}), "http_chunk_size": 0}}
                 return super().dl(name, info, subtitle=subtitle, test=test)
             finally:
                 self.params = params
@@ -220,9 +220,11 @@ def options(guard: Guard, directory: Path | None = None):
         "quiet": True, "no_warnings": True, "logger": QuietLogger(),
         "noplaylist": True, "extract_flat": False, "skip_download": False,
         "cachedir": False, "proxy": "", "socket_timeout": 8,
-        "retries": 2, "fragment_retries": 2, "extractor_retries": 1,
-        "continuedl": True, "skip_unavailable_fragments": False,
-        "concurrent_fragment_downloads": 4, "http_chunk_size": 10 * 1024 * 1024,
+        # FragmentFD instantiates its own HttpFD, so these safe defaults must
+        # also cover HLS/DASH fragments. Fragment-level retries start afresh.
+        "retries": 0, "fragment_retries": 2, "extractor_retries": 1,
+        "continuedl": False, "skip_unavailable_fragments": False,
+        "concurrent_fragment_downloads": 4, "http_chunk_size": 0,
         "max_filesize": guard.maximum_bytes,
         "progress_hooks": [progress], "hls_prefer_native": True,
         "fixup": "never", "writethumbnail": False, "writeinfojson": False,

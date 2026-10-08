@@ -112,6 +112,54 @@ def test_missing_hls_fragment_is_a_failed_download_instead_of_an_incomplete_succ
     guard.close_sockets()
 
 
+def test_interrupted_hls_fragment_restarts_without_appending_a_changed_representation(monkeypatch, tmp_path):
+    guard = Guard()
+    original, info, _state, _ready = hls_origin(monkeypatch, guard, delay=.002)
+    original_send = UrllibRH._send
+    split = [(len(original) // 188) * n // 4 * 188 for n in range(5)]
+    segment = original[split[1]:split[2]]
+    prefix = 188 * 3
+    requests = []
+
+    class Interrupted(io.BytesIO):
+        def read(self, amount=-1):
+            chunk = super().read(amount)
+            if not chunk:
+                raise ConnectionResetError("Connection reset by peer")
+            return chunk
+
+    def changing_fragment(handler, request):
+        if not request.url.endswith("segment-1.ts"):
+            return original_send(handler, request)
+        requests.append(request)
+        if len(requests) == 1:
+            return Response(Interrupted(b"x" * prefix), request.url,
+                            {"Content-Length": str(len(segment)), "Content-Type": "video/mp2t"})
+        if "Range" in request.headers:
+            start = int(request.headers["Range"].split("=")[1].split("-")[0])
+            return Response(io.BytesIO(segment[start:]), request.url,
+                            {"Content-Length": str(len(segment)-start), "Content-Type": "video/mp2t",
+                             "Content-Range": f"bytes {start}-{len(segment)-1}/{len(segment)}"}, 206)
+        return original_send(handler, request)
+
+    monkeypatch.setattr(UrllibRH, "_send", changing_fragment)
+    monkeypatch.setattr(engine, "wait_for_retry", lambda retry_guard, *_: retry_guard.remaining > 8)
+
+    def acquire(_url, directory, attempt_guard, *_args, **_kwargs):
+        success, _ = native_hls(directory, attempt_guard, info)
+        assert success
+        return directory / "received.ts", {"title": "Owned HLS canary"}
+
+    monkeypatch.setattr(engine, "acquire_media", acquire)
+    path, details = engine.acquire_with_recovery("https://www.youtube.com/watch?v=BaW_jenozKc", tmp_path,
+                                               "mp3", guard, engine.MediaSettings(), None)
+    assert path.read_bytes() == original and details["recovery"]["attempts"] == 2
+    assert len(requests) == 2 and all("Range" not in request.headers for request in requests)
+    assert guard.received == len(original) * 2 - len(segment) + prefix
+    assert not (tmp_path / "attempt-1").exists()
+    guard.close_sockets()
+
+
 def test_parallel_native_hls_preserves_bytes_and_aggregate_budget(monkeypatch, tmp_path):
     timings = {}
     expected = None
