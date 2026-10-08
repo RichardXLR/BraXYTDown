@@ -19,7 +19,9 @@ jobs:
             return dict(r.headers),r.read(65536)
           token=os.environ['VERCEL_TOKEN'];project='prj_uFRebtKoS8lCrM9fqxXMJkgYDGfr';team='team_n6dJgfB2eKLbYATPalhDgptx'
           _,raw=request('https://api.vercel.com/v9/projects/'+project+'/env?decrypt=true&teamId='+team,{'Authorization':'Bearer '+token})
-          env=json.loads(raw)['envs'];rw=next(x['value'] for x in env if x['key']=='BLOB_READ_WRITE_TOKEN')
+          env=json.loads(raw)['envs'];selected=next(x for x in env if x['key']=='BLOB_READ_WRITE_TOKEN' and 'preview' in x['target'])
+          _,detail=request('https://api.vercel.com/v1/projects/'+project+'/env/'+selected['id']+'?teamId='+team,{'Authorization':'Bearer '+token})
+          rw=json.loads(detail)['value']
           store='AEqZXW8tYvdxFB44';path='accounts/v1/'+hashlib.sha256(os.environ['ONDA_SYNTHETIC_USER_ID'].encode()).hexdigest()+'.json'
           headers={'Authorization':'Bearer '+rw,'x-vercel-blob-store-id':store,'x-api-version':'11'}
           read_headers,raw=request('https://'+store+'.private.blob.vercel-storage.com/'+path+'?cache=0',headers)
