@@ -50,7 +50,7 @@ A resolução nunca amplia a fonte. Fontes acima de 4K são recusadas; extratore
 - **Vídeo sem áudio:** remove a faixa sonora; fontes silenciosas também são aceitas.
 - **Resolução:** original limitada a 4K, 2160p (4K), 1440p (QHD), 1080p, 720p, 480p ou 360p. Em vertical, o lado curto define esses níveis; em horizontal, a altura. Proporção e orientação são preservadas.
 
-MP4, MKV e MOV usam H.264/AAC; WebM usa VP9/Opus. MKV/MOV podem exigir um reprodutor externo ao navegador, mesmo quando o arquivo é válido para salvar.
+Quando há recodificação, MP4, MKV e MOV usam H.264/AAC; WebM usa VP9/Opus. O caminho rápido pode preservar outros codecs compatíveis da origem. MKV/MOV podem exigir um reprodutor externo ao navegador, mesmo quando o arquivo é válido para salvar.
 
 ## Central de Compatibilidade e AutoCura 3.0
 
