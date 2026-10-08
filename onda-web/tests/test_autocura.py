@@ -12,13 +12,28 @@ import urllib.parse
 import pytest
 
 from scripts.autocura import (AutoCura, CureError, DependencyCandidate, DeploymentChecks,
-                             HTTP, RepositoryCheckpoint, Vercel, atomic_json, deployment_url, process_lock,
+                             HTTP, MAX_RESPONSE, MAX_PACKAGE_METADATA_RESPONSE,
+                             RepositoryCheckpoint, Vercel, atomic_json, deployment_url, process_lock,
                              same_version, subprocess_environment, verify_downloaded_audio, verify_downloaded_video)
 
 VERSIONS = {"yt-dlp": "2026.8.19", "imageio-ffmpeg": "0.6.0", "deno": "2.9.7"}
 OLD = {"id": "dpl_previous", "url": "https://previous.vercel.app", "readyState": "READY"}
 NEW = {"id": "dpl_candidate", "url": "https://candidate.vercel.app", "readyState": "READY"}
 PINS = "fastapi==0.141.1\nuvicorn==0.52.1\nyt-dlp[default]==2026.8.18\nimageio-ffmpeg==0.6.0\ndeno==2.9.6\npublicsuffixlist==1.0.2.20261003\n"
+
+
+def fake_resolution_run(monkeypatch, versions, calls=None):
+    def resolve(command, **_options):
+        if calls is not None:
+            calls.append(command)
+        assert command[1:4] == ["-m", "pip", "install"]
+        assert "--dry-run" in command and "--ignore-installed" in command
+        assert "--only-binary=:all:" in command
+        report = Path(command[command.index("--report") + 1])
+        report.write_text(json.dumps({"install": [{"metadata": {"name": name, "version": version}}
+                                                  for name, version in versions.items()]}))
+        return ""
+    monkeypatch.setattr("scripts.autocura.run", resolve)
 
 
 class FakeProvider:
@@ -260,22 +275,109 @@ def test_a_generated_hash_lock_can_be_updated_again(tmp_path):
     assert "deno==2.9.7" in DependencyCandidate(tmp_path).specifications(VERSIONS)
 
 
-def test_update_checks_all_reviewed_components_not_only_extraction_tools(tmp_path):
+def test_update_checks_all_reviewed_components_not_only_extraction_tools(tmp_path, monkeypatch):
     (tmp_path / "requirements.txt").write_text(PINS)
     requested = []
 
     class Registry:
-        def json(self, url):
+        def json(self, url, **kwargs):
+            assert kwargs == {"max_response": MAX_PACKAGE_METADATA_RESPONSE}
             name = url.split("/")[-2]
             requested.append(name)
             return {"info": {"version": {"fastapi": "0.141.2", "uvicorn": "0.52.2",
                     "publicsuffixlist": "1.0.2.20261007"}.get(name, VERSIONS.get(name))}}
 
     candidate = DependencyCandidate(tmp_path, Registry())
+    fake_resolution_run(monkeypatch, {**VERSIONS, "fastapi": "0.141.2", "uvicorn": "0.52.2",
+                                     "publicsuffixlist": "1.0.2.20261007"})
     versions = candidate.latest()
     assert set(requested) == {"fastapi", "uvicorn", "publicsuffixlist", *VERSIONS}
     assert "fastapi==0.141.2" in candidate.specifications(versions)
     assert "uvicorn==0.52.2" in candidate.specifications(versions)
+
+
+def test_parent_resolution_selects_compatible_children_and_ignores_old_flat_lock_pins(tmp_path, monkeypatch):
+    (tmp_path / "requirements.txt").write_text(PINS + "pydantic==2.13.4\npydantic-core==2.46.4\n")
+    parents = {**VERSIONS, "fastapi": "0.142.4", "uvicorn": "0.54.0", "publicsuffixlist": "1.0.2.20261007"}
+    compatible = {**parents, "pydantic": "2.13.5", "pydantic-core": "2.46.5", "new-dependency": "1.0"}
+    requested, commands = [], []
+
+    class Registry:
+        def json(self, url, **_kwargs):
+            name = url.split("/")[-2]
+            requested.append(name)
+            # Standalone pydantic-core 2.49.0 cannot satisfy pydantic 2.13.5's
+            # exact 2.46.5 requirement. Do not independently pick child latest.
+            assert name in parents
+            return {"info": {"version": parents[name]}}
+
+    fake_resolution_run(monkeypatch, compatible, commands)
+    candidate = DependencyCandidate(tmp_path, Registry())
+    versions = candidate.latest()
+    assert versions == compatible and candidate.resolved_versions == compatible
+    assert set(requested) == set(parents)
+    specifications = candidate.specifications(versions)
+    assert len(specifications) == 6
+    assert not any(value.startswith(("pydantic==", "pydantic-core==", "new-dependency==")) for value in specifications)
+    assert commands[0][-6:] == specifications
+    forged = {**versions, "unresolved-package": "1.0"}
+    with pytest.raises(CureError, match="unreviewed_component_update"):
+        candidate.specifications(forged)
+    versions["new-dependency"] = "2.0"
+    assert candidate.resolved_versions["new-dependency"] == "1.0"
+    with pytest.raises(CureError, match="unreviewed_component_update"):
+        candidate.specifications(versions)
+
+
+@pytest.mark.parametrize("fault", ["missing_parent", "parent_changed", "duplicate", "prerelease", "unsafe_name", "too_many", "bad_shape"])
+def test_resolved_dependency_graph_requires_valid_bounded_compatible_metadata(tmp_path, monkeypatch, fault):
+    (tmp_path / "requirements.txt").write_text(PINS)
+    parents = {**VERSIONS, "fastapi": "0.142.4", "uvicorn": "0.54.0", "publicsuffixlist": "1.0.2.20261007"}
+
+    class Registry:
+        def json(self, url, **_kwargs):
+            return {"info": {"version": parents[url.split("/")[-2]]}}
+
+    def resolve(command, **_kwargs):
+        items = [{"metadata": {"name": name, "version": version}} for name, version in parents.items()]
+        if fault == "missing_parent": items.pop()
+        elif fault == "parent_changed": items[0]["metadata"]["version"] = "1.0"
+        elif fault == "duplicate": items.append(items[0])
+        elif fault == "prerelease": items.append({"metadata": {"name": "child", "version": "1.0rc1"}})
+        elif fault == "unsafe_name": items.append({"metadata": {"name": "https://other/child", "version": "1.0"}})
+        elif fault == "too_many": items += [{"metadata": {"name": "child-" + str(i), "version": "1.0"}} for i in range(81)]
+        elif fault == "bad_shape": items = {}
+        Path(command[command.index("--report") + 1]).write_text(json.dumps({"install": items}))
+        return ""
+    monkeypatch.setattr("scripts.autocura.run", resolve)
+    candidate = DependencyCandidate(tmp_path, Registry())
+    with pytest.raises(CureError, match="invalid_dependency_resolution|resolved_parent_version_mismatch"):
+        candidate.latest()
+    assert candidate.resolved_versions is None
+
+
+def test_second_resolution_must_match_discovery_before_any_wheel_is_executed(tmp_path, monkeypatch):
+    (tmp_path / "requirements.txt").write_text(PINS)
+    candidate = DependencyCandidate(tmp_path)
+    selected = {**VERSIONS, "fastapi": "0.142.4", "uvicorn": "0.54.0",
+                "publicsuffixlist": "1.0.2.20261007", "pydantic": "2.13.5", "pydantic-core": "2.46.5"}
+    candidate.resolved_versions = dict(selected)
+    calls = []
+
+    def download(command, **_kwargs):
+        calls.append(command)
+        assert command[1:4] == ["-m", "pip", "download"]
+        return ""
+
+    monkeypatch.setattr("scripts.autocura.run", download)
+    monkeypatch.setattr(candidate, "verify_wheels", lambda _folder: [
+        {"name": name, "version": "2.49.0" if name == "pydantic-core" else version}
+        for name, version in selected.items()])
+    monkeypatch.setattr("venv.EnvBuilder", lambda **_kwargs: pytest.fail("A changed dependency graph must not be installed"))
+    with pytest.raises(CureError, match="dependency_resolution_changed"):
+        candidate.prepare(selected)
+    assert len(calls) == 1
+    assert (tmp_path / "requirements.txt").read_text() == PINS
 
 
 def test_unreviewed_packages_and_prereleases_are_not_auto_installed(tmp_path):
@@ -284,7 +386,7 @@ def test_unreviewed_packages_and_prereleases_are_not_auto_installed(tmp_path):
         DependencyCandidate(tmp_path).specifications({"new-unreviewed-package": "1.0"})
 
     class Registry:
-        def json(self, _url):
+        def json(self, _url, **kwargs):
             return {"info": {"version": "2.0rc1"}}
 
     with pytest.raises(CureError, match="prerelease_component"):
@@ -715,6 +817,60 @@ def test_http_error_codes_do_not_expose_cookie_or_raw_body(monkeypatch):
         HTTP().json("https://candidate.vercel.app/api/inspect")
     assert str(caught.value) == "platform_blocked"
     assert "SECRET" not in str(caught.value)
+
+
+def fake_http_bytes(monkeypatch, body):
+    class Response(io.BytesIO):
+        headers = {}
+
+        def geturl(self):
+            return self.url
+
+    class Opener:
+        def open(self, request, **_kwargs):
+            response = Response(body)
+            response.url = request.full_url
+            return response
+
+    monkeypatch.setattr("urllib.request.build_opener", lambda *_args: Opener())
+
+
+def test_large_pypi_release_metadata_needs_an_explicit_larger_budget(monkeypatch):
+    # Exercise actual byte reads beyond 8 MiB, rather than a declared length.
+    body = json.dumps({"info": {"version": "2.46.5"}, "releases": "x" * MAX_RESPONSE}).encode()
+    assert MAX_RESPONSE < len(body) < MAX_PACKAGE_METADATA_RESPONSE
+    fake_http_bytes(monkeypatch, body)
+    url = "https://pypi.org/pypi/pydantic-core/json"
+    with pytest.raises(CureError, match="response_too_large"):
+        HTTP().json(url)
+    metadata = HTTP().json(url, max_response=MAX_PACKAGE_METADATA_RESPONSE)
+    assert metadata["info"]["version"] == "2.46.5"
+    assert len(metadata["releases"]) == MAX_RESPONSE
+    with pytest.raises(CureError, match="response_too_large"):
+        HTTP().request("https://candidate.vercel.app/api/download")
+
+
+@pytest.mark.parametrize("limit", [0, -1, MAX_PACKAGE_METADATA_RESPONSE + 1, True, None, 1.5, "33554432"])
+def test_http_response_budget_rejects_invalid_or_unbounded_limits(monkeypatch, limit):
+    monkeypatch.setattr("urllib.request.build_opener", lambda *_args: pytest.fail("Invalid budgets must not open a connection"))
+    with pytest.raises(CureError, match="invalid_response_limit"):
+        HTTP().request("https://pypi.org/pypi/pydantic-core/json", max_response=limit)
+
+
+def test_explicit_response_budget_still_enforces_actual_size(monkeypatch):
+    fake_http_bytes(monkeypatch, b"12")
+    with pytest.raises(CureError, match="response_too_large"):
+        HTTP().request("https://pypi.org/pypi/example/json", max_response=1)
+    assert HTTP().request("https://pypi.org/pypi/example/json", max_response=2)[0] == b"12"
+
+
+def test_canary_binary_inspection_keeps_its_original_eight_mib_limit(monkeypatch):
+    monkeypatch.setattr("subprocess.run", lambda *_args, **_kwargs: pytest.fail("Oversized canaries must fail before decoding"))
+    body = b"x" * (MAX_RESPONSE + 1)
+    with pytest.raises(CureError, match="audio_conversion_failed"):
+        verify_downloaded_audio(body, "mp3")
+    with pytest.raises(CureError, match="video_conversion_failed"):
+        verify_downloaded_video(body)
 
 
 def test_provider_refuses_to_promote_another_project(tmp_path, monkeypatch):

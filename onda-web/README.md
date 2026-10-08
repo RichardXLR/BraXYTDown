@@ -48,7 +48,7 @@ A manutenção consulta evidências reais do GitHub e o relatório da execução
 
 O AutoCura usa deploys imutáveis da Vercel, com `scripts/autocura.py` e o modelo `.github/workflows/autocura.yml`:
 
-1. Pesquisa atualizações das dependências Python fixadas, incluindo yt-dlp, FFmpeg e Deno, verificando integridade dos pacotes.
+1. Pesquisa atualizações dos componentes principais, incluindo yt-dlp, FFmpeg e Deno, e resolve as versões compatíveis de todas as dependências indiretas. Cada pacote é verificado e fixado por versão e SHA-256 antes de ser executado. A verificação diária também identifica atualizações compatíveis das dependências indiretas quando os componentes principais permanecem na mesma versão.
 2. Constrói uma versão candidata completa sem trocar o domínio ativo.
 3. Verifica ferramentas, canários YouTube e conversões de fontes próprias, cobrindo oito formatos de áudio, quatro de vídeo, corte, silêncio, normalização e remoção de metadados.
 4. Transfere somente o domínio público `onda-audio.vercel.app` para o candidato aprovado e verifica novamente através desse domínio; uma falha após a ativação restaura o domínio anterior.

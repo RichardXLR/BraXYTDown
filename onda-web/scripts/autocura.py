@@ -29,6 +29,7 @@ import venv
 from packaging.version import InvalidVersion, Version
 
 TOOLS = ("yt-dlp", "imageio-ffmpeg", "deno")
+DIRECT_COMPONENTS = (*TOOLS, "fastapi", "uvicorn", "publicsuffixlist")
 CANARIES = (
     {"name": "me_at_zoo_metadata", "url": "https://www.youtube.com/watch?v=jNQXAC9IVRw",
      "purpose": "metadata_only"},
@@ -36,6 +37,7 @@ CANARIES = (
      "purpose": "metadata_only", "license": "CC BY 3.0; Blender Foundation"},
 )
 MAX_RESPONSE = 8 * 1024 * 1024
+MAX_PACKAGE_METADATA_RESPONSE = 32 * 1024 * 1024
 
 
 class CureError(RuntimeError):
@@ -108,7 +110,11 @@ def process_lock(path: Path):
 
 class HTTP:
     """HTTPS with platform TLS trust, inherited proxy settings and bounded reads."""
-    def request(self, url, *, method="GET", payload=None, headers=None, timeout=40):
+    def request(self, url, *, method="GET", payload=None, headers=None, timeout=40,
+                max_response=MAX_RESPONSE):
+        if (isinstance(max_response, bool) or not isinstance(max_response, int)
+                or not 1 <= max_response <= MAX_PACKAGE_METADATA_RESPONSE):
+            raise CureError("invalid_response_limit")
         parsed = urllib.parse.urlsplit(url)
         if parsed.scheme != "https" or parsed.username or parsed.password:
             raise CureError("unsafe_update_url")
@@ -132,8 +138,8 @@ class HTTP:
                 # Credentials must never cross a redirect to another host.
                 if final.scheme != "https" or final.hostname != parsed.hostname:
                     raise CureError("unexpected_http_redirect")
-                content = response.read(MAX_RESPONSE + 1)
-                if len(content) > MAX_RESPONSE:
+                content = response.read(max_response + 1)
+                if len(content) > max_response:
                     raise CureError("response_too_large")
                 return content, response.headers
         except urllib.error.HTTPError as exc:
@@ -205,6 +211,7 @@ class DependencyCandidate:
     def __init__(self, root: Path, http=None):
         self.root = root
         self.http = http or HTTP()
+        self.resolved_versions = None
 
     def pinned_components(self):
         """Read reviewed pins, including transitives in a generated hash lock."""
@@ -225,12 +232,22 @@ class DependencyCandidate:
         return pins
 
     def latest(self):
-        versions = {}
-        # Keep the framework, TLS/public suffix data, and resolved dependencies
-        # current as well as yt-dlp, FFmpeg's wheel and Deno. Every candidate
-        # still goes through verified wheels and the complete application suite.
-        for name in self.pinned_components():
-            metadata = self.http.json(f"https://pypi.org/pypi/{name}/json")
+        self.resolved_versions = None
+        parents = {}
+        pins = self.pinned_components()
+        if not set(DIRECT_COMPONENTS).issubset(pins):
+            raise CureError("direct_component_pin_missing")
+        # Update reviewed parents, then let pip resolve compatible transitives.
+        # Independently pinning every latest child can conflict with an exact
+        # parent requirement (for example pydantic/pydantic-core).
+        for name in DIRECT_COMPONENTS:
+            # PyPI includes the full release history here, which can exceed
+            # the ordinary 8 MiB budget as projects accumulate releases.
+            # Only this trusted metadata request receives the larger bound;
+            # deployment APIs, version-specific wheel hashes and canaries keep
+            # their smaller default limit.
+            metadata = self.http.json(f"https://pypi.org/pypi/{name}/json",
+                                      max_response=MAX_PACKAGE_METADATA_RESPONSE)
             version = str(metadata["info"]["version"])
             if not re.fullmatch(r"[0-9][0-9A-Za-z.+!_-]{0,80}", version):
                 raise CureError("invalid_package_version")
@@ -240,17 +257,53 @@ class DependencyCandidate:
                 raise CureError("invalid_package_version") from None
             if parsed.is_prerelease or parsed.is_devrelease:
                 raise CureError("prerelease_component_not_allowed")
+            parents[name] = version
+        with tempfile.TemporaryDirectory(prefix="onda-resolution-") as temporary:
+            report_path = Path(temporary) / "report.json"
+            run([sys.executable, "-m", "pip", "install", "--dry-run", "--ignore-installed",
+                 "--only-binary=:all:", "--index-url", "https://pypi.org/simple",
+                 "--report", str(report_path), *self.specifications(parents)],
+                directory=self.root, error_code="dependency_resolution_failed")
+            try:
+                if report_path.stat().st_size > MAX_RESPONSE:
+                    raise CureError("dependency_resolution_report_too_large")
+                report = json.loads(report_path.read_bytes())
+            except (OSError, ValueError):
+                raise CureError("invalid_dependency_resolution") from None
+        items = report.get("install") if isinstance(report, dict) else None
+        if not isinstance(items, list) or not 1 <= len(items) <= 80:
+            raise CureError("invalid_dependency_resolution")
+        versions = {}
+        for item in items:
+            metadata = item.get("metadata") if isinstance(item, dict) else None
+            if not isinstance(metadata, dict):
+                raise CureError("invalid_dependency_resolution")
+            name, version = metadata.get("name"), metadata.get("version")
+            if (not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", name)
+                    or not isinstance(version, str) or not re.fullmatch(r"[0-9][0-9A-Za-z.+!_-]{0,80}", version)):
+                raise CureError("invalid_dependency_resolution")
+            name = normalize(name)
+            try:
+                parsed = Version(version)
+            except InvalidVersion:
+                raise CureError("invalid_dependency_resolution") from None
+            if name in versions or parsed.is_prerelease or parsed.is_devrelease:
+                raise CureError("invalid_dependency_resolution")
             versions[name] = version
-        return versions
+        if any(name not in versions or not same_version(versions[name], version)
+               for name, version in parents.items()):
+            raise CureError("resolved_parent_version_mismatch")
+        self.resolved_versions = dict(versions)
+        return dict(versions)
 
     def specifications(self, versions):
         """Apply only explicitly selected versions to reviewed components."""
         pins = self.pinned_components()
-        if set(versions) - set(pins):
+        if set(versions) - set(pins) and versions != self.resolved_versions:
             raise CureError("unreviewed_component_update")
         pins["yt-dlp"]["extra"] = "[default]"
         return [f'{name}{item["extra"]}=={versions.get(name, item["version"])}'
-                for name, item in sorted(pins.items())]
+                for name, item in sorted(pins.items()) if name in DIRECT_COMPONENTS]
 
     def verify_wheels(self, folder: Path):
         """Verify every transitive wheel before installing or executing it."""
@@ -291,6 +344,11 @@ class DependencyCandidate:
                  "--index-url", "https://pypi.org/simple", "--dest", str(wheels), *specifications],
                 directory=self.root, error_code="dependency_download_failed")
             artifacts = self.verify_wheels(wheels)
+            if self.resolved_versions is not None:
+                downloaded = {item["name"]: item["version"] for item in artifacts}
+                if (versions != self.resolved_versions or set(downloaded) != set(versions)
+                        or any(not same_version(downloaded[name], version) for name, version in versions.items())):
+                    raise CureError("dependency_resolution_changed")
             lock = "# AutoCura: every direct and transitive wheel is pinned and verified against PyPI.\n"
             lock += "--require-hashes\n"
             for item in artifacts:
