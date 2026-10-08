@@ -2,7 +2,7 @@
   "automated": true,
   "automation_enabled": true,
   "baseline_platform_check": {
-    "checked_at": "2026-10-08T07:05:21.795885+00:00",
+    "checked_at": "2026-10-08T07:22:33.339588+00:00",
     "checks": [
       {
         "code": "platform_blocked",
@@ -15,7 +15,7 @@
         "status": "blocked"
       }
     ],
-    "deployment_id": "dpl_GYzz97HzmSint8pRjGLbK6BiG5Kp"
+    "deployment_id": "dpl_47GUWq3LbMoJpDBcDQVUvsX4WWe2"
   },
   "canaries": [
     {
@@ -33,7 +33,7 @@
   "components": "all_pinned_python_dependencies",
   "execution": {
     "repository": "RichardXLR/BraXYTDown",
-    "run_id": "37741204028",
+    "run_id": "37742945724",
     "workflow": "Onda AutoCura 3.0"
   },
   "history": [
@@ -137,7 +137,7 @@
     }
   ],
   "last_check": {
-    "checked_at": "2026-10-08T07:06:58.383109+00:00",
+    "checked_at": "2026-10-08T07:23:59.461928+00:00",
     "checks": [
       {
         "name": "runtime",
@@ -302,7 +302,7 @@
       "youtube_status": "blocked"
     },
     "platform_baseline": {
-      "checked_at": "2026-10-08T07:05:21.795885+00:00",
+      "checked_at": "2026-10-08T07:22:33.339588+00:00",
       "checks": [
         {
           "code": "platform_blocked",
@@ -315,14 +315,14 @@
           "status": "blocked"
         }
       ],
-      "deployment_id": "dpl_GYzz97HzmSint8pRjGLbK6BiG5Kp"
+      "deployment_id": "dpl_47GUWq3LbMoJpDBcDQVUvsX4WWe2"
     },
     "release_gate": {
       "accepted_existing_blocks": [
         "me_at_zoo_metadata",
         "big_buck_bunny_metadata"
       ],
-      "baseline_deployment_id": "dpl_GYzz97HzmSint8pRjGLbK6BiG5Kp",
+      "baseline_deployment_id": "dpl_47GUWq3LbMoJpDBcDQVUvsX4WWe2",
       "status": "passed",
       "youtube_policy": "baseline",
       "youtube_verified": false
@@ -349,10 +349,10 @@
   ],
   "schedule": "23 5 * * *",
   "schema": 3,
-  "snapshot_at": "2026-10-08T07:06:58.384178+00:00",
+  "snapshot_at": "2026-10-08T07:23:59.463380+00:00",
   "snapshot_only": true,
-  "state": "passed",
-  "status": "passed",
+  "state": "promotion_pending",
+  "status": "promotion_pending",
   "strategy": "immutable_deployment",
   "versions": {
     "annotated-doc": "0.0.5",

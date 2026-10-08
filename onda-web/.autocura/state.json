@@ -6,7 +6,7 @@
     "url": "https://onda-audio-9nh93cgui-r79078339-3591s-projects.vercel.app"
   },
   "baseline_platform_check": {
-    "checked_at": "2026-10-08T07:05:21.795885+00:00",
+    "checked_at": "2026-10-08T07:22:33.339588+00:00",
     "checks": [
       {
         "code": "platform_blocked",
@@ -19,7 +19,7 @@
         "status": "blocked"
       }
     ],
-    "deployment_id": "dpl_GYzz97HzmSint8pRjGLbK6BiG5Kp"
+    "deployment_id": "dpl_47GUWq3LbMoJpDBcDQVUvsX4WWe2"
   },
   "history": [
     {
@@ -122,7 +122,7 @@
     }
   ],
   "last_check": {
-    "checked_at": "2026-10-08T07:06:58.383109+00:00",
+    "checked_at": "2026-10-08T07:23:59.461928+00:00",
     "checks": [
       {
         "name": "runtime",
@@ -287,7 +287,7 @@
       "youtube_status": "blocked"
     },
     "platform_baseline": {
-      "checked_at": "2026-10-08T07:05:21.795885+00:00",
+      "checked_at": "2026-10-08T07:22:33.339588+00:00",
       "checks": [
         {
           "code": "platform_blocked",
@@ -300,19 +300,122 @@
           "status": "blocked"
         }
       ],
-      "deployment_id": "dpl_GYzz97HzmSint8pRjGLbK6BiG5Kp"
+      "deployment_id": "dpl_47GUWq3LbMoJpDBcDQVUvsX4WWe2"
     },
     "release_gate": {
       "accepted_existing_blocks": [
         "me_at_zoo_metadata",
         "big_buck_bunny_metadata"
       ],
-      "baseline_deployment_id": "dpl_GYzz97HzmSint8pRjGLbK6BiG5Kp",
+      "baseline_deployment_id": "dpl_47GUWq3LbMoJpDBcDQVUvsX4WWe2",
       "status": "passed",
       "youtube_policy": "baseline",
       "youtube_verified": false
     },
     "status": "passed"
+  },
+  "pending": {
+    "candidate": {
+      "id": "dpl_8Soi7veoP91hF1BMXFjpdYUvU9YT",
+      "projectId": "prj_uFRebtKoS8lCrM9fqxXMJkgYDGfr",
+      "readyState": "READY",
+      "url": "https://onda-audio-bjvj609lr-r79078339-3591s-projects.vercel.app"
+    },
+    "created_at": "2026-10-08T07:23:59.461968+00:00",
+    "platform_baseline": {
+      "checked_at": "2026-10-08T07:22:33.339588+00:00",
+      "checks": [
+        {
+          "code": "platform_blocked",
+          "name": "me_at_zoo_metadata",
+          "status": "blocked"
+        },
+        {
+          "code": "platform_blocked",
+          "name": "big_buck_bunny_metadata",
+          "status": "blocked"
+        }
+      ],
+      "deployment_id": "dpl_47GUWq3LbMoJpDBcDQVUvsX4WWe2"
+    },
+    "previous": {
+      "id": "dpl_47GUWq3LbMoJpDBcDQVUvsX4WWe2",
+      "projectId": "prj_uFRebtKoS8lCrM9fqxXMJkgYDGfr",
+      "readyState": "READY",
+      "url": "https://onda-audio-9nh93cgui-r79078339-3591s-projects.vercel.app"
+    },
+    "previous_versions": {
+      "annotated-doc": "0.0.5",
+      "annotated-types": "0.8.0",
+      "anyio": "4.15.1",
+      "brotli": "1.2.0",
+      "certifi": "2026.7.22",
+      "cffi": "2.1.1",
+      "charset-normalizer": "3.5.2",
+      "clerk-backend-api": "7.0.0",
+      "click": "8.5.0",
+      "cryptography": "50.0.2",
+      "deno": "2.9.7",
+      "fastapi": "0.142.4",
+      "h11": "0.16.0",
+      "httpcore": "1.0.9",
+      "httpx": "0.28.1",
+      "idna": "3.20",
+      "imageio-ffmpeg": "0.6.0",
+      "mutagen": "1.48.1",
+      "opentelemetry-api": "1.45.1",
+      "publicsuffixlist": "1.0.2.20261007",
+      "pycparser": "3.0",
+      "pycryptodomex": "3.24.0",
+      "pydantic": "2.13.5",
+      "pydantic-core": "2.46.5",
+      "pyjwt": "2.15.1",
+      "requests": "2.34.2",
+      "starlette": "1.7.0",
+      "typing-extensions": "4.16.0",
+      "typing-inspection": "0.4.4",
+      "urllib3": "2.8.0",
+      "uvicorn": "0.54.0",
+      "websockets": "17.2",
+      "yt-dlp": "2026.8.19",
+      "yt-dlp-ejs": "0.8.0"
+    },
+    "versions": {
+      "annotated-doc": "0.0.5",
+      "annotated-types": "0.8.0",
+      "anyio": "4.15.1",
+      "brotli": "1.2.0",
+      "certifi": "2026.7.22",
+      "cffi": "2.1.1",
+      "charset-normalizer": "3.5.2",
+      "clerk-backend-api": "7.0.0",
+      "click": "8.5.0",
+      "cryptography": "50.0.2",
+      "deno": "2.9.7",
+      "fastapi": "0.142.4",
+      "h11": "0.16.0",
+      "httpcore": "1.0.9",
+      "httpx": "0.28.1",
+      "idna": "3.20",
+      "imageio-ffmpeg": "0.6.0",
+      "mutagen": "1.48.1",
+      "opentelemetry-api": "1.45.1",
+      "publicsuffixlist": "1.0.2.20261007",
+      "pycparser": "3.0",
+      "pycryptodomex": "3.24.0",
+      "pydantic": "2.13.5",
+      "pydantic-core": "2.46.5",
+      "pyjwt": "2.15.1",
+      "requests": "2.34.2",
+      "starlette": "1.7.0",
+      "typing-extensions": "4.16.0",
+      "typing-inspection": "0.4.4",
+      "urllib3": "2.8.0",
+      "uvicorn": "0.54.0",
+      "websockets": "17.2",
+      "yt-dlp": "2026.8.19",
+      "yt-dlp-ejs": "0.8.0"
+    }
   },
   "previous": {
     "id": "dpl_GYzz97HzmSint8pRjGLbK6BiG5Kp",
@@ -365,8 +468,8 @@
     }
   ],
   "schema": 2,
-  "status": "passed",
-  "updated_at": "2026-10-08T07:06:58.383155+00:00",
+  "status": "promotion_pending",
+  "updated_at": "2026-10-08T07:23:59.461971+00:00",
   "versions": {
     "annotated-doc": "0.0.5",
     "annotated-types": "0.8.0",
