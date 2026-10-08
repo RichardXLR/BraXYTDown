@@ -1,5 +1,5 @@
 {
-  "created_at": "2026-10-08T14:34:34.383592+00:00",
+  "created_at": "2026-10-08T14:51:03.684165+00:00",
   "wheels": [
     {
       "filename": "annotated_doc-0.0.5-py3-none-any.whl",
@@ -134,16 +134,16 @@
       "version": "3.24.0"
     },
     {
-      "filename": "pydantic-2.13.5-py3-none-any.whl",
+      "filename": "pydantic-2.14.0-py3-none-any.whl",
       "name": "pydantic",
-      "sha256": "346a034f080da3755d8e9cb5e00e8b07de1d39e4f6e2c87d8ab7cafa0b269a73",
-      "version": "2.13.5"
+      "sha256": "15fab1bea6f1dc5003b54fc2ecab230c1fd1dbade2acd4addc52d81e32416d4b",
+      "version": "2.14.0"
     },
     {
-      "filename": "pydantic_core-2.46.5-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+      "filename": "pydantic_core-2.50.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
       "name": "pydantic-core",
-      "sha256": "0fc5be0abd4a407e200d844b404e33639a554e7bd0d448e7b9ae181be4789ac2",
-      "version": "2.46.5"
+      "sha256": "f187030fc3d62c668feb0f09e92852e0eb414d7fcefc4748f2e67d245aade37e",
+      "version": "2.50.0"
     },
     {
       "filename": "pyjwt-2.15.1-py3-none-any.whl",
