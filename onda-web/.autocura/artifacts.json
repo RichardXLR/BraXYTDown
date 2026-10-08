@@ -1,5 +1,5 @@
 {
-  "created_at": "2026-10-08T01:18:59.092397+00:00",
+  "created_at": "2026-10-08T07:05:57.009598+00:00",
   "wheels": [
     {
       "filename": "annotated_doc-0.0.5-py3-none-any.whl",
@@ -32,16 +32,34 @@
       "version": "2026.7.22"
     },
     {
+      "filename": "cffi-2.1.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "name": "cffi",
+      "sha256": "c1453022f490d2459a11819d83ad1d586e9ff65a12ac3e705ffebd46d3685dcf",
+      "version": "2.1.1"
+    },
+    {
       "filename": "charset_normalizer-3.5.2-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
       "name": "charset-normalizer",
       "sha256": "3d31298449090ab8d47b7b1b2a555ff73cac7ed438a08b7ac160980c7ebed649",
       "version": "3.5.2"
     },
     {
+      "filename": "clerk_backend_api-7.0.0-py3-none-any.whl",
+      "name": "clerk-backend-api",
+      "sha256": "8df8639dcdaa600dbd1a26878ecaeb6dcc724b2d21247eb6abef4cbd73be9eb5",
+      "version": "7.0.0"
+    },
+    {
       "filename": "click-8.5.0-py3-none-any.whl",
       "name": "click",
       "sha256": "255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360",
       "version": "8.5.0"
+    },
+    {
+      "filename": "cryptography-50.0.2-cp311-abi3-manylinux_2_34_x86_64.whl",
+      "name": "cryptography",
+      "sha256": "9dab55f57c74c3cad24c323bacbbd04be4705ba6eb0d92e920b1fc4837ed5079",
+      "version": "50.0.2"
     },
     {
       "filename": "deno-2.9.7-py3-none-manylinux_2_27_x86_64.whl",
@@ -60,6 +78,18 @@
       "name": "h11",
       "sha256": "63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86",
       "version": "0.16.0"
+    },
+    {
+      "filename": "httpcore-1.0.9-py3-none-any.whl",
+      "name": "httpcore",
+      "sha256": "2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55",
+      "version": "1.0.9"
+    },
+    {
+      "filename": "httpx-0.28.1-py3-none-any.whl",
+      "name": "httpx",
+      "sha256": "d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad",
+      "version": "0.28.1"
     },
     {
       "filename": "idna-3.20-py3-none-any.whl",
@@ -92,6 +122,12 @@
       "version": "1.0.2.20261007"
     },
     {
+      "filename": "pycparser-3.0-py3-none-any.whl",
+      "name": "pycparser",
+      "sha256": "b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992",
+      "version": "3.0"
+    },
+    {
       "filename": "pycryptodomex-3.24.0-cp37-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
       "name": "pycryptodomex",
       "sha256": "556e063b52f338bd924fe5c40692cc1f50cb0453bd1d6580b7ffff2eade1a894",
@@ -108,6 +144,12 @@
       "name": "pydantic-core",
       "sha256": "0fc5be0abd4a407e200d844b404e33639a554e7bd0d448e7b9ae181be4789ac2",
       "version": "2.46.5"
+    },
+    {
+      "filename": "pyjwt-2.15.1-py3-none-any.whl",
+      "name": "pyjwt",
+      "sha256": "42d59d631f7768a1028a64c7ff581a9bf7519804daf91fc5b6c56e30eec5e193",
+      "version": "2.15.1"
     },
     {
       "filename": "requests-2.34.2-py3-none-any.whl",
