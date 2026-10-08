@@ -1,0 +1,45 @@
+name: Onda private account diagnostic
+on: workflow_dispatch
+permissions: {}
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    environment: production
+    steps:
+      - name: Verify conditional writes on the synthetic account without exposing credentials
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          ONDA_SYNTHETIC_USER_ID: user_3KOxBaHH7A1IIjuDQNr0R4P6iYz
+        run: |
+          python - <<'PY'
+          import os,json,urllib.request,urllib.parse,urllib.error,hashlib
+          from datetime import datetime,timezone
+          def request(url,headers):
+           with urllib.request.urlopen(urllib.request.Request(url,headers=headers),timeout=20) as r:
+            return dict(r.headers),r.read(65536)
+          token=os.environ['VERCEL_TOKEN'];project='prj_uFRebtKoS8lCrM9fqxXMJkgYDGfr';team='team_n6dJgfB2eKLbYATPalhDgptx'
+          _,raw=request('https://api.vercel.com/v9/projects/'+project+'/env?decrypt=true&teamId='+team,{'Authorization':'Bearer '+token})
+          env=json.loads(raw)['envs'];selected=next(x for x in env if x['key']=='BLOB_READ_WRITE_TOKEN' and 'preview' in x['target'])
+          _,detail=request('https://api.vercel.com/v1/projects/'+project+'/env/'+selected['id']+'?teamId='+team,{'Authorization':'Bearer '+token})
+          rw=json.loads(detail)['value']
+          store='AEqZXW8tYvdxFB44';path='accounts/v1/'+hashlib.sha256(os.environ['ONDA_SYNTHETIC_USER_ID'].encode()).hexdigest()+'.json'
+          headers={'Authorization':'Bearer '+rw,'x-vercel-blob-store-id':store,'x-api-version':'12'}
+          read_headers,raw=request('https://'+store+'.private.blob.vercel-storage.com/'+path+'?cache=0',headers)
+          body=json.loads(raw);etag=next(v for k,v in read_headers.items() if k.lower()=='etag')
+          _,head_raw=request('https://vercel.com/api/blob?'+urllib.parse.urlencode({'url':path}),headers)
+          head=json.loads(head_raw);expected=head.get('etag','')
+          print(json.dumps({'revision':body['revision'],'readEtagQuoted':etag.startswith('"'),'readEtagWeak':etag.startswith('W/'),'readEtagLength':len(etag),'headEtagLength':len(expected),'sameEtag':etag==expected,'unquotedSameEtag':etag.strip('"')==expected,'headKeys':list(head),'readEncoding':next((v for k,v in read_headers.items() if k.lower()=='content-encoding'),None)}))
+          compressed_headers,_=request('https://'+store+'.private.blob.vercel-storage.com/'+path+'?cache=0',{**headers,'Accept-Encoding':'gzip, deflate, br'})
+          compressed_etag=next(v for k,v in compressed_headers.items() if k.lower()=='etag')
+          print(json.dumps({'compressedEtagMatchesOriginal':compressed_etag==etag,'compressedEtagWeak':compressed_etag.startswith('W/'),'compressedEncoding':next((v for k,v in compressed_headers.items() if k.lower()=='content-encoding'),None)}))
+          body['revision']+=1;body['updated_at']=datetime.now(timezone.utc).isoformat()
+          put_headers={**headers,'x-vercel-blob-access':'private','x-allow-overwrite':'1','x-if-match':etag,'x-add-random-suffix':'0','x-content-type':'application/json','Content-Type':'application/json','x-cache-control-max-age':'60'}
+          try:
+           with urllib.request.urlopen(urllib.request.Request('https://vercel.com/api/blob?'+urllib.parse.urlencode({'pathname':path}),method='PUT',headers=put_headers,data=json.dumps(body,ensure_ascii=False,separators=(',',':')).encode()),timeout=20) as r:
+            result=json.load(r);print(json.dumps({'version12ConditionalWriteStatus':r.status,'etagReturned':bool(result.get('etag'))}))
+          except urllib.error.HTTPError as e:
+           try:code=json.load(e).get('error',{}).get('code')
+           except Exception:code='unavailable'
+           print(json.dumps({'version12ConditionalWriteStatus':e.code,'code':code}))
+          PY
