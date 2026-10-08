@@ -6,7 +6,7 @@
     "url": "https://onda-audio-f3pxwjkk0-r79078339-3591s-projects.vercel.app"
   },
   "baseline_platform_check": {
-    "checked_at": "2026-10-08T06:47:54.148503+00:00",
+    "checked_at": "2026-10-08T07:05:21.795885+00:00",
     "checks": [
       {
         "code": "platform_blocked",
@@ -81,26 +81,172 @@
     }
   ],
   "last_check": {
-    "checked_at": "2026-10-08T06:49:36.538183+00:00",
+    "checked_at": "2026-10-08T07:06:42.890525+00:00",
     "checks": [
       {
         "name": "runtime",
         "status": "passed"
       },
       {
-        "code": "runtime_authentication_missing",
+        "anonymous_download": "denied",
+        "authentication": "machine_token",
         "name": "runtime_authentication",
-        "status": "failed"
+        "provider": "clerk",
+        "status": "passed"
+      },
+      {
+        "name": "packaged_versions",
+        "status": "passed",
+        "versions": {
+          "deno": "2.9.7",
+          "ffmpeg": "7.0.2-static",
+          "ytDlp": "2026.08.19"
+        }
+      },
+      {
+        "code": "platform_blocked",
+        "name": "me_at_zoo_metadata",
+        "status": "blocked"
+      },
+      {
+        "code": "platform_blocked",
+        "name": "big_buck_bunny_metadata",
+        "status": "blocked"
+      },
+      {
+        "inspection": {
+          "audioCodec": "aac",
+          "duration": 0.6,
+          "height": 180,
+          "integratedLoudness": -16.0,
+          "privacy": "custom_tags_removed",
+          "videoCodec": "h264"
+        },
+        "name": "owned_clip_mp4_edited",
+        "scope": "edited_video",
+        "status": "passed"
+      },
+      {
+        "inspection": {
+          "audioCodec": null,
+          "duration": 0.6,
+          "height": 180,
+          "privacy": "custom_tags_removed",
+          "videoCodec": "h264"
+        },
+        "name": "owned_clip_mp4_muted",
+        "scope": "edited_video",
+        "status": "passed"
+      },
+      {
+        "inspection": {
+          "audioCodec": "opus",
+          "duration": 0.61,
+          "height": 180,
+          "privacy": "custom_tags_removed",
+          "videoCodec": "vp9"
+        },
+        "name": "owned_clip_webm_edited",
+        "scope": "edited_video",
+        "status": "passed"
+      },
+      {
+        "inspection": {
+          "audioCodec": "aac",
+          "duration": 0.62,
+          "height": 180,
+          "privacy": "custom_tags_removed",
+          "videoCodec": "h264"
+        },
+        "name": "owned_clip_mkv_edited",
+        "scope": "edited_video",
+        "status": "passed"
+      },
+      {
+        "inspection": {
+          "audioCodec": "aac",
+          "duration": 0.6,
+          "height": 180,
+          "privacy": "custom_tags_removed",
+          "videoCodec": "h264"
+        },
+        "name": "owned_clip_mov_edited",
+        "scope": "edited_video",
+        "status": "passed"
+      },
+      {
+        "inspection": {
+          "audioCodec": "mp3",
+          "decoded": true
+        },
+        "name": "owned_tone_mp3",
+        "status": "passed"
+      },
+      {
+        "inspection": {
+          "audioCodec": "aac",
+          "decoded": true
+        },
+        "name": "owned_tone_m4a",
+        "status": "passed"
+      },
+      {
+        "inspection": {
+          "audioCodec": "pcm_s16le",
+          "decoded": true
+        },
+        "name": "owned_tone_wav",
+        "status": "passed"
+      },
+      {
+        "inspection": {
+          "audioCodec": "flac",
+          "decoded": true
+        },
+        "name": "owned_tone_flac",
+        "status": "passed"
+      },
+      {
+        "inspection": {
+          "audioCodec": "vorbis",
+          "decoded": true
+        },
+        "name": "owned_tone_ogg",
+        "status": "passed"
+      },
+      {
+        "inspection": {
+          "audioCodec": "opus",
+          "decoded": true
+        },
+        "name": "owned_tone_opus",
+        "status": "passed"
+      },
+      {
+        "inspection": {
+          "audioCodec": "aac",
+          "decoded": true
+        },
+        "name": "owned_tone_aac",
+        "status": "passed"
+      },
+      {
+        "inspection": {
+          "audioCodec": "pcm_s16be",
+          "decoded": true
+        },
+        "name": "owned_tone_aiff",
+        "status": "passed"
       }
     ],
     "coverage": {
       "audio_conversion": "project_owned_tone",
       "video_conversion": "project_owned_clip",
       "youtube": "metadata_only",
-      "youtube_status": "passed"
+      "youtube_status": "blocked"
     },
     "platform_baseline": {
-      "checked_at": "2026-10-08T06:47:54.148503+00:00",
+      "checked_at": "2026-10-08T07:05:21.795885+00:00",
       "checks": [
         {
           "code": "platform_blocked",
@@ -116,13 +262,112 @@
       "deployment_id": "dpl_GYzz97HzmSint8pRjGLbK6BiG5Kp"
     },
     "release_gate": {
-      "accepted_existing_blocks": [],
+      "accepted_existing_blocks": [
+        "me_at_zoo_metadata",
+        "big_buck_bunny_metadata"
+      ],
       "baseline_deployment_id": "dpl_GYzz97HzmSint8pRjGLbK6BiG5Kp",
-      "status": "failed",
+      "status": "passed",
       "youtube_policy": "baseline",
-      "youtube_verified": true
+      "youtube_verified": false
     },
-    "status": "failed"
+    "status": "passed"
+  },
+  "pending": {
+    "candidate": {
+      "id": "dpl_47GUWq3LbMoJpDBcDQVUvsX4WWe2",
+      "projectId": "prj_uFRebtKoS8lCrM9fqxXMJkgYDGfr",
+      "readyState": "READY",
+      "url": "https://onda-audio-9nh93cgui-r79078339-3591s-projects.vercel.app"
+    },
+    "created_at": "2026-10-08T07:06:42.890562+00:00",
+    "platform_baseline": {
+      "checked_at": "2026-10-08T07:05:21.795885+00:00",
+      "checks": [
+        {
+          "code": "platform_blocked",
+          "name": "me_at_zoo_metadata",
+          "status": "blocked"
+        },
+        {
+          "code": "platform_blocked",
+          "name": "big_buck_bunny_metadata",
+          "status": "blocked"
+        }
+      ],
+      "deployment_id": "dpl_GYzz97HzmSint8pRjGLbK6BiG5Kp"
+    },
+    "previous": {
+      "id": "dpl_GYzz97HzmSint8pRjGLbK6BiG5Kp",
+      "projectId": "prj_uFRebtKoS8lCrM9fqxXMJkgYDGfr",
+      "readyState": "READY",
+      "url": "https://onda-audio-f3pxwjkk0-r79078339-3591s-projects.vercel.app"
+    },
+    "previous_versions": {
+      "annotated-doc": "0.0.5",
+      "annotated-types": "0.8.0",
+      "anyio": "4.15.1",
+      "brotli": "1.2.0",
+      "certifi": "2026.7.22",
+      "charset-normalizer": "3.5.2",
+      "click": "8.5.0",
+      "deno": "2.9.7",
+      "fastapi": "0.142.4",
+      "h11": "0.16.0",
+      "idna": "3.20",
+      "imageio-ffmpeg": "0.6.0",
+      "mutagen": "1.48.1",
+      "opentelemetry-api": "1.45.1",
+      "publicsuffixlist": "1.0.2.20261007",
+      "pycryptodomex": "3.24.0",
+      "pydantic": "2.13.5",
+      "pydantic-core": "2.46.5",
+      "requests": "2.34.2",
+      "starlette": "1.7.0",
+      "typing-extensions": "4.16.0",
+      "typing-inspection": "0.4.4",
+      "urllib3": "2.8.0",
+      "uvicorn": "0.54.0",
+      "websockets": "17.2",
+      "yt-dlp": "2026.8.19",
+      "yt-dlp-ejs": "0.8.0"
+    },
+    "versions": {
+      "annotated-doc": "0.0.5",
+      "annotated-types": "0.8.0",
+      "anyio": "4.15.1",
+      "brotli": "1.2.0",
+      "certifi": "2026.7.22",
+      "cffi": "2.1.1",
+      "charset-normalizer": "3.5.2",
+      "clerk-backend-api": "7.0.0",
+      "click": "8.5.0",
+      "cryptography": "50.0.2",
+      "deno": "2.9.7",
+      "fastapi": "0.142.4",
+      "h11": "0.16.0",
+      "httpcore": "1.0.9",
+      "httpx": "0.28.1",
+      "idna": "3.20",
+      "imageio-ffmpeg": "0.6.0",
+      "mutagen": "1.48.1",
+      "opentelemetry-api": "1.45.1",
+      "publicsuffixlist": "1.0.2.20261007",
+      "pycparser": "3.0",
+      "pycryptodomex": "3.24.0",
+      "pydantic": "2.13.5",
+      "pydantic-core": "2.46.5",
+      "pyjwt": "2.15.1",
+      "requests": "2.34.2",
+      "starlette": "1.7.0",
+      "typing-extensions": "4.16.0",
+      "typing-inspection": "0.4.4",
+      "urllib3": "2.8.0",
+      "uvicorn": "0.54.0",
+      "websockets": "17.2",
+      "yt-dlp": "2026.8.19",
+      "yt-dlp-ejs": "0.8.0"
+    }
   },
   "previous": {
     "id": "dpl_2RZb8LFVTjeJ8AMkUAtsEsTj9H3T",
@@ -194,8 +439,8 @@
     }
   ],
   "schema": 2,
-  "status": "rolled_back",
-  "updated_at": "2026-10-08T06:49:38.581254+00:00",
+  "status": "promotion_pending",
+  "updated_at": "2026-10-08T07:06:42.890566+00:00",
   "versions": {
     "annotated-doc": "0.0.5",
     "annotated-types": "0.8.0",

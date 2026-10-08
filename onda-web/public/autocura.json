@@ -2,7 +2,7 @@
   "automated": true,
   "automation_enabled": true,
   "baseline_platform_check": {
-    "checked_at": "2026-10-08T06:47:54.148503+00:00",
+    "checked_at": "2026-10-08T07:05:21.795885+00:00",
     "checks": [
       {
         "code": "platform_blocked",
@@ -33,7 +33,7 @@
   "components": "all_pinned_python_dependencies",
   "execution": {
     "repository": "RichardXLR/BraXYTDown",
-    "run_id": "37739510204",
+    "run_id": "37741204028",
     "workflow": "Onda AutoCura 3.0"
   },
   "history": [
@@ -96,26 +96,172 @@
     }
   ],
   "last_check": {
-    "checked_at": "2026-10-08T06:49:36.538183+00:00",
+    "checked_at": "2026-10-08T07:06:42.890525+00:00",
     "checks": [
       {
         "name": "runtime",
         "status": "passed"
       },
       {
-        "code": "runtime_authentication_missing",
+        "anonymous_download": "denied",
+        "authentication": "machine_token",
         "name": "runtime_authentication",
-        "status": "failed"
+        "provider": "clerk",
+        "status": "passed"
+      },
+      {
+        "name": "packaged_versions",
+        "status": "passed",
+        "versions": {
+          "deno": "2.9.7",
+          "ffmpeg": "7.0.2-static",
+          "ytDlp": "2026.08.19"
+        }
+      },
+      {
+        "code": "platform_blocked",
+        "name": "me_at_zoo_metadata",
+        "status": "blocked"
+      },
+      {
+        "code": "platform_blocked",
+        "name": "big_buck_bunny_metadata",
+        "status": "blocked"
+      },
+      {
+        "inspection": {
+          "audioCodec": "aac",
+          "duration": 0.6,
+          "height": 180,
+          "integratedLoudness": -16.0,
+          "privacy": "custom_tags_removed",
+          "videoCodec": "h264"
+        },
+        "name": "owned_clip_mp4_edited",
+        "scope": "edited_video",
+        "status": "passed"
+      },
+      {
+        "inspection": {
+          "audioCodec": null,
+          "duration": 0.6,
+          "height": 180,
+          "privacy": "custom_tags_removed",
+          "videoCodec": "h264"
+        },
+        "name": "owned_clip_mp4_muted",
+        "scope": "edited_video",
+        "status": "passed"
+      },
+      {
+        "inspection": {
+          "audioCodec": "opus",
+          "duration": 0.61,
+          "height": 180,
+          "privacy": "custom_tags_removed",
+          "videoCodec": "vp9"
+        },
+        "name": "owned_clip_webm_edited",
+        "scope": "edited_video",
+        "status": "passed"
+      },
+      {
+        "inspection": {
+          "audioCodec": "aac",
+          "duration": 0.62,
+          "height": 180,
+          "privacy": "custom_tags_removed",
+          "videoCodec": "h264"
+        },
+        "name": "owned_clip_mkv_edited",
+        "scope": "edited_video",
+        "status": "passed"
+      },
+      {
+        "inspection": {
+          "audioCodec": "aac",
+          "duration": 0.6,
+          "height": 180,
+          "privacy": "custom_tags_removed",
+          "videoCodec": "h264"
+        },
+        "name": "owned_clip_mov_edited",
+        "scope": "edited_video",
+        "status": "passed"
+      },
+      {
+        "inspection": {
+          "audioCodec": "mp3",
+          "decoded": true
+        },
+        "name": "owned_tone_mp3",
+        "status": "passed"
+      },
+      {
+        "inspection": {
+          "audioCodec": "aac",
+          "decoded": true
+        },
+        "name": "owned_tone_m4a",
+        "status": "passed"
+      },
+      {
+        "inspection": {
+          "audioCodec": "pcm_s16le",
+          "decoded": true
+        },
+        "name": "owned_tone_wav",
+        "status": "passed"
+      },
+      {
+        "inspection": {
+          "audioCodec": "flac",
+          "decoded": true
+        },
+        "name": "owned_tone_flac",
+        "status": "passed"
+      },
+      {
+        "inspection": {
+          "audioCodec": "vorbis",
+          "decoded": true
+        },
+        "name": "owned_tone_ogg",
+        "status": "passed"
+      },
+      {
+        "inspection": {
+          "audioCodec": "opus",
+          "decoded": true
+        },
+        "name": "owned_tone_opus",
+        "status": "passed"
+      },
+      {
+        "inspection": {
+          "audioCodec": "aac",
+          "decoded": true
+        },
+        "name": "owned_tone_aac",
+        "status": "passed"
+      },
+      {
+        "inspection": {
+          "audioCodec": "pcm_s16be",
+          "decoded": true
+        },
+        "name": "owned_tone_aiff",
+        "status": "passed"
       }
     ],
     "coverage": {
       "audio_conversion": "project_owned_tone",
       "video_conversion": "project_owned_clip",
       "youtube": "metadata_only",
-      "youtube_status": "passed"
+      "youtube_status": "blocked"
     },
     "platform_baseline": {
-      "checked_at": "2026-10-08T06:47:54.148503+00:00",
+      "checked_at": "2026-10-08T07:05:21.795885+00:00",
       "checks": [
         {
           "code": "platform_blocked",
@@ -131,13 +277,16 @@
       "deployment_id": "dpl_GYzz97HzmSint8pRjGLbK6BiG5Kp"
     },
     "release_gate": {
-      "accepted_existing_blocks": [],
+      "accepted_existing_blocks": [
+        "me_at_zoo_metadata",
+        "big_buck_bunny_metadata"
+      ],
       "baseline_deployment_id": "dpl_GYzz97HzmSint8pRjGLbK6BiG5Kp",
-      "status": "failed",
+      "status": "passed",
       "youtube_policy": "baseline",
-      "youtube_verified": true
+      "youtube_verified": false
     },
-    "status": "failed"
+    "status": "passed"
   },
   "message": "Todas as conversões e regressões devem passar. No modo baseline, um bloqueio idêntico do YouTube já presente na versão anterior continua indicado como bloqueado e não impede atualizações dos componentes.",
   "mode": "deployment",
@@ -200,10 +349,10 @@
   ],
   "schedule": "23 5 * * *",
   "schema": 3,
-  "snapshot_at": "2026-10-08T06:49:38.582344+00:00",
+  "snapshot_at": "2026-10-08T07:06:42.891804+00:00",
   "snapshot_only": true,
-  "state": "rolled_back",
-  "status": "rolled_back",
+  "state": "promotion_pending",
+  "status": "promotion_pending",
   "strategy": "immutable_deployment",
   "versions": {
     "annotated-doc": "0.0.5",
