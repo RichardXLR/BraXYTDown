@@ -126,7 +126,7 @@
     try { dialog.showModal(); } catch { return; }
     document.body.classList.add('intro-open');
     dialog.querySelector('[data-intro-skip]').focus({ preventScroll: true });
-    try { localStorage.setItem(seenKey, '1'); } catch { /* No account or tracking identifier is needed. */ }
+    try { window.OndaAccount.storage.setItem(seenKey, '1'); } catch { /* The account keeps this preference. */ }
     if (motionAllowed()) start();
   }
 
@@ -144,6 +144,7 @@
     if (document.hidden) { video.pause(); clearTimeout(watchdog); }
     else if (video.hasAttribute('src')) start();
   });
+  addEventListener('onda:auth', (event) => { if (!event.detail?.signedIn) finish(); });
   addEventListener('pagehide', () => {
     generation += 1;
     clearTimeout(closeTimer);
@@ -155,7 +156,7 @@
   });
   reducedMotion.addEventListener('change', () => { if (reducedMotion.matches) finish(); });
   let seen = false;
-  try { seen = localStorage.getItem(seenKey) === '1'; } catch { /* Intro stays skippable without storage. */ }
+  try { seen = window.OndaAccount.storage.getItem(seenKey) === '1'; } catch { /* Intro stays skippable without storage. */ }
   const preferences = window.OndaUI?.preferences;
   if (!seen && preferences?.intro !== false && motionAllowed() && !navigator.connection?.saveData) open({ automatic: true });
 })();

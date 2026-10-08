@@ -5,25 +5,45 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#071225" />
   <meta property="og:image" content="/assets/onda-logo.webp" />
-  <meta name="description" content="Seu estúdio de áudio e vídeo. Converta links públicos, escolha formatos, corte trechos e ajuste seus arquivos. Grátis, sem cadastro." />
+  <meta name="description" content="Seu estúdio de áudio e vídeo. Converta links públicos, escolha formatos e retome suas preferências com sua conta Onda." />
   <title>Onda — áudio e vídeo.</title>
   <link rel="icon" href="/assets/onda-icon.png" type="image/png" />
   <link rel="stylesheet" href="/ui.css" />
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/brand.css" />
   <link rel="stylesheet" href="/experience.css" />
-  <script src="/ui.js" defer></script>
-  <script src="/app.js" defer></script>
-  <script src="/player.js" defer></script>
-  <script src="/intro.js" defer></script>
+  <link rel="stylesheet" href="/account.css" />
+  <link rel="stylesheet" href="/save.css" />
+  <script src="/clerk-portuguese.js" defer></script>
+  <script src="/account.js" defer></script>
 </head>
-<body>
+<body data-account="loading">
+  <section class="account-gate" id="account-gate" aria-labelledby="account-title">
+    <div class="account-ocean" aria-hidden="true"><span></span><span></span><span></span></div>
+    <div class="account-introduction">
+      <a class="account-brand" href="/" aria-label="Onda, início"><img src="/assets/onda-logo.webp" width="76" height="76" alt="" /><span>Onda<span aria-hidden="true">.</span></span></a>
+      <span class="account-eyebrow">SEU ESTÚDIO, EM SINTONIA</span>
+      <h1 id="account-title">Entre na <span>sua Onda.</span></h1>
+      <p>Áudio, vídeo e suas escolhas. Crie sua conta para abrir o estúdio e retomar seus links de onde parou.</p>
+      <div class="account-benefits"><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>Preferências salvas na conta</span><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>Seu histórico em outros dispositivos</span><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>Acesso gratuito ao estúdio</span></div>
+      <svg class="account-brand-wave" viewBox="0 0 380 90" aria-hidden="true"><path d="M-20 45C45-16 80 106 150 45S260-16 320 45 370 100 410 45"/><path d="M-20 60C45-1 80 121 150 60S260-1 320 60 370 115 410 60"/></svg>
+    </div>
+    <div class="account-panel">
+      <div class="account-auth-tabs" id="account-auth-tabs" role="tablist" aria-label="Acesso à conta" hidden><button id="account-sign-in" type="button" role="tab" aria-selected="true" aria-controls="account-auth-form">Entrar</button><button id="account-sign-up" type="button" role="tab" aria-selected="false" aria-controls="account-auth-form">Criar conta</button></div>
+      <div class="account-loading" id="account-loading" role="status"><span class="account-spinner" aria-hidden="true"></span><p id="account-loading-text">Preparando seu estúdio…</p></div>
+      <div class="account-auth-form" id="account-auth-form" role="tabpanel" aria-label="Acesso seguro à conta"></div>
+      <div class="account-error" id="account-error" role="alert" hidden><p id="account-error-message"></p><button id="account-retry" type="button" class="secondary-button">Tentar novamente</button></div>
+      <p class="account-gate-note">Use apenas conteúdo próprio, de domínio público ou autorizado. Cookies de outras plataformas não são salvos na conta.</p>
+    </div>
+    <noscript><p class="account-noscript">Ative o JavaScript para entrar e usar o estúdio Onda.</p></noscript>
+  </section>
+  <div id="onda-workspace" hidden inert>
   <a class="skip-link" href="#baixar">Pular para o baixador</a>
   <div class="ambient-light" aria-hidden="true"></div>
   <header class="app-topbar">
     <a class="app-brand brand" href="/?tab=download" aria-label="Onda, início"><img class="brand-logo brand-image brand-symbol" src="/assets/onda-logo.webp" width="48" height="48" alt="" /><span class="brand-name">Onda<span class="brand-dot">.</span></span></a>
     <span class="topbar-divider" aria-hidden="true"></span><span class="topbar-label">ESTÚDIO DE MÍDIA</span>
-    <div class="topbar-actions"><span class="topbar-operation" data-operation-label>Pronto para criar</span><span class="free-badge"><span aria-hidden="true"></span> Acesso gratuito</span><button class="sound-toggle" data-sound-toggle type="button" aria-pressed="false" aria-label="Ativar sons da interface"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m11 5-6 4H2v6h3l6 4ZM16 9l5 6m0-6-5 6" /></svg><span data-sound-label>Sons desligados</span></button></div>
+    <div class="topbar-actions"><span class="topbar-operation" data-operation-label>Pronto para criar</span><span class="free-badge"><span aria-hidden="true"></span> Acesso gratuito</span><button class="sound-toggle" data-sound-toggle type="button" aria-pressed="false" aria-label="Ativar sons da interface"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m11 5-6 4H2v6h3l6 4ZM16 9l5 6m0-6-5 6" /></svg><span data-sound-label>Sons desligados</span></button><div class="account-controls"><button class="account-sync" id="account-sync" type="button" data-state="loading" aria-label="Dados da conta: sincronizando"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7a8 8 0 0 1 13-1l2 2M20 3v5h-5M19 17A8 8 0 0 1 6 18l-2-2M4 21v-5h5"/></svg><span id="account-sync-label">Sincronizando</span></button><div id="account-user-button" aria-label="Sua conta"></div><button class="account-sign-out" id="account-sign-out" type="button">Sair</button></div></div>
   </header>
 
   <div class="workspace-shell">
@@ -52,7 +72,7 @@
           <div><div class="eyebrow"><span class="tiny-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span> SEU CONTEÚDO. SEU ESTÚDIO.</div><h1 id="hero-title">Dê forma ao <span id="hero-media-word">seu som.</span></h1><p class="hero-copy">Cole um link. Escolha áudio ou vídeo. Ajuste o arquivo ao seu fluxo.</p></div>
           <div class="hero-wave" aria-hidden="true"><span>DA FONTE AO PLAY</span><svg viewBox="0 0 260 92"><defs><linearGradient id="wave-gradient" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#2f4c70"/><stop offset=".5" stop-color="#69bfff"/><stop offset="1" stop-color="#2f4c70"/></linearGradient></defs><path class="wave-background" d="M0 46h260"/><g stroke="url(#wave-gradient)" stroke-width="3" stroke-linecap="round"><path d="M5 43v6M14 36v20M23 40v12M32 29v34M41 20v52M50 28v36M59 36v20M68 16v60M77 8v76M86 22v48M95 29v34M104 13v66M113 24v44M122 34v24M131 18v56M140 6v80M149 21v50M158 29v34M167 19v54M176 35v22M185 25v42M194 33v26M203 20v52M212 34v24M221 39v14M230 33v26M239 39v14M248 43v6"/></g></svg><div class="hero-wave-line"><span></span><i></i><span></span></div></div>
         </div>
-        <div class="studio-meta" data-reveal><div class="source-tags"><span class="source-tag">Links públicos</span><span class="source-tag" id="studio-format-count">8 formatos de áudio</span><span class="source-tag">Sem cadastro</span></div><span class="studio-meta-note">Do link ao arquivo, com menos cliques.</span></div>
+        <div class="studio-meta" data-reveal><div class="source-tags"><span class="source-tag">Links públicos</span><span class="source-tag" id="studio-format-count">8 formatos de áudio</span><span class="source-tag">Na sua conta</span></div><span class="studio-meta-note">Do link ao arquivo, com menos cliques.</span></div>
         <div class="download-card studio-card" id="baixar">
           <div class="card-topline"><span><span class="card-status-dot" aria-hidden="true"></span> <span id="card-mode-title">ÁUDIO POR LINK</span></span><span class="card-topline-right">Uma fonte. Seu formato.</span></div>
           <form id="download-form" novalidate>
@@ -143,9 +163,9 @@
           <div class="operation-status" id="operation-status" hidden aria-live="polite" aria-atomic="true">
             <div class="status-heading"><span class="status-indicator" id="status-indicator" aria-hidden="true"></span><div><p id="status-title"></p><span id="status-message"></span></div><button class="cancel-button" id="cancel-button" type="button" hidden>Cancelar</button></div>
             <div class="progress-track" id="progress-track" hidden><div id="progress-fill"></div></div>
-            <a class="save-button" id="save-button" hidden>Salvar arquivo <span aria-hidden="true">↓</span></a>
+            <button class="secondary-button" id="save-open" type="button" hidden>Salvar arquivo <span aria-hidden="true">↓</span></button>
           </div>
-          <div class="card-footer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6Zm-4 9 3 3 5-6" /></svg><span>Baixe apenas áudio ou vídeo próprio, de domínio público ou autorizado.</span><span class="privacy-label">Sem cadastro</span></div>
+          <div class="card-footer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6Zm-4 9 3 3 5-6" /></svg><span>Baixe apenas áudio ou vídeo próprio, de domínio público ou autorizado.</span><span class="privacy-label">Na sua conta</span></div>
         </div>
         <div class="studio-bottom-grid source-note-grid" data-reveal>
           <article class="source-note"><div class="feature-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg></div><div><span class="browser-option-kicker">BOM SABER</span><h2>A qualidade começa na fonte.</h2><p>Mais bitrate não recria detalhes ausentes. O acesso a cada link depende da plataforma.</p><a class="feature-link" href="/?tab=compatibility">Ver compatibilidade <span aria-hidden="true">→</span></a></div></article>
@@ -155,9 +175,9 @@
 
       <section class="workspace-panel" id="panel-library" data-workspace-panel="library" role="tabpanel" aria-labelledby="tab-library" tabindex="0" hidden>
         <div class="view-heading" data-reveal><div class="eyebrow">SEUS ÚLTIMOS PLAYS</div><h1 class="view-title">Seu conteúdo, <span>organizado.</span></h1><p class="view-description">Retome um link e suas preferências. Seu próximo arquivo começa aqui.</p></div>
-        <section class="history-section studio-card" id="history-section" hidden aria-labelledby="history-title"><div class="section-heading compact-heading"><div><span class="section-eyebrow">SALVO NESTE NAVEGADOR</span><h2 id="history-title">Seus últimos links</h2></div><button class="text-button" id="clear-history" type="button">Limpar histórico</button></div><ul id="history-list"></ul><p class="history-note">Até cinco links. Apenas URLs, formato e preferências ficam neste navegador. Os arquivos e cookies não são guardados no histórico.</p></section>
+        <section class="history-section studio-card" id="history-section" hidden aria-labelledby="history-title"><div class="section-heading compact-heading"><div><span class="section-eyebrow">SALVO NA SUA CONTA</span><h2 id="history-title">Seus últimos links</h2></div><button class="text-button" id="clear-history" type="button">Limpar histórico</button></div><ul id="history-list"></ul><p class="history-note">Seus cinco links recentes, formatos e ajustes ficam salvos na conta. Arquivos baixados e cookies não são guardados no histórico.</p></section>
         <div class="library-empty studio-card" id="history-empty"><div class="empty-art" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v16M9 4v16m5-15 4-1 4 15-4 1Z"/></svg><span></span><span></span></div><span class="section-eyebrow">UMA BIBLIOTECA COM A SUA CARA</span><h2>O primeiro arquivo é com você.</h2><p>Depois de uma conversão, seu link aparece aqui.<br />Reutilize suas escolhas sem começar do zero.</p><a class="primary-link" href="/?tab=download">Criar meu primeiro arquivo <span aria-hidden="true">→</span></a></div>
-        <aside class="library-note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6Zm-4 9 3 3 5-6" /></svg><p>O histórico é seu. Limpar os links remove somente os dados deste navegador, sem alterar os arquivos já baixados.</p></aside>
+        <aside class="library-note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6Zm-4 9 3 3 5-6" /></svg><p>O histórico acompanha sua conta. Limpar os links remove o histórico salvo, sem alterar os arquivos já baixados.</p></aside>
       </section>
 
       <section class="workspace-panel" id="panel-compatibility" data-workspace-panel="compatibility" role="tabpanel" aria-labelledby="tab-compatibility" tabindex="0" hidden>
@@ -208,13 +228,13 @@
           <details><summary>Posso baixar só um trecho?<span aria-hidden="true">+</span></summary><p>Em “Corte e ajustes”, informe o começo e o fim em mm:ss, hh:mm:ss ou segundos. O fim deve ser posterior ao começo. Deixar os campos vazios usa o início e o fim da fonte. Cortar um trecho pode reduzir o tamanho da saída e o tempo necessário para processar o arquivo.</p></details>
           <details><summary>O que muda ao remover metadados?<span aria-hidden="true">+</span></summary><p>A opção vem ativada e remove campos descritivos de autoria, capas e capítulos. Dados técnicos exigidos pelo formato, como informações de codificação, podem permanecer. Isso não altera os direitos sobre o conteúdo.</p></details>
           <details><summary>Normalizar volume melhora a qualidade?<span aria-hidden="true">+</span></summary><p>A normalização ajusta o volume para uma referência comum. Não remove ruído nem recupera detalhes da fonte. Em vídeo sem áudio, esse ajuste fica indisponível.</p></details>
-          <details><summary>Onde ficam os meus downloads?<span aria-hidden="true">+</span></summary><p>Depois da conversão, use “Salvar arquivo” para baixar o áudio ou vídeo no seu dispositivo. O navegador define a pasta de destino. O histórico guarda somente os últimos links e suas preferências neste navegador, não os arquivos.</p></details>
+          <details><summary>Onde ficam os meus downloads?<span aria-hidden="true">+</span></summary><p>Depois da conversão, use “Salvar arquivo” para baixar o áudio ou vídeo no seu dispositivo. O navegador define a pasta de destino. Sua conta guarda os últimos links e as preferências de conversão. Os arquivos ficam no dispositivo onde você os baixou.</p></details>
         </div>
       </section>
         <aside class="rights-note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6Zm-4 9 3 3 5-6" /></svg><div><h2>Crie com respeito a quem cria.</h2><p>Baixe apenas áudio ou vídeo próprio, de domínio público ou autorizado. Estar público não significa autorização para baixar. O serviço não verifica direitos autorais nem garante acesso a todas as plataformas.</p></div></aside>
       </section>
             <section class="workspace-panel" id="panel-personalization" data-workspace-panel="personalization" role="tabpanel" aria-labelledby="tab-personalization" tabindex="0" hidden>
-        <div class="view-heading" data-reveal><div class="eyebrow">UM ESTÚDIO COM A SUA CARA</div><h1 class="view-title">Sua Onda. <span>Seu estilo.</span></h1><p class="view-description">Escolha o visual e o ritmo da interface. Suas preferências são salvas automaticamente neste dispositivo.</p></div>
+        <div class="view-heading" data-reveal><div class="eyebrow">UM ESTÚDIO COM A SUA CARA</div><h1 class="view-title">Sua Onda. <span>Seu estilo.</span></h1><p class="view-description">Escolha o visual e o ritmo da interface. Suas preferências são salvas automaticamente na sua conta.</p></div>
         <div class="preferences-layout">
           <section class="preferences-card studio-card" aria-labelledby="preferences-visual-title"><div class="preferences-card-heading"><span class="preferences-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18h1a2 2 0 0 0 1-3.7 2 2 0 0 1 1-3.8h2a4 4 0 0 0 4-4C21 6 17 3 12 3Z"/><circle cx="8" cy="8" r="1"/><circle cx="14" cy="7" r="1"/></svg></span><div><h2 id="preferences-visual-title">Cores e aparência</h2><p>O azul da Onda, com o seu toque.</p></div></div>
             <label class="preference-field" for="preference-accent"><span>Cor de destaque<small>Usada nos controles e nos detalhes da interface.</small></span><span class="preference-select-wrap"><span class="preference-color-dot" aria-hidden="true"></span><select id="preference-accent"><option value="blue">Azul Onda</option><option value="cyan">Azul oceano</option><option value="violet">Violeta</option></select></span></label>
@@ -227,8 +247,8 @@
             <div class="preference-sound-note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m11 5-6 4H2v6h3l6 4ZM16 8a5 5 0 0 1 0 8m3-11a9 9 0 0 1 0 14"/></svg><p>Os sons de interação são controlados pelo ícone no topo. O som dos vídeos é ajustado no próprio player.</p></div>
           </section>
         </div>
-        <div class="preferences-save-row"><p id="preferences-status" role="status" aria-live="polite"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>Suas escolhas ficam salvas neste navegador.</p><button class="secondary-button" id="reset-preferences" type="button">Restaurar personalização</button></div>
-        <aside class="preferences-privacy"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6Zm-4 9 3 3 5-6"/></svg><p>Cores, aparência, sons e preferências ficam somente neste dispositivo. Cookies de sessão não fazem parte desses dados. Nenhuma conta é necessária para usar o Onda.</p></aside>
+        <div class="preferences-save-row"><p id="preferences-status" role="status" aria-live="polite"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>Suas escolhas são sincronizadas com sua conta.</p><button class="secondary-button" id="reset-preferences" type="button">Restaurar personalização</button></div>
+        <aside class="preferences-privacy"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6Zm-4 9 3 3 5-6"/></svg><p>Cores, aparência, sons, links recentes e ajustes são sincronizados com sua conta. Cookies de outras plataformas e arquivos baixados não fazem parte desses dados.</p></aside>
       </section>
       <section class="workspace-panel" id="panel-credits" data-workspace-panel="credits" role="tabpanel" aria-labelledby="tab-credits" tabindex="0" hidden>
         <div class="view-heading" data-reveal><div class="eyebrow">QUEM CRIA A ONDA</div><h1 class="view-title">Uma ideia. <span>Muitas ondas.</span></h1><p class="view-description">Conheça o criador por trás do seu estúdio.</p></div>
@@ -242,5 +262,15 @@
     </main>
   </div>
   <div class="sr-only" id="announcement" role="status" aria-live="polite"></div>
+  <p class="sr-only" id="account-sync-announcement" role="status" aria-live="polite"></p>
+  </div>
+  <dialog class="save-dialog" id="save-dialog" aria-label="Salvar seu arquivo" aria-describedby="save-description">
+    <p class="sr-only" id="save-description">Seu arquivo está pronto. Use o botão para iniciar o salvamento no dispositivo. Pressione Escape para voltar ao estúdio.</p>
+    <a class="save-file-action" id="save-button" hidden>
+      <span class="save-file-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg></span>
+      <span class="save-file-copy"><span class="save-file-eyebrow">SEU ARQUIVO ESTÁ PRONTO</span><strong>Salvar arquivo</strong><span id="save-file-detail">Baixar no seu dispositivo</span></span>
+      <span class="save-file-arrow" aria-hidden="true">↗</span>
+    </a>
+  </dialog>
 </body>
 </html>

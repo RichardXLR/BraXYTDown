@@ -13,6 +13,8 @@
   const progressFill = $('progress-fill');
   const cancelButton = $('cancel-button');
   const saveButton = $('save-button');
+  const saveDialog = $('save-dialog');
+  const saveOpen = $('save-open');
   const HISTORY_KEY = 'onda.audio.history.v1';
   const DRAFT_KEY = 'onda.media.draft.v2';
   let draftRestored = false;
@@ -48,12 +50,12 @@
     draft.trim_start = $('trim-start').value.slice(0, 32);
     draft.trim_end = $('trim-end').value.slice(0, 32);
     for (const name of ['strip-metadata', 'normalize-audio', 'mute-video']) draft[name] = $(name).checked;
-    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch { /* The form remains usable without storage. */ }
+    try { window.OndaAccount.storage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch { /* The form remains usable without storage. */ }
   }
 
   function restoreDraft() {
     try {
-      const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+      const draft = JSON.parse(window.OndaAccount.storage.getItem(DRAFT_KEY) || 'null');
       if (draft && typeof draft === 'object' && !Array.isArray(draft)) {
         const allowed = { media_type: new Set(['audio', 'video']), format: FORMATS, quality: new Set(['128', '192', '256', '320']),
           video_format: VIDEO_FORMATS, video_resolution: VIDEO_RESOLUTIONS };
@@ -72,7 +74,7 @@
     providersController = controller;
     const timer = window.setTimeout(() => controller.abort(), 15000);
     try {
-      const response = await fetch('/api/compatibility/providers', { signal: controller.signal });
+      const response = await window.OndaAuth.fetch('/api/compatibility/providers', { signal: controller.signal });
       if (!response.ok) throw new Error('catalog unavailable');
       const data = await response.json();
       if (!Array.isArray(data.providers)) throw new Error('catalog invalid');
@@ -109,7 +111,7 @@
     const controller = new AbortController(); maintenanceController = controller;
     const timer = window.setTimeout(() => controller.abort(), 15000);
     try {
-      const response = await fetch('/api/maintenance', { signal: controller.signal, cache: 'no-store' });
+      const response = await window.OndaAuth.fetch('/api/maintenance', { signal: controller.signal, cache: 'no-store' });
       if (!response.ok) throw new Error('maintenance unavailable');
       renderMaintenance(await response.json());
       maintenanceLoadedAt = Date.now();
@@ -355,6 +357,8 @@
   }
 
   function releaseFile() {
+    if (saveDialog.open) saveDialog.close();
+    saveOpen.hidden = true;
     if (objectURL) URL.revokeObjectURL(objectURL);
     objectURL = null;
     saveButton.hidden = true;
@@ -485,7 +489,7 @@
     const controller = startOperation('inspect');
     showStatus('loading', 'Buscando os detalhes do link', 'Verificando título, duração e disponibilidade na fonte.');
     try {
-      const response = await fetch('/api/inspect', {
+      const response = await window.OndaAuth.fetch('/api/inspect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(withCookies({ url, media_type: selectedMediaType() }, cookies)),
@@ -549,7 +553,7 @@
     progressTrack.classList.add('indeterminate');
     progressFill.style.width = '0%';
     try {
-      const response = await fetch('/api/download', {
+      const response = await window.OndaAuth.fetch('/api/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(withCookies({ url, media_type: type, format, quality, ...options }, cookies)),
@@ -601,6 +605,10 @@
       saveButton.download = filename;
       saveButton.hidden = false;
       showStatus('success', `Seu ${mediaLabel(type)} está pronto`, `${format.toUpperCase()} · ${formatBytes(blob.size)}. Clique em “Salvar arquivo” para baixar no seu dispositivo.`);
+      $('save-file-detail').textContent = `${format.toUpperCase()} · ${formatBytes(blob.size)}`;
+      saveOpen.hidden = false;
+      saveDialog.showModal();
+      saveButton.focus({ preventScroll: true });
       addHistory({ url, media_type: type, format, quality, options, title: String(title), timestamp: Date.now() });
     } catch (error) {
       releaseFile();
@@ -612,7 +620,7 @@
 
   function readHistory() {
     try {
-      const stored = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+      const stored = JSON.parse(window.OndaAccount.storage.getItem(HISTORY_KEY) || '[]');
       if (!Array.isArray(stored)) return [];
       const records = [];
       for (const entry of stored) {
@@ -640,7 +648,7 @@
 
   function addHistory(entry) {
     history = [entry, ...history.filter((item) => item.url !== entry.url || item.format !== entry.format || item.media_type !== entry.media_type)].slice(0, 5);
-    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)); } catch { /* History is optional if storage is unavailable. */ }
+    try { window.OndaAccount.storage.setItem(HISTORY_KEY, JSON.stringify(history)); } catch { /* History is optional if storage is unavailable. */ }
     renderHistory();
   }
 
@@ -716,7 +724,7 @@
     const controller = new AbortController();
     const timer = window.setTimeout(() => controller.abort(), 12000);
     try {
-      const response = await fetch('/api/health', { signal: controller.signal, cache: 'no-store' });
+      const response = await window.OndaAuth.fetch('/api/health', { signal: controller.signal, cache: 'no-store' });
       if (!response.ok) throw new Error('Unavailable');
       const data = await response.json();
       const available = data.ok !== false && data.ready !== false && data.available !== false && data.status !== 'unavailable' && data.status !== 'error' && data.status !== 'degraded';
@@ -791,7 +799,7 @@
     const timer = window.setTimeout(() => controller.abort(), 20000);
     $('refresh-compatibility').disabled = true;
     try {
-      const response = await fetch('/api/compatibility', { signal: controller.signal, cache: 'no-store' });
+      const response = await window.OndaAuth.fetch('/api/compatibility', { signal: controller.signal, cache: 'no-store' });
       if (!response.ok) throw await responseError(response);
       renderCompatibility(await response.json());
     } catch (error) {
@@ -840,7 +848,7 @@
     const controller = startOperation('compatibility');
     showCompatibilityResult('loading', 'Testando o acesso à fonte', `${detectSource(url)} · aguarde a resposta do serviço.`);
     try {
-      const response = await fetch('/api/compatibility/test', {
+      const response = await window.OndaAuth.fetch('/api/compatibility/test', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(withCookies({ url, media_type: selectedMediaType(), ...(provider ? { provider } : {}) }, cookies)), signal: controller.signal,
       });
@@ -953,12 +961,26 @@
   });
   $('clear-history').addEventListener('click', () => {
     history = [];
-    try { localStorage.removeItem(HISTORY_KEY); } catch { /* Storage may be unavailable. */ }
+    try { window.OndaAccount.storage.removeItem(HISTORY_KEY); } catch { /* Storage may be unavailable. */ }
     renderHistory();
-    announce('Histórico deste navegador removido.');
+    announce('Histórico da conta removido.');
   });
   saveButton.addEventListener('click', () => {
     announce('Download enviado ao navegador. Verifique sua pasta de downloads.');
+    // The browser owns file saving and does not expose a completion event.
+    // Keep the Blob URL alive until the download has been handed off.
+    setTimeout(() => { if (saveDialog.open) saveDialog.close(); saveButton.hidden = true; saveOpen.hidden = true; }, 0);
+    const savedURL = objectURL;
+    setTimeout(() => { if (objectURL === savedURL) releaseFile(); }, 60000);
+  });
+  saveOpen.addEventListener('click', () => { if (objectURL) { saveButton.hidden = false; saveDialog.showModal(); saveButton.focus({ preventScroll: true }); } });
+  window.addEventListener('onda:account-state', () => {
+    history = readHistory();
+    renderHistory();
+    if (!activeController && !form.contains(document.activeElement)) { restoreDraft(); updateChoices(); updateSource(); }
+  });
+  window.addEventListener('onda:auth', (event) => {
+    if (!event.detail?.signedIn) { clearCookies(); releaseFile(); activeController?.abort(); compatibilityStatusController?.abort(); providersController?.abort(); maintenanceController?.abort(); }
   });
   window.addEventListener('pagehide', () => {
     clearCookies();

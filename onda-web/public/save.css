@@ -1,0 +1,15 @@
+.save-dialog{border:0;overflow:visible;background:transparent;padding:0;margin:auto;max-width:calc(100vw - 40px);color:white;box-shadow:none}
+.save-dialog[open]{animation:save-enter .36s cubic-bezier(.2,.8,.2,1) both}
+.save-dialog::backdrop{background:rgba(3,9,19,.67);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);animation:save-backdrop .3s ease both}
+.save-file-action{position:relative;isolation:isolate;display:flex;align-items:center;gap:23px;width:min(460px,calc(100vw - 40px));padding:30px 28px;box-sizing:border-box;color:#fff!important;text-decoration:none;border:1px solid #ffaca580;border-radius:25px;background:linear-gradient(135deg,#f35c58 0%,#de302f 52%,#ba181f 100%);box-shadow:0 24px 80px #db27395c,0 7px 26px #09091377,inset 0 1px 0 #ffd6d677;cursor:pointer;transition:transform .2s,box-shadow .2s}
+.save-file-action::before{content:'';position:absolute;inset:-9px;border:1px solid #ff98982e;border-radius:33px;pointer-events:none}
+.save-file-action::after{content:'';position:absolute;inset:0;z-index:-1;border-radius:inherit;background:radial-gradient(ellipse at 18% 0,#ffd1c53b,transparent 70%);pointer-events:none}
+.save-file-icon{display:grid;place-items:center;flex-shrink:0;width:58px;height:58px;border:1px solid #fff4;background:#ffffff15;border-radius:17px;box-shadow:inset 0 1px 0 #fff3}
+.save-file-icon svg{width:27px;height:27px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.save-file-copy{display:grid;gap:7px;min-width:0}.save-file-eyebrow{color:#ffe2df;font-size:9px;letter-spacing:1.8px;font-weight:600}.save-file-copy strong{font-size:28px;letter-spacing:-.8px;font-weight:650;line-height:1.2}.save-file-copy>span:last-child{color:#ffe0dd;font-size:12px;line-height:1.5;overflow-wrap:anywhere}.save-file-arrow{margin-left:auto;font-size:25px;align-self:center;color:#ffe3e1}
+.save-file-action:hover{transform:translateY(-3px);box-shadow:0 28px 95px #e42c3b75,0 7px 26px #09091377,inset 0 1px 0 #ffd6d677}.save-file-action:active{transform:scale(.98)}.save-file-action:focus-visible{outline:3px solid #fff;outline-offset:7px}
+@keyframes save-enter{from{opacity:0;transform:translateY(15px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes save-backdrop{from{opacity:0}to{opacity:1}}
+@media(max-width:430px){.save-file-action{padding:26px 21px;gap:17px;border-radius:22px}.save-file-icon{width:46px;height:52px;border-radius:14px}.save-file-copy strong{font-size:24px}.save-file-eyebrow{font-size:8px;letter-spacing:1.3px}.save-file-arrow{font-size:21px}.save-file-action::before{inset:-7px;border-radius:29px}}
+@media(prefers-reduced-motion:reduce){.save-dialog[open],.save-dialog::backdrop{animation:none}.save-file-action{transition:none}}
+body[data-motion="off"] .save-dialog[open]{animation:none}body[data-motion="off"] .save-dialog::backdrop{animation:none}body[data-motion="off"] .save-file-action{transition:none}

@@ -23,8 +23,10 @@ from starlette.background import BackgroundTask
 from .engine import FORMATS, VIDEO_FORMATS, MediaSettings, VIDEO_DURATION, LOSSLESS, MAX_DURATION, LOSSLESS_DURATION, inspect_media, prepare_download, runtime_options
 from .security import AudioError, Guard, public_url
 from .cookies import MAX_COOKIE_BYTES
+from .auth import register_auth, auth_capabilities
+from .account import register_account
 
-app = FastAPI(title="Onda API", version="1.0.0", docs_url=None, redoc_url=None)
+app = FastAPI(title="Onda API", version="1.0.0", docs_url=None, redoc_url=None, openapi_url=None)
 SLOTS = threading.BoundedSemaphore(2)
 LOGGER = logging.getLogger("onda")
 
@@ -121,6 +123,7 @@ async def health():
             "videoResolutions": ["source", "1080", "720", "480", "360"],
             "maxLosslessDuration": LOSSLESS_DURATION, "maxSourceMB": 128, "maxOutputMB": 100,
             "durationLimited": False, "operationTimeoutSeconds": 240,
+            "auth": auth_capabilities(),
             "jsRuntime": next(iter(runtime_options()), None)}
 
 
@@ -225,6 +228,8 @@ from .maintenance import register as register_maintenance
 register(app)
 register_player(app)
 register_maintenance(app)
+register_account(app)
+register_auth(app)
 
 # Vercel serves public/ from its CDN. This fallback is only for local uvicorn.
 public = Path(__file__).resolve().parents[1] / "public"

@@ -12,14 +12,14 @@ import urllib.parse
 import pytest
 
 from scripts.autocura import (AutoCura, CureError, DependencyCandidate, DeploymentChecks,
-                             HTTP, MAX_RESPONSE, MAX_PACKAGE_METADATA_RESPONSE,
+                             HTTP, MAX_RESPONSE, MAX_PACKAGE_METADATA_RESPONSE, ClerkMachineCredentials,
                              RepositoryCheckpoint, Vercel, atomic_json, deployment_url, process_lock,
                              same_version, subprocess_environment, verify_downloaded_audio, verify_downloaded_video)
 
 VERSIONS = {"yt-dlp": "2026.8.19", "imageio-ffmpeg": "0.6.0", "deno": "2.9.7"}
 OLD = {"id": "dpl_previous", "url": "https://previous.vercel.app", "readyState": "READY"}
 NEW = {"id": "dpl_candidate", "url": "https://candidate.vercel.app", "readyState": "READY"}
-PINS = "fastapi==0.141.1\nuvicorn==0.52.1\nyt-dlp[default]==2026.8.18\nimageio-ffmpeg==0.6.0\ndeno==2.9.6\npublicsuffixlist==1.0.2.20261003\n"
+PINS = "fastapi==0.141.1\nuvicorn==0.52.1\nyt-dlp[default]==2026.8.18\nimageio-ffmpeg==0.6.0\ndeno==2.9.6\npublicsuffixlist==1.0.2.20261003\nclerk-backend-api==7.0.0\n"
 
 
 def fake_resolution_run(monkeypatch, versions, calls=None):
@@ -285,20 +285,20 @@ def test_update_checks_all_reviewed_components_not_only_extraction_tools(tmp_pat
             name = url.split("/")[-2]
             requested.append(name)
             return {"info": {"version": {"fastapi": "0.141.2", "uvicorn": "0.52.2",
-                    "publicsuffixlist": "1.0.2.20261007"}.get(name, VERSIONS.get(name))}}
+                    "publicsuffixlist": "1.0.2.20261007", "clerk-backend-api": "7.0.0"}.get(name, VERSIONS.get(name))}}
 
     candidate = DependencyCandidate(tmp_path, Registry())
     fake_resolution_run(monkeypatch, {**VERSIONS, "fastapi": "0.141.2", "uvicorn": "0.52.2",
-                                     "publicsuffixlist": "1.0.2.20261007"})
+                                     "publicsuffixlist": "1.0.2.20261007", "clerk-backend-api": "7.0.0"})
     versions = candidate.latest()
-    assert set(requested) == {"fastapi", "uvicorn", "publicsuffixlist", *VERSIONS}
+    assert set(requested) == {"fastapi", "uvicorn", "publicsuffixlist", "clerk-backend-api", *VERSIONS}
     assert "fastapi==0.141.2" in candidate.specifications(versions)
     assert "uvicorn==0.52.2" in candidate.specifications(versions)
 
 
 def test_parent_resolution_selects_compatible_children_and_ignores_old_flat_lock_pins(tmp_path, monkeypatch):
     (tmp_path / "requirements.txt").write_text(PINS + "pydantic==2.13.4\npydantic-core==2.46.4\n")
-    parents = {**VERSIONS, "fastapi": "0.142.4", "uvicorn": "0.54.0", "publicsuffixlist": "1.0.2.20261007"}
+    parents = {**VERSIONS, "fastapi": "0.142.4", "uvicorn": "0.54.0", "publicsuffixlist": "1.0.2.20261007", "clerk-backend-api": "7.0.0"}
     compatible = {**parents, "pydantic": "2.13.5", "pydantic-core": "2.46.5", "new-dependency": "1.0"}
     requested, commands = [], []
 
@@ -317,9 +317,9 @@ def test_parent_resolution_selects_compatible_children_and_ignores_old_flat_lock
     assert versions == compatible and candidate.resolved_versions == compatible
     assert set(requested) == set(parents)
     specifications = candidate.specifications(versions)
-    assert len(specifications) == 6
+    assert len(specifications) == 7
     assert not any(value.startswith(("pydantic==", "pydantic-core==", "new-dependency==")) for value in specifications)
-    assert commands[0][-6:] == specifications
+    assert commands[0][-7:] == specifications
     forged = {**versions, "unresolved-package": "1.0"}
     with pytest.raises(CureError, match="unreviewed_component_update"):
         candidate.specifications(forged)
@@ -332,7 +332,7 @@ def test_parent_resolution_selects_compatible_children_and_ignores_old_flat_lock
 @pytest.mark.parametrize("fault", ["missing_parent", "parent_changed", "duplicate", "prerelease", "unsafe_name", "too_many", "bad_shape"])
 def test_resolved_dependency_graph_requires_valid_bounded_compatible_metadata(tmp_path, monkeypatch, fault):
     (tmp_path / "requirements.txt").write_text(PINS)
-    parents = {**VERSIONS, "fastapi": "0.142.4", "uvicorn": "0.54.0", "publicsuffixlist": "1.0.2.20261007"}
+    parents = {**VERSIONS, "fastapi": "0.142.4", "uvicorn": "0.54.0", "publicsuffixlist": "1.0.2.20261007", "clerk-backend-api": "7.0.0"}
 
     class Registry:
         def json(self, url, **_kwargs):
@@ -360,7 +360,7 @@ def test_second_resolution_must_match_discovery_before_any_wheel_is_executed(tmp
     (tmp_path / "requirements.txt").write_text(PINS)
     candidate = DependencyCandidate(tmp_path)
     selected = {**VERSIONS, "fastapi": "0.142.4", "uvicorn": "0.54.0",
-                "publicsuffixlist": "1.0.2.20261007", "pydantic": "2.13.5", "pydantic-core": "2.46.5"}
+                "publicsuffixlist": "1.0.2.20261007", "clerk-backend-api": "7.0.0", "pydantic": "2.13.5", "pydantic-core": "2.46.5"}
     candidate.resolved_versions = dict(selected)
     calls = []
 
@@ -721,8 +721,30 @@ def test_public_video_source_configuration_and_edit_payload_are_verified():
 
 def test_release_gate_uses_real_api_editing_and_local_converters(monkeypatch):
     """Mock only remote acquisition; validate actual API settings and bytes."""
+    import base64
+    import time
+    from types import SimpleNamespace
     from fastapi.testclient import TestClient
-    from api import compatibility, engine, index
+    from api import auth, compatibility, engine, index
+
+    monkeypatch.setenv("CLERK_PUBLISHABLE_KEY", "pk_test_" + base64.b64encode(b"onda-tests.clerk.accounts.dev$").decode())
+    monkeypatch.setenv("CLERK_SECRET_KEY", "sk_test_fixture_only_not_a_real_key")
+    monkeypatch.setenv("CLERK_ALLOWED_ORIGINS", "https://onda-audio.vercel.app")
+    monkeypatch.setenv("CLERK_AUTOCURA_SOURCE_MACHINE_ID", "mch_autocura")
+    monkeypatch.setenv("CLERK_AUTOCURA_TARGET_MACHINE_ID", "mch_ondaapi")
+    monkeypatch.setenv("VERCEL_URL", "candidate.vercel.app")
+
+    class MachineVerifier:
+        async def verify_token_async(self, **kwargs):
+            assert kwargs["token"] == "mt_fixture"
+            return SimpleNamespace(subject="mch_autocura", scopes=["mch_ondaapi"],
+                                   revoked=False, expired=False, expiration=time.time() * 1000 + 60000)
+
+    monkeypatch.setattr(auth, "_clerk_client", lambda _key: SimpleNamespace(m2m=MachineVerifier()))
+
+    class MachineCredentials:
+        def token(self):
+            return "mt_fixture"
 
     public = Path(__file__).resolve().parents[1] / "public"
 
@@ -747,25 +769,27 @@ def test_release_gate_uses_real_api_editing_and_local_converters(monkeypatch):
         class ActualAPI:
             def json(self, url, **kwargs):
                 response = client.request(kwargs.get("method", "GET"), urllib.parse.urlsplit(url).path,
-                                          json=kwargs.get("payload"))
+                                          json=kwargs.get("payload"), headers=kwargs.get("headers"))
                 if response.status_code >= 400:
-                    raise CureError(response.json()["code"])
+                    raise CureError(response.json()["code"], http_status=response.status_code)
                 return response.json()
 
             def request(self, url, **kwargs):
                 if kwargs.get("method") == "HEAD":
                     return b"", {"Content-Type": "video/mp4" if url.endswith(".mp4") else "audio/wav"}
-                response = client.post("/api/download", json=kwargs["payload"])
+                response = client.post("/api/download", json=kwargs["payload"], headers=kwargs.get("headers"))
                 if response.status_code >= 400:
-                    raise CureError(response.json()["code"])
+                    raise CureError(response.json()["code"], http_status=response.status_code)
                 return response.content, response.headers
 
-        result = DeploymentChecks(ActualAPI()).verify(NEW)
+        result = DeploymentChecks(ActualAPI(), machine_credentials=MachineCredentials(),
+                                  project_id="prj_expected").verify({**NEW, "projectId": "prj_expected"})
     assert result["status"] == "passed", result
     video_checks = [check for check in result["checks"] if check.get("scope") == "edited_video"]
     assert len(video_checks) == 5
     assert video_checks[0]["inspection"]["audioCodec"] == "aac"
     assert video_checks[1]["inspection"]["audioCodec"] is None
+    assert result["checks"][1]["anonymous_download"] == "denied"
 
 
 def test_authorized_youtube_audio_is_a_real_additional_gate_when_configured():
@@ -796,10 +820,12 @@ def test_only_expected_https_deployment_origins_are_used(url):
 def test_dependency_processes_do_not_receive_deployment_credentials(monkeypatch):
     monkeypatch.setenv("VERCEL_TOKEN", "secret")
     monkeypatch.setenv("GITHUB_TOKEN", "secret")
+    monkeypatch.setenv("CLERK_AUTOCURA_MACHINE_SECRET_KEY", "machine-secret")
     monkeypatch.setenv("PIP_EXTRA_INDEX_URL", "https://evil.example")
     monkeypatch.setenv("HTTPS_PROXY", "http://proxy.example:8080")
     environment = subprocess_environment()
     assert "VERCEL_TOKEN" not in environment and "GITHUB_TOKEN" not in environment
+    assert "CLERK_AUTOCURA_MACHINE_SECRET_KEY" not in environment
     assert "PIP_EXTRA_INDEX_URL" not in environment
     assert environment["HTTPS_PROXY"] == "http://proxy.example:8080"
     assert environment["PIP_INDEX_URL"] == "https://pypi.org/simple"
@@ -899,7 +925,7 @@ def test_current_deployment_follows_the_public_alias_instead_of_latest_build(tmp
                 return {'projectId': 'prj_test', 'deploymentId': OLD['id']}
             assert OLD['id'] in url
             return {**OLD, 'projectId': 'prj_test'}
-    assert Vercel(tmp_path, Mapping()).current() == OLD
+    assert Vercel(tmp_path, Mapping()).current() == {**OLD, "projectId": "prj_test"}
 
 
 def test_production_view_refuses_a_stale_alias(tmp_path, monkeypatch):
@@ -1030,3 +1056,236 @@ def test_checkpoint_requires_runner_working_directory_to_match_prefix(tmp_path, 
     checkpoint_environment(monkeypatch, tmp_path)
     with pytest.raises(CureError, match="repository_subdirectory_mismatch"):
         RepositoryCheckpoint(tmp_path / "different-web")
+
+
+class StaticMachineCredentials:
+    def __init__(self):
+        self.calls = 0
+
+    def token(self):
+        self.calls += 1
+        return "mt_fixture"
+
+
+class AuthenticatedCanaryHTTP(CanaryHTTP):
+    """Record real codec gates while emulating the verified API boundary."""
+    def __init__(self, *, configured=True, machines=True, anonymous_denied=True, required=True):
+        super().__init__()
+        self.configured, self.machines = configured, machines
+        self.anonymous_denied, self.required = anonymous_denied, required
+        self.calls = []
+
+    def json(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        if url.endswith("/api/health"):
+            assert "Authorization" not in kwargs.get("headers", {})
+            value = super().json(url, **kwargs)
+            if self.required:
+                value["auth"] = {"required": True, "configured": self.configured,
+                                 "provider": "clerk", "machineToMachine": self.machines}
+            return value
+        assert kwargs["headers"]["Authorization"] == "Bearer mt_fixture"
+        return super().json(url, **kwargs)
+
+    def request(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        if kwargs.get("method") == "HEAD":
+            assert "headers" not in kwargs, "Fixture sources must receive no credentials."
+            return super().request(url, **kwargs)
+        headers = kwargs.get("headers", {})
+        if "Authorization" not in headers:
+            if self.anonymous_denied:
+                raise CureError("auth_required", http_status=401)
+        else:
+            assert headers["Authorization"] == "Bearer mt_fixture"
+            assert urllib.parse.urlsplit(url).path == "/api/download"
+        return super().request(url, **kwargs)
+
+
+def protected_checks(http, credentials=None, **kwargs):
+    return DeploymentChecks(http, machine_credentials=credentials or StaticMachineCredentials(),
+                            project_id="prj_expected", **kwargs)
+
+
+def test_machine_credentials_use_official_opaque_token_api_cache_and_renew(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    calls, clock = [], [100.0]
+    opaque = object()
+
+    class SDK:
+        def __init__(self, **kwargs):
+            assert kwargs == {"bearer_auth": "machine-fixture-secret", "timeout_ms": 20000, "retry_config": None}
+            self.m2m = self
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def create_token(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(token="mt_fixture")
+
+    monkeypatch.setitem(sys.modules, "clerk_backend_api", SimpleNamespace(Clerk=SDK))
+    monkeypatch.setitem(sys.modules, "clerk_backend_api.models", SimpleNamespace(TokenFormat=SimpleNamespace(OPAQUE=opaque)))
+    monkeypatch.setattr("scripts.autocura.time.monotonic", lambda: clock[0])
+    credentials = ClerkMachineCredentials("machine-fixture-secret")
+    assert credentials.token() == "mt_fixture"
+    clock[0] += 3299
+    assert credentials.token() == "mt_fixture" and len(calls) == 1
+    clock[0] += 2
+    assert credentials.token() == "mt_fixture" and len(calls) == 2
+    assert calls[0] == {"token_format": opaque, "seconds_until_expiration": 3600, "timeout_ms": 20000}
+
+
+@pytest.mark.parametrize("fault", ["sdk_failure", "empty", "newline", "oversized", "not_string"])
+def test_machine_token_failures_cannot_disclose_secrets_or_make_headers(monkeypatch, fault):
+    import sys
+    from types import SimpleNamespace
+    values = {"empty": "", "newline": "mt_fixture\nSECRET", "oversized": "m" * 8193, "not_string": None}
+
+    class SDK:
+        def __init__(self, **kwargs):
+            self.m2m = self
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def create_token(self, **kwargs):
+            if fault == "sdk_failure":
+                raise RuntimeError("Authorization: machine-secret-SECRET")
+            return SimpleNamespace(token=values[fault])
+
+    monkeypatch.setitem(sys.modules, "clerk_backend_api", SimpleNamespace(Clerk=SDK))
+    monkeypatch.setitem(sys.modules, "clerk_backend_api.models", SimpleNamespace(TokenFormat=SimpleNamespace(OPAQUE="opaque")))
+    credentials = ClerkMachineCredentials("machine-secret-SECRET")
+    with pytest.raises(CureError) as caught:
+        credentials.token()
+    assert str(caught.value) in {"clerk_machine_token_creation_failed", "clerk_machine_token_invalid"}
+    assert "SECRET" not in str(caught.value) and credentials._token is None
+
+
+@pytest.mark.parametrize("secret", ["", " \n", "secret\nvalue", "x" * 4097, None])
+def test_invalid_machine_secret_is_rejected_without_sdk_network(secret):
+    with pytest.raises(CureError, match="clerk_machine_credentials_not_configured"):
+        ClerkMachineCredentials(secret)
+
+
+def test_authenticated_gate_checks_anonymous_denial_all_codecs_and_no_source_credentials():
+    http = AuthenticatedCanaryHTTP()
+    checks = protected_checks(http, bypass="private-vercel-bypass",
+                              audio_canary_url="https://onda-audio.vercel.app/canary.wav",
+                              video_canary_url="https://onda-audio.vercel.app/canary.mp4")
+    result = checks.verify({**NEW, "projectId": "prj_expected"}, versions=VERSIONS)
+    assert result["status"] == "passed"
+    assert result["checks"][1]["anonymous_download"] == "denied"
+    downloads = [(url, kw) for url, kw in http.calls if kw.get("method") == "POST" and url.endswith("/api/download")]
+    assert len(downloads) == 14  # Anonymous denial probe + 8 audio + 4 video + muted MP4.
+    assert "Authorization" not in downloads[0][1]["headers"]
+    assert all(kw["headers"]["Authorization"] == "Bearer mt_fixture" for _, kw in downloads[1:])
+    assert len([kw for _, kw in http.calls if kw.get("method") == "HEAD"]) == 2
+    assert all("headers" not in kw for _, kw in http.calls if kw.get("method") == "HEAD")
+    assert all(url.startswith(NEW["url"] + "/api/") for url, kw in http.calls
+               if "Authorization" in kw.get("headers", {}))
+
+
+@pytest.mark.parametrize("configured,machines", [(False, True), (True, False), (False, False)])
+def test_unconfigured_auth_fails_closed_before_credentials_or_downloads(configured, machines):
+    http = AuthenticatedCanaryHTTP(configured=configured, machines=machines)
+    credentials = StaticMachineCredentials()
+    result = protected_checks(http, credentials).verify({**NEW, "projectId": "prj_expected"})
+    assert result["status"] == "blocked"
+    assert result["checks"][-1]["code"] == "auth_not_configured"
+    assert credentials.calls == 0 and len(http.calls) == 1
+
+
+def test_new_auth_runtime_without_machine_credentials_never_uses_anonymous_bypass(monkeypatch):
+    monkeypatch.delenv("CLERK_AUTOCURA_MACHINE_SECRET_KEY", raising=False)
+    http = AuthenticatedCanaryHTTP()
+    result = DeploymentChecks(http).verify(NEW)
+    assert result["status"] == "blocked"
+    assert result["checks"][-1]["code"] == "clerk_machine_credentials_not_configured"
+    assert len(http.calls) == 1
+
+
+@pytest.mark.parametrize("fault", ["auth_signal_missing", "anonymous_allowed"])
+def test_machine_release_cannot_remove_login_requirement_or_allow_unauthenticated_download(fault):
+    http = AuthenticatedCanaryHTTP(required=fault != "auth_signal_missing",
+                                  anonymous_denied=fault != "anonymous_allowed")
+    credentials = StaticMachineCredentials()
+    result = protected_checks(http, credentials).verify({**NEW, "projectId": "prj_expected"})
+    assert result["status"] == "failed"
+    expected = "runtime_authentication_missing" if fault == "auth_signal_missing" else "runtime_anonymous_download_gate_failed"
+    assert result["checks"][-1]["code"] == expected
+    assert credentials.calls == 0
+
+
+def test_machine_token_is_not_created_or_sent_to_an_unverified_vercel_project():
+    credentials = StaticMachineCredentials()
+    checks = protected_checks(AuthenticatedCanaryHTTP(), credentials)
+    for deployment in (NEW, {**NEW, "projectId": "prj_other"}):
+        with pytest.raises(CureError, match="untrusted_machine_token_origin"):
+            checks.api_headers(deployment)
+    assert credentials.calls == 0
+    assert checks.api_headers({**NEW, "projectId": "prj_expected"})["Authorization"] == "Bearer mt_fixture"
+    assert checks.api_headers({**NEW, "url": "https://onda-audio.vercel.app"})["Authorization"] == "Bearer mt_fixture"
+
+
+@pytest.mark.parametrize("url", ["https://external.example/canary.wav", "https://onda-audio.vercel.app/private.wav",
+                                  "https://onda-audio.vercel.app/canary.wav?token=secret", "https://onda-audio.vercel.app:443/canary.wav"])
+def test_machine_downloads_are_limited_to_owned_exact_fixture_urls(url):
+    http = AuthenticatedCanaryHTTP()
+    result = protected_checks(http, audio_canary_url=url).verify({**NEW, "projectId": "prj_expected"})
+    assert result["status"] == "failed"
+    assert all(check.get("code") in {"machine_download_canary_scope", "invalid_audio_canary_configuration"}
+               for check in result["checks"] if check["name"].startswith("owned_tone_"))
+    assert not any(called_url == url for called_url, _ in http.calls)
+
+
+def test_machine_metadata_and_download_scopes_do_not_expand_to_arbitrary_youtube_content():
+    http = AuthenticatedCanaryHTTP()
+    checks = protected_checks(http, canaries=[{"name": "private", "url": "https://www.youtube.com/watch?v=some_other_video"}],
+                              youtube_audio_canary_url="https://youtu.be/owned_short_video")
+    result = checks.verify({**NEW, "projectId": "prj_expected"})
+    assert result["status"] == "failed"
+    assert any(check.get("code") == "machine_metadata_canary_scope" for check in result["checks"])
+    assert result["checks"][-1]["code"] == "machine_download_canary_scope"
+    assert not any(kw.get("payload", {}).get("url", "").startswith(("https://www.youtube.com", "https://youtu.be"))
+                   for _, kw in http.calls)
+
+
+def test_existing_public_baseline_can_use_machine_headers_without_weakening_new_runtime_gate():
+    http = AuthenticatedCanaryHTTP(required=False)
+    checks = protected_checks(http, youtube_policy="baseline")
+    baseline = checks.capture_platform_baseline({**OLD, "projectId": "prj_expected"})
+    assert all(check["status"] == "passed" for check in baseline["checks"])
+    assert all(kw["headers"]["Authorization"] == "Bearer mt_fixture" for _, kw in http.calls)
+    result = checks.verify({**NEW, "projectId": "prj_expected"})
+    assert result["status"] == "failed"
+    assert result["checks"][-1]["code"] == "runtime_authentication_missing"
+
+
+def test_machine_credential_flow_uses_the_installed_official_sdk_surface_without_network(monkeypatch):
+    pytest.importorskip("clerk_backend_api")
+    from clerk_backend_api.m2m import M2m
+    from clerk_backend_api.models import TokenFormat
+    from types import SimpleNamespace
+    calls = []
+
+    def mint(self, **kwargs):
+        # SDK construction itself is real, including its credential parameter.
+        # Only the outgoing Clerk call is replaced; no live credentials used.
+        assert self.sdk_configuration.security.bearer_auth == "machine-fixture-secret"
+        assert kwargs["token_format"] is TokenFormat.OPAQUE
+        assert kwargs["seconds_until_expiration"] == 3600
+        calls.append(kwargs)
+        return SimpleNamespace(token="mt_fixture")
+
+    monkeypatch.setattr(M2m, "create_token", mint)
+    assert ClerkMachineCredentials("machine-fixture-secret").token() == "mt_fixture"
+    assert len(calls) == 1

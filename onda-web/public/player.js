@@ -194,7 +194,7 @@
     let timedOut = false;
     const timeout = setTimeout(() => { timedOut = true; requestController.abort(); }, 30000);
     try {
-      const response = await fetch('/api/player', {
+      const response = await window.OndaAuth.fetch('/api/player', {
         method: 'POST', credentials: 'same-origin', cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload), signal: requestController.signal,
@@ -262,6 +262,7 @@
     if (document.hidden) pause();
     else if (pausedEmbed && canPresent() && descriptor) showDescriptor(descriptor);
   });
+  window.addEventListener('onda:auth', (event) => { if (!event.detail?.signedIn) { cancelRequest(); clearMedia(); } });
   window.addEventListener('pagehide', () => { cancelRequest(); clearMedia(); observer.disconnect(); });
   window.addEventListener('pageshow', (event) => {
     if (!event.persisted) return;

@@ -50,15 +50,29 @@ jobs:
           python -m pip install pytest==8.4.2 httpx==0.28.1
           python -m pytest -q
           npm install -g vercel@62.7.0
-      - name: Verify Vercel CLI connection before preparing an update
+      - name: Bind Clerk authentication to the server
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID || 'team_n6dJgfB2eKLbYATPalhDgptx' }}
           VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID || 'prj_uFRebtKoS8lCrM9fqxXMJkgYDGfr' }}
-        run: vercel pull --yes --environment=preview
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
+          CLERK_AUTOCURA_SOURCE_MACHINE_ID: ${{ vars.CLERK_AUTOCURA_SOURCE_MACHINE_ID }}
+          CLERK_AUTOCURA_TARGET_MACHINE_ID: ${{ vars.CLERK_AUTOCURA_TARGET_MACHINE_ID }}
+        run: python scripts/configure_auth.py
+      - name: Verify Vercel CLI connection before preparing an update
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          CLERK_AUTOCURA_MACHINE_SECRET_KEY: ${{ secrets.CLERK_AUTOCURA_MACHINE_SECRET_KEY }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID || 'team_n6dJgfB2eKLbYATPalhDgptx' }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID || 'prj_uFRebtKoS8lCrM9fqxXMJkgYDGfr' }}
+        run: |
+          python -c "import os, sys; sys.exit(0 if os.environ.get('CLERK_AUTOCURA_MACHINE_SECRET_KEY', '').strip() else 'AutoCura requires the CLERK_AUTOCURA_MACHINE_SECRET_KEY repository secret.')"
+          vercel pull --yes --environment=preview
       - name: Build an immutable candidate, verify it, and promote or recover
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          CLERK_AUTOCURA_MACHINE_SECRET_KEY: ${{ secrets.CLERK_AUTOCURA_MACHINE_SECRET_KEY }}
           VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID || 'team_n6dJgfB2eKLbYATPalhDgptx' }}
           VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID || 'team_n6dJgfB2eKLbYATPalhDgptx' }}
           VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID || 'prj_uFRebtKoS8lCrM9fqxXMJkgYDGfr' }}

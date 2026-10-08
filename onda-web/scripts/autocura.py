@@ -29,7 +29,8 @@ import venv
 from packaging.version import InvalidVersion, Version
 
 TOOLS = ("yt-dlp", "imageio-ffmpeg", "deno")
-DIRECT_COMPONENTS = (*TOOLS, "fastapi", "uvicorn", "publicsuffixlist")
+DIRECT_COMPONENTS = (*TOOLS, "fastapi", "uvicorn", "publicsuffixlist", "clerk-backend-api")
+CANONICAL_ORIGIN = "https://onda-audio.vercel.app"
 CANARIES = (
     {"name": "me_at_zoo_metadata", "url": "https://www.youtube.com/watch?v=jNQXAC9IVRw",
      "purpose": "metadata_only"},
@@ -443,7 +444,9 @@ print(json.dumps({'ffmpeg':version,'yt-dlp':yt_dlp.version.__version__,'deno':ex
 
 
 def classify(code):
-    if code in {"network_unavailable", "upstream_timeout", "upstream_error", "platform_blocked", "busy", "unavailable", "timeout"} or code.startswith("http_4"):
+    if code in {"network_unavailable", "upstream_timeout", "upstream_error", "platform_blocked", "busy", "unavailable", "timeout",
+                "auth_not_configured", "clerk_machine_credentials_not_configured",
+                "clerk_machine_token_creation_failed", "clerk_machine_token_invalid"} or code.startswith("http_4"):
         return "blocked"
     return "failed"
 
@@ -559,8 +562,41 @@ def verify_downloaded_video(content, *, muted=False, expected_duration=.6, video
         return inspection
 
 
+class ClerkMachineCredentials:
+    """Create a short-lived Clerk machine token; never persist or print it."""
+    def __init__(self, secret):
+        if (not isinstance(secret, str) or not 1 <= len(secret) <= 4096
+                or any(ord(char) < 33 or ord(char) > 126 for char in secret)):
+            raise CureError("clerk_machine_credentials_not_configured")
+        self.secret = secret
+        self._token = None
+        self._refresh_at = 0
+
+    def token(self):
+        if self._token and time.monotonic() < self._refresh_at:
+            return self._token
+        try:
+            from clerk_backend_api import Clerk
+            from clerk_backend_api.models import TokenFormat
+            with Clerk(bearer_auth=self.secret, timeout_ms=20000, retry_config=None) as clerk:
+                result = clerk.m2m.create_token(token_format=TokenFormat.OPAQUE,
+                                               seconds_until_expiration=3600,
+                                               timeout_ms=20000)
+                token = result.token
+        except Exception:
+            # SDK/HTTP errors can contain secret request headers or response
+            # bodies. Expose only this fixed code, without an exception chain.
+            raise CureError("clerk_machine_token_creation_failed") from None
+        if (not isinstance(token, str) or len(token) > 8192
+                or not re.fullmatch(r"(?:mt_|m2m_)[A-Za-z0-9_.-]+", token)):
+            raise CureError("clerk_machine_token_invalid")
+        self._token = token
+        self._refresh_at = time.monotonic() + 3300
+        return token
+
+
 class DeploymentChecks:
-    def __init__(self, http=None, canaries=None, bypass=None, audio_canary_url=None, youtube_audio_canary_url=None, video_canary_url=None, youtube_policy=None):
+    def __init__(self, http=None, canaries=None, bypass=None, audio_canary_url=None, youtube_audio_canary_url=None, video_canary_url=None, youtube_policy=None, machine_credentials=None, project_id=None):
         self.http = http or HTTP()
         self.canaries = list(CANARIES if canaries is None else canaries)
         self.bypass = bypass or os.environ.get("VERCEL_AUTOMATION_BYPASS_SECRET")
@@ -571,6 +607,59 @@ class DeploymentChecks:
         if self.youtube_policy not in {"strict", "baseline"}:
             raise CureError("invalid_youtube_gate_policy")
         self.platform_baseline = None
+        self.project_id = project_id or os.environ.get("VERCEL_PROJECT_ID", "")
+        machine_secret = os.environ.get("CLERK_AUTOCURA_MACHINE_SECRET_KEY", "")
+        self.machine_credentials = machine_credentials or (ClerkMachineCredentials(machine_secret) if machine_secret else None)
+        self.authentication_required = bool(self.machine_credentials)
+
+    def api_headers(self, deployment, *, include_machine=True):
+        base = deployment_url(deployment["url"])
+        headers = {"x-vercel-protection-bypass": self.bypass} if self.bypass else {}
+        if include_machine and self.machine_credentials:
+            # Preview origins are accepted only after Vercel.inspect has
+            # confirmed their project. Never trust an arbitrary *.vercel.app.
+            if (base != CANONICAL_ORIGIN and (not self.project_id
+                    or deployment.get("projectId") != self.project_id)):
+                raise CureError("untrusted_machine_token_origin")
+            headers["Authorization"] = "Bearer " + self.machine_credentials.token()
+        return headers
+
+    def validate_machine_canary(self, base, url, *, media_type):
+        if not self.machine_credentials:
+            return
+        parsed = urllib.parse.urlsplit(url)
+        expected = "/canary.mp4" if media_type == "video" else "/canary.wav"
+        if (parsed.scheme != "https" or parsed.netloc not in {
+                urllib.parse.urlsplit(CANONICAL_ORIGIN).netloc, urllib.parse.urlsplit(base).netloc}
+                or parsed.path != expected or parsed.query or parsed.fragment
+                or parsed.username or parsed.password or parsed.port):
+            raise CureError("machine_download_canary_scope")
+
+    def authentication_check(self, deployment, health, public_headers):
+        auth = health.get("auth")
+        required = self.authentication_required or (isinstance(auth, dict) and auth.get("required") is True)
+        if not required:
+            return None
+        if (not isinstance(auth, dict) or auth.get("required") is not True
+                or auth.get("provider") != "clerk"):
+            raise CureError("runtime_authentication_missing")
+        if auth.get("configured") is not True or auth.get("machineToMachine") is not True:
+            raise CureError("auth_not_configured")
+        if not self.machine_credentials:
+            raise CureError("clerk_machine_credentials_not_configured")
+        base = deployment_url(deployment["url"])
+        try:
+            # Vercel's preview-protection header is allowed, but this probe
+            # deliberately has no Clerk Authorization header or browser cookie.
+            self.http.request(base + "/api/download", method="POST", headers=public_headers,
+                              payload={"url": CANONICAL_ORIGIN + "/canary.wav", "format": "mp3"},
+                              timeout=30)
+        except CureError as exc:
+            if exc.http_status == 401 and str(exc) == "auth_required":
+                return {"name": "runtime_authentication", "status": "passed", "provider": "clerk",
+                        "anonymous_download": "denied", "authentication": "machine_token"}
+            raise CureError("runtime_anonymous_download_gate_failed") from None
+        raise CureError("runtime_anonymous_download_gate_failed")
 
     @staticmethod
     def youtube_canary(canary):
@@ -579,6 +668,8 @@ class DeploymentChecks:
     def metadata_check(self, base, canary, headers):
         name = canary["name"]
         try:
+            if self.machine_credentials and canary["url"] not in {item["url"] for item in CANARIES}:
+                raise CureError("machine_metadata_canary_scope")
             tested = self.http.json(base + "/api/compatibility/test", method="POST",
                 payload={"url": canary["url"]}, headers=headers, timeout=65)
             details = tested.get("details", {})
@@ -598,7 +689,10 @@ class DeploymentChecks:
         if self.youtube_policy != "baseline":
             return None
         base = deployment_url(deployment["url"])
-        headers = {"x-vercel-protection-bypass": self.bypass} if self.bypass else {}
+        # An older production deployment may still be public. Authenticate its
+        # metadata checks when a machine credential is configured, while the
+        # candidate itself must advertise and enforce the new Clerk gate.
+        headers = self.api_headers(deployment)
         self.platform_baseline = {
             "deployment_id": deployment["id"], "checked_at": now(),
             "checks": [self.metadata_check(base, canary, headers)
@@ -608,17 +702,23 @@ class DeploymentChecks:
 
     def verify(self, deployment, versions=None):
         base = deployment_url(deployment["url"])
-        headers = {"x-vercel-protection-bypass": self.bypass} if self.bypass else {}
+        public_headers = self.api_headers(deployment, include_machine=False)
         checks = []
         try:
-            health = self.http.json(base + "/api/health", headers=headers)
+            health = self.http.json(base + "/api/health", headers=public_headers)
             if health.get("ok") is not True or set(health.get("formats", [])) != {"mp3", "m4a", "wav", "flac", "ogg", "opus", "aac", "aiff"}:
                 raise CureError("runtime_health_failed")
             if set(health.get("videoFormats", [])) != {"mp4", "webm", "mkv", "mov"}:
                 raise CureError("video_runtime_health_failed")
             checks.append({"name": "runtime", "status": "passed"})
+            auth_check = self.authentication_check(deployment, health, public_headers)
+            if auth_check:
+                checks.append(auth_check)
+            headers = self.api_headers(deployment)
         except CureError as exc:
-            checks.append({"name": "runtime", "status": classify(str(exc)), "code": str(exc)})
+            checks.append({"name": "runtime_authentication" if checks else "runtime",
+                           "status": classify(str(exc)), "code": str(exc)})
+            return self.report(checks)
         try:
             compatibility = self.http.json(base + "/api/compatibility", headers=headers)
             actual = compatibility.get("versions", {})
@@ -639,6 +739,7 @@ class DeploymentChecks:
             video_status = "invalid_video_canary_configuration"
         else:
             try:
+                self.validate_machine_canary(base, video_url, media_type="video")
                 _, source_headers = self.http.request(video_url, method="HEAD", timeout=30)
                 if not source_headers.get("Content-Type", "").split(";")[0].startswith("video/"):
                     video_status = "video_canary_not_public"
@@ -672,6 +773,7 @@ class DeploymentChecks:
             source_status = "invalid_audio_canary_configuration"
         else:
             try:
+                self.validate_machine_canary(base, audio_url, media_type="audio")
                 # The function downloads this URL without CI's protection-bypass
                 # header. Check that exact access path before testing conversion.
                 _, source_headers = self.http.request(audio_url, method="HEAD", timeout=30)
@@ -699,6 +801,8 @@ class DeploymentChecks:
                 checks.append({"name": name, "status": classify(str(exc)), "code": str(exc)})
         if self.youtube_audio_canary_url:
             try:
+                if self.machine_credentials:
+                    raise CureError("machine_download_canary_scope")
                 # The administrator must select a short video they own or have
                 # permission to download. This stronger gate is opt-in.
                 youtube = urllib.parse.urlsplit(self.youtube_audio_canary_url)
@@ -712,6 +816,9 @@ class DeploymentChecks:
                 checks.append({"name": "authorized_youtube_audio", "status": "passed", "scope": "audio"})
             except CureError as exc:
                 checks.append({"name": "authorized_youtube_audio", "status": classify(str(exc)), "code": str(exc)})
+        return self.report(checks)
+
+    def report(self, checks):
         baseline_checks = {check["name"]: check for check in (self.platform_baseline or {}).get("checks", [])}
         youtube_names = {canary["name"] for canary in self.canaries if self.youtube_canary(canary)}
         accepted = []
@@ -766,7 +873,8 @@ class Vercel:
         value = self.api("/v13/deployments/" + deployment_id)
         if value.get("projectId") != self.project or value.get("readyState") != "READY":
             raise CureError("deployment_not_ready_for_this_project")
-        return {"id": value["id"], "url": deployment_url(value["url"]), "readyState": "READY"}
+        return {"id": value["id"], "url": deployment_url(value["url"]), "readyState": "READY",
+                "projectId": self.project}
 
     def current(self):
         project = self.api("/v9/projects/" + urllib.parse.quote(self.project, safe=""))

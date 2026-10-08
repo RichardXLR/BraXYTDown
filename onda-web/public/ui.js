@@ -32,8 +32,8 @@
     for (const name of ['motion', 'intro']) if (typeof value[name] === 'boolean') result[name] = value[name];
     return result;
   }
-  try { preferences = validatePreferences(JSON.parse(localStorage.getItem(preferencesKey))); } catch { /* Defaults also work without storage. */ }
-  try { soundEnabled = localStorage.getItem(soundKey) === '1'; } catch { /* Optional preference. */ }
+  try { preferences = validatePreferences(JSON.parse(window.OndaAccount.storage.getItem(preferencesKey))); } catch { /* Defaults also work without storage. */ }
+  try { soundEnabled = window.OndaAccount.storage.getItem(soundKey) === '1'; } catch { /* Optional preference. */ }
   function motionAllowed() { return preferences.motion && !reduceMotion.matches; }
 
   function applyPreferences() {
@@ -63,11 +63,11 @@
   }
   function persistPreferences() {
     try {
-      localStorage.setItem(preferencesKey, JSON.stringify(preferences));
-      announcePreferences('Personalização salva automaticamente neste navegador.');
+      window.OndaAccount.storage.setItem(preferencesKey, JSON.stringify(preferences));
+      announcePreferences('Personalização aplicada. Sincronizando com sua conta…');
       return true;
     } catch {
-      announcePreferences('Personalização aplicada. Este navegador não permitiu salvar as escolhas.');
+      announcePreferences('Personalização aplicada. A sincronização ficou pendente.');
       return false;
     }
   }
@@ -77,7 +77,7 @@
     const wasIntroEnabled = preferences.intro;
     preferences = validatePreferences({ ...preferences, [name]: value });
     if (name === 'intro' && preferences.intro && !wasIntroEnabled) {
-      try { localStorage.removeItem(introSeenKey); } catch { /* A visit still works without storage. */ }
+      try { window.OndaAccount.storage.removeItem(introSeenKey); } catch { /* A visit still works without storage. */ }
     }
     applyPreferences();
     persistPreferences();
@@ -85,7 +85,7 @@
   document.getElementById('reset-preferences')?.addEventListener('click', () => {
     preferences = { ...defaults };
     applyPreferences();
-    if (persistPreferences()) announcePreferences('Personalização restaurada e salva neste navegador.');
+    if (persistPreferences()) announcePreferences('Personalização restaurada. Sincronizando com sua conta…');
   });
   reduceMotion.addEventListener('change', applyPreferences);
   systemTheme.addEventListener('change', () => { if (preferences.theme === 'system') applyPreferences(); });
@@ -146,7 +146,7 @@
   }
   function toggleSound() {
     soundEnabled = !soundEnabled;
-    try { localStorage.setItem(soundKey, soundEnabled ? '1' : '0'); } catch { /* Keep it for this page. */ }
+    try { window.OndaAccount.storage.setItem(soundKey, soundEnabled ? '1' : '0'); } catch { /* Keep it for this page. */ }
     renderSoundPreference();
     if (soundEnabled) tone('tab'); else stopTones();
   }
@@ -232,18 +232,20 @@
     if (kind === 'success' || kind === 'error') tone(kind);
     if (activeWorkspace !== 'download' && (kind === 'success' || kind === 'error')) workspaceTabs.find((button) => button.dataset.workspaceTab === 'download')?.setAttribute('data-attention', kind);
   });
-  addEventListener('storage', (event) => {
-    if (event.key === soundKey || event.key === null) {
-      soundEnabled = event.key === soundKey && event.newValue === '1';
-      if (!soundEnabled) stopTones();
-      renderSoundPreference();
-    }
-    if (event.key === preferencesKey || event.key === null) {
-      try { preferences = validatePreferences(JSON.parse(event.newValue)); } catch { preferences = { ...defaults }; }
-      applyPreferences();
-      announcePreferences('Personalização atualizada neste navegador.');
-    }
+  addEventListener('onda:account-state', (event) => {
+    const saved = event.detail?.state;
+    if (!saved) return;
+    preferences = validatePreferences(saved.preferences);
+    soundEnabled = saved.sound === true;
+    if (!soundEnabled) stopTones();
+    applyPreferences();
+    renderSoundPreference();
   });
+  addEventListener('onda:account-sync', (event) => {
+    const messages = { saved: 'Personalização salva na conta.', saving: 'Salvando suas escolhas na conta…', pending: 'Suas escolhas serão salvas automaticamente.', offline: 'Sem conexão. Suas escolhas aguardam sincronização.', error: 'Suas escolhas estão neste dispositivo. Tente sincronizar novamente.' };
+    announcePreferences(messages[event.detail?.status] || 'Sincronizando suas escolhas…');
+  });
+  addEventListener('onda:auth', (event) => { if (!event.detail?.signedIn) stopTones(); });
   document.addEventListener('visibilitychange', () => { if (document.hidden) stopTones(); });
   addEventListener('pagehide', () => { stopTones(); soundContext?.close().catch(() => {}); soundContext = null; });
   renderSoundPreference();
