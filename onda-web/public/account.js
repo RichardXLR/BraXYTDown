@@ -255,7 +255,12 @@
             if (chunk.done) { finish(); stream.close(); } else stream.enqueue(chunk.value);
           } catch (error) { finish(); stream.error(error); }
         },
-        cancel(reason) { controller.abort(); finish(); return reader.cancel(reason); },
+        async cancel(reason) {
+          // Cancel the reader before aborting its fetch. Aborting first errors
+          // the body and makes deliberate cancellation (e.g. a 409 retry) reject.
+          try { await reader.cancel(reason); }
+          finally { controller.abort(reason); finish(); }
+        },
       }), { status: response.status, statusText: response.statusText, headers: response.headers });
     } catch (error) { finish(); throw error; }
   }

@@ -2,6 +2,9 @@
 import copy
 from dataclasses import dataclass
 import json
+from pathlib import Path
+import shutil
+import subprocess
 import urllib.parse
 
 from fastapi import FastAPI
@@ -39,7 +42,7 @@ class FakeBlob:
         assert parsed.hostname == "vercel.com" and parsed.path == "/api/blob"
         assert headers["x-vercel-blob-access"] == "private"
         assert headers["x-add-random-suffix"] == "0"
-        assert headers["x-api-version"] == "11"
+        assert headers["x-api-version"] == "12"
         assert headers["x-vercel-blob-store-id"] == "exampleaccountstore"
         if self.before_write:
             callback, self.before_write = self.before_write, None
@@ -178,6 +181,17 @@ def test_unchanged_acknowledged_snapshot_consumes_no_write(client, state):
     repeated = put(client, state, revision=1)
     assert repeated.json() == saved
     assert len([call for call in client.blob.calls if call[0] == "PUT"]) == 1
+
+
+def test_real_account_transport_cancels_conflict_body_before_reload_and_preserves_session_cancellation():
+    node = shutil.which('node')
+    if node is None:
+        pytest.skip('Node is unavailable for the browser transport regression test.')
+    root = Path(__file__).resolve().parents[1]
+    completed = subprocess.run([node, str(root / 'tests/account_transport.cjs')],
+                               cwd=root, capture_output=True, text=True, timeout=15)
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert 'Account transport: 409 cancellation/retry' in completed.stdout
 
 
 @pytest.mark.parametrize("key,value", [("cookies", "secret"), ("user_id", "user_Bob"), ("session", "secret")])

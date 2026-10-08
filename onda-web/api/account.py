@@ -36,7 +36,7 @@ from .security import AudioError, public_url
 MAX_STATE_BYTES = 32 * 1024
 MAX_SAFE_INTEGER = 9007199254740991
 BLOB_API = "https://vercel.com/api/blob"
-BLOB_API_VERSION = "11"
+BLOB_API_VERSION = "12"
 AUDIO_FORMATS = frozenset(("mp3", "m4a", "wav", "flac", "ogg", "opus", "aac", "aiff"))
 VIDEO_FORMATS = frozenset(("mp4", "webm", "mkv", "mov"))
 USER_ID = re.compile(r"user_[A-Za-z0-9]{1,120}\Z")
