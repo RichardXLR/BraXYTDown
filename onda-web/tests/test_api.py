@@ -58,7 +58,9 @@ def client(monkeypatch, tmp_path, media_bytes):
 def test_health_and_inspect(client):
     health = client.get("/api/health")
     assert health.status_code == 200
-    assert health.json()["maxDuration"] == 1200
+    assert health.json()["maxDuration"] is None
+    assert health.json()["durationLimited"] is False
+    assert health.json()["operationTimeoutSeconds"] == 240
     response = client.post("/api/inspect", json={"url": "https://sample.example.com/Meu%20%C3%A1udio.wav"})
     assert response.status_code == 200
     assert response.json()["title"] == "Meu áudio"
@@ -137,13 +139,13 @@ def test_busy_returns_retryable_error(client):
         index.SLOTS.release()
 
 
-def test_conversion_duration_guard_rejects_without_truncation(tmp_path, media_bytes, monkeypatch):
+def test_lossless_audio_conversion_has_no_implicit_truncation(tmp_path, media_bytes):
     source = tmp_path / "source.wav"
     source.write_bytes(media_bytes)
-    monkeypatch.setattr(engine, "LOSSLESS_DURATION", 0)
-    with pytest.raises(AudioError) as raised:
-        engine.convert_audio(source, tmp_path, "wav", "source", security.Guard())
-    assert raised.value.code == "too_long"
+    target = engine.convert_audio(source, tmp_path, "wav", "source", security.Guard())
+    with wave.open(str(source), "rb") as original, wave.open(str(target), "rb") as downloaded:
+        assert downloaded.getparams() == original.getparams()
+        assert downloaded.readframes(downloaded.getnframes()) == original.readframes(original.getnframes())
 
 
 def test_platform_native_downloader_finishes_first_success(client, monkeypatch, media_bytes):

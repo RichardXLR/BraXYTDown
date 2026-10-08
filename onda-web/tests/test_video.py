@@ -282,16 +282,15 @@ def test_audio_only_metadata_cannot_create_fake_video_stream(tmp_path, video_byt
     assert raised.value.code == "no_video"
 
 
-def test_short_trim_cannot_bypass_full_source_duration_with_spoofed_metadata(tmp_path):
+def test_short_trim_of_source_longer_than_five_minutes_is_accepted(tmp_path):
     source = tmp_path / "long.mp4"
     ffmpeg("-y", "-f", "lavfi", "-i", "color=blue:size=32x32:rate=1", "-t", "310",
            "-c:v", "libx264", "-preset", "ultrafast", "-threads", "1",
            "-metadata", "comment=Duration: 00:00:01.00", source)
     assert engine.probe_media(source, security.Guard())["duration"] == 310
-    with pytest.raises(security.AudioError) as raised:
-        engine.convert_video(source, tmp_path, "mp4", 192, security.Guard(),
-                             engine.MediaSettings(media_type="video", trim_end=1, mute=True))
-    assert raised.value.code == "too_long"
+    target = engine.convert_video(source, tmp_path, "mp4", 192, security.Guard(),
+                                  engine.MediaSettings(media_type="video", trim_end=1, mute=True))
+    assert engine.probe_media(target, security.Guard())["duration"] == 1
 
 
 def test_cover_art_is_not_a_downloadable_video(tmp_path, video_bytes):
@@ -321,7 +320,7 @@ def test_audio_trimming_normalization_and_optional_metadata_preservation(tmp_pat
 def test_video_health_and_default_format(video_client):
     health = video_client.get("/api/health").json()
     assert health["videoFormats"] == ["mp4", "webm", "mkv", "mov"]
-    assert health["maxVideoDuration"] == 300
+    assert health["maxVideoDuration"] is None
     response = video_client.post("/api/download", json={"url": "https://www.youtube.com/watch?v=BaW_jenozKc", "media_type": "video"})
     assert response.status_code == 200
     assert response.headers["content-type"] == "video/mp4"
@@ -390,19 +389,24 @@ def test_native_hls_like_transport_stream_converts_using_only_local_protocols(tm
 
 
 @pytest.mark.parametrize("kind", ["audio", "video"])
-def test_unknown_whole_source_duration_is_rejected_even_for_short_trim(monkeypatch, tmp_path, kind):
+def test_unknown_whole_source_duration_accepts_finite_media_and_short_trim(monkeypatch, tmp_path, kind):
     source = tmp_path / "unknown.media"
-    source.write_bytes(b"unknown-duration-fixture")
-    monkeypatch.setattr(engine, "probe_media", lambda *_args: {"video": True, "audio": True,
-        "width": 320, "height": 180, "duration": None, "fps": 25, "video_index": 0})
+    source.write_bytes((Path(__file__).resolve().parents[1] / "public" / "canary.mp4").read_bytes())
+    probe = engine.probe_media
+    def unknown_input_duration(path, guard):
+        result = probe(path, guard)
+        if path == source:
+            result["duration"] = None
+        return result
+    monkeypatch.setattr(engine, "probe_media", unknown_input_duration)
     settings = engine.MediaSettings(media_type=kind, trim_end=1)
-    with pytest.raises(security.AudioError) as raised:
-        if kind == "video":
-            engine.convert_video(source, tmp_path, "mp4", 192, security.Guard(), settings)
-        else:
-            engine.convert_audio(source, tmp_path, "mp3", 192, security.Guard(), settings=settings)
-    assert raised.value.code == "duration_unknown"
-    assert not list(tmp_path.glob("audio.*")) and not list(tmp_path.glob("video.*"))
+    if kind == "video":
+        target = engine.convert_video(source, tmp_path, "mp4", 192, security.Guard(), settings)
+    else:
+        target = engine.convert_audio(source, tmp_path, "mp3", 192, security.Guard(), settings=settings)
+    result = probe(target, security.Guard())
+    assert result["audio"] and bool(result["video"]) == (kind == "video")
+    assert .95 <= result["duration"] <= 1.1
 
 
 @pytest.mark.parametrize("stride,offset", [(188, 0), (192, 4), (204, 0)])

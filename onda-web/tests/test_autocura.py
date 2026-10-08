@@ -188,6 +188,33 @@ def test_crash_after_domain_change_is_recovered_from_persisted_pending(factory):
     assert recovered.state["quarantine"][0]["reason"] == "unconfirmed_interrupted_promotion"
 
 
+def test_recovery_of_already_restored_domain_clears_journal_without_redundant_rollback(factory):
+    manager, provider, events, records = factory()
+    manager.state["pending"] = {"candidate": NEW, "previous": OLD, "versions": VERSIONS,
+                                "previous_versions": {"yt-dlp": "older"}}
+    manager.state["status"] = "blocked"
+    manager.save()
+    assert manager.recover()
+    assert provider.rollbacks == [] and provider.active == OLD
+    assert "pending" not in records[-1] and "pending" not in json.loads(manager.path.read_text())
+    assert records[-1]["status"] == "rolled_back"
+    assert records[-1]["versions"] == {"yt-dlp": "older"}
+    assert records[-1]["quarantine"][0]["reason"] == "unconfirmed_interrupted_promotion"
+    assert events[-1] == "checkpoint:rolled_back"
+
+
+def test_after_promotion_checks_use_the_actual_public_domain(factory):
+    manager, provider, _, _ = factory()
+    provider.production_view = lambda deployment: {**deployment, "url": "https://onda-audio.vercel.app"}
+    seen = []
+    def verify(deployment, versions=None):
+        seen.append(deployment["url"])
+        return {"status": "passed", "checks": []}
+    manager.checks.verify = verify
+    assert manager.release()["status"] == "passed"
+    assert seen == [NEW["url"], "https://onda-audio.vercel.app"]
+
+
 def test_failure_to_rollback_keeps_journal_for_next_run(factory):
     manager, provider, _, _ = factory(("passed", "failed"))
 
@@ -719,9 +746,20 @@ def test_current_deployment_follows_the_public_alias_instead_of_latest_build(tmp
     assert Vercel(tmp_path, Mapping()).current() == OLD
 
 
+def test_production_view_refuses_a_stale_alias(tmp_path, monkeypatch):
+    monkeypatch.setenv('VERCEL_TOKEN', 'fake')
+    monkeypatch.setenv('VERCEL_PROJECT_ID', 'prj_test')
+    monkeypatch.setenv('VERCEL_ORG_ID', 'team_test')
+    provider = Vercel(tmp_path)
+    monkeypatch.setattr(provider, 'current', lambda: dict(OLD))
+    with pytest.raises(CureError, match='production_mapping_not_confirmed'):
+        provider.production_view(NEW)
+
+
 @pytest.mark.parametrize('operation,target', [('promote', NEW), ('rollback', OLD)])
 @pytest.mark.parametrize('already_mapped', [True, False])
-def test_conflicts_are_idempotent_only_when_the_actual_alias_matches(tmp_path, monkeypatch, operation, target, already_mapped):
+@pytest.mark.parametrize('status', [409, 422])
+def test_conflicts_are_idempotent_only_when_the_actual_alias_matches(tmp_path, monkeypatch, operation, target, already_mapped, status):
     monkeypatch.setenv('VERCEL_TOKEN', 'fake')
     monkeypatch.setenv('VERCEL_PROJECT_ID', 'prj_test')
     monkeypatch.setenv('VERCEL_ORG_ID', 'team_test')
@@ -729,7 +767,9 @@ def test_conflicts_are_idempotent_only_when_the_actual_alias_matches(tmp_path, m
     monkeypatch.setattr(provider, 'inspect', lambda _: dict(target))
     monkeypatch.setattr(provider, 'current', lambda: dict(target) if already_mapped else {'id': 'dpl_other'})
     def conflict(*args, **options):
-        raise CureError('conflict', http_status=409)
+        assert '/aliases' in args[0]
+        assert options['payload'] == {'alias': provider.production_alias}
+        raise CureError('conflict', http_status=status)
     monkeypatch.setattr(provider, 'api', conflict)
     if already_mapped:
         getattr(provider, operation)(target)

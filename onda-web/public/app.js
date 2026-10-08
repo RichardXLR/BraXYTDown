@@ -326,7 +326,7 @@
     $('studio-format-count').textContent = video ? '4 formatos de vídeo' : '8 formatos de áudio';
     $('card-mode-title').textContent = video ? 'VÍDEO POR LINK' : 'ÁUDIO POR LINK';
     $('hero-media-word').textContent = video ? 'seu vídeo.' : 'seu som.';
-    $('download-limits').textContent = video ? 'Vídeo: fonte até 5 min · Full HD / 30 fps · 100 MB por arquivo' : 'Áudio: até 20 min com perda · 8 min sem perda · 100 MB por arquivo';
+    $('download-limits').textContent = video ? 'Sem limite por duração · Full HD / 30 fps · até 100 MB por arquivo' : 'Sem limite por duração · até 100 MB por arquivo';
     document.body.dataset.mediaType = type;
     updateTools();
     if (currentMediaType !== type) {
@@ -759,7 +759,11 @@
     const duration = Number(limits.maxDuration);
     const losslessDuration = Number(limits.maxLosslessDuration);
     const output = Number(limits.maxOutputMB);
-    if (duration > 0 && losslessDuration > 0 && output > 0) {
+    if (limits.maxDuration === null && limits.maxVideoDuration === null && output > 0) {
+      const source = Number(limits.maxSourceMB);
+      const deadline = Number(limits.operationTimeoutSeconds);
+      $('compatibility-limits').textContent = `Sem limite por duração · ${source > 0 ? `${source.toLocaleString('pt-BR')} MB de fonte / ` : ''}${output.toLocaleString('pt-BR')} MB de saída${deadline > 0 ? ` · processamento até ${deadline} s` : ''}`;
+    } else if (duration > 0 && losslessDuration > 0 && output > 0) {
       const videoDuration = Number(limits.maxVideoDuration);
       $('compatibility-limits').textContent = `Áudio: ${Math.floor(duration / 60)} min com perda / ${Math.floor(losslessDuration / 60)} min sem perda${videoDuration > 0 ? ` · vídeo: ${Math.floor(videoDuration / 60)} min` : ''} · ${output.toLocaleString('pt-BR')} MB de saída`;
     }

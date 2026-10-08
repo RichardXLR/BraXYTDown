@@ -9,6 +9,7 @@
   const frame = document.getElementById('source-embed-player');
   const empty = document.getElementById('source-player-empty');
   const status = document.getElementById('source-player-status');
+  const feedback = document.getElementById('source-preview-feedback');
   const external = document.getElementById('source-player-external');
   const retry = document.getElementById('retry-source-preview');
   if (!input || !region || !stage || !video || !frame || !empty || !status || !external || !retry) return;
@@ -73,13 +74,16 @@
     frame.hidden = true;
     frame.removeAttribute('src');
     pausedEmbed = false;
-    empty.hidden = false;
+    empty.hidden = true;
   }
 
   function showState(state, message) {
     region.dataset.state = state;
     stage.setAttribute('aria-busy', String(state === 'loading'));
     status.textContent = message;
+    // An unsupported or incomplete link never reserves an empty video panel.
+    region.hidden = !(['ready', 'paused'].includes(state) && ['video', 'vertical', 'audio'].includes(region.dataset.kind));
+    if (feedback) feedback.hidden = state === 'empty';
   }
 
   function clear() {
@@ -95,7 +99,7 @@
   }
 
   function canPresent() {
-    return phase === 'idle' && tab === 'download' && !document.body.classList.contains('intro-open');
+    return phase === 'idle' && tab === 'download' && !document.hidden && !document.body.classList.contains('intro-open');
   }
 
   function pause() {
@@ -269,6 +273,8 @@
   for (const media of [video, audio]) {
     media?.addEventListener('error', () => {
       if (!media.hasAttribute('src') || media.hidden || descriptor?.kind !== 'direct') return;
+      clearMedia();
+      region.dataset.kind = 'unavailable';
       showState('unavailable', 'O navegador ou a origem não permitiu reproduzir este arquivo. Tente atualizar a prévia ou use Abrir na fonte.');
       retry.hidden = false;
     });

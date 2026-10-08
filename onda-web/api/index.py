@@ -54,8 +54,8 @@ class DownloadInput(LinkInput):
     format: Literal["mp3", "m4a", "wav", "flac", "ogg", "opus", "aac", "aiff", "mp4", "webm", "mkv", "mov"] = "mp3"
     quality: Literal[128, 192, 256, 320, "source"] = 192
     video_resolution: Literal["source", "1080", "720", "480", "360"] = "source"
-    trim_start: float | None = Field(default=None, ge=0, le=MAX_DURATION, allow_inf_nan=False)
-    trim_end: float | None = Field(default=None, gt=0, le=MAX_DURATION, allow_inf_nan=False)
+    trim_start: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    trim_end: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     strip_metadata: bool = Field(default=True, strict=True)
     mute: bool = Field(default=False, strict=True)
     normalize_audio: bool = Field(default=False, strict=True)
@@ -87,8 +87,6 @@ class DownloadInput(LinkInput):
             raise ValueError("Um vídeo sem áudio não pode normalizar volume.")
         if self.trim_end is not None and self.trim_end <= (self.trim_start or 0):
             raise ValueError("O fim do corte deve ficar depois do início.")
-        if self.media_type == "video" and any(value is not None and value > VIDEO_DURATION for value in (self.trim_start, self.trim_end)):
-            raise ValueError("O corte do vídeo deve ficar dentro de 5 minutos.")
         return self
 
     def settings(self):
@@ -122,6 +120,7 @@ async def health():
             "videoFormats": list(VIDEO_FORMATS), "maxVideoDuration": VIDEO_DURATION,
             "videoResolutions": ["source", "1080", "720", "480", "360"],
             "maxLosslessDuration": LOSSLESS_DURATION, "maxSourceMB": 128, "maxOutputMB": 100,
+            "durationLimited": False, "operationTimeoutSeconds": 240,
             "jsRuntime": next(iter(runtime_options()), None)}
 
 

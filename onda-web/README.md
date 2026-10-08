@@ -4,7 +4,7 @@ Site em português publicado em **https://onda-audio.vercel.app**, com extraçã
 
 ## Interface e player
 
-O estúdio mantém a identidade azul e a logo fornecida, com seis abas: download, biblioteca, compatibilidade, ajuda, personalização e créditos. O player fica visível na área do link. Links reconhecidos podem usar incorporações oficiais de YouTube, TikTok, Vimeo, Dailymotion, Twitch, Facebook, Instagram e Bilibili. Outros links podem oferecer reprodução direta de mídia progressiva compatível com o navegador, com vídeo e áudio ou somente áudio.
+O estúdio mantém a identidade azul e a logo fornecida, com seis abas: download, biblioteca, compatibilidade, ajuda, personalização e créditos. A ordem do formulário é player, link, botão de download, seleção de áudio/vídeo e ajustes. O player começa oculto e entra com uma animação suave de ondas quando há uma prévia compatível. Fontes sem suporte ou com erro de mídia escondem o player e exibem o aviso junto ao link. Links reconhecidos podem usar incorporações oficiais de YouTube, TikTok, Vimeo, Dailymotion, Twitch, Facebook, Instagram e Bilibili. Outros links podem oferecer reprodução direta de mídia progressiva compatível com o navegador, com vídeo e áudio ou somente áudio.
 
 Uma plataforma pode impedir incorporações, exigir uma sessão ou fornecer apenas faixas separadas/protegidas. Nesses casos, o site explica a indisponibilidade e mantém um link para a fonte. O catálogo de extratores não garante reprodução ou download de todos os conteúdos. Reprodução e download são operações distintas: um player oficial pode funcionar mesmo quando o servidor de extração está bloqueado. Prévia automática não envia os cookies opcionais do formulário; a tentativa explícita pode utilizá-los apenas durante aquela requisição. URLs extraídas de reprodução não ficam no histórico nem nas preferências.
 
@@ -22,17 +22,17 @@ Testes anteriores na Vercel confirmaram extração de TikTok e conversão de fon
 
 Limites de processamento:
 
-- Áudio: até 20 minutos com perda ou 8 minutos em WAV/FLAC/AIFF.
-- Vídeo: até 5 minutos, origem e saída limitadas a Full HD, em horizontal até 1920×1080 e em vertical até 1080×1920, com saída de até 30 fps.
+- Áudio e vídeo: sem rejeição por duração e sem truncamento automático. Fontes finitas sem duração conhecida também são aceitas, até o fim do arquivo.
+- Vídeo: origem e saída limitadas a Full HD, em horizontal até 1920×1080 e em vertical até 1080×1920, com saída de até 30 fps.
 - Origem: 128 MB agregados entre as faixas. Saída: 100 MB.
 - Prazo de trabalho: 240 segundos; espera do cliente: 280 segundos; Function: 300 segundos.
 - Duas tarefas concorrentes por instância. Fragmentos HLS/DASH podem ser transferidos com até quatro trabalhadores, compartilhando o mesmo orçamento de bytes e cancelamento.
 
-A resolução nunca amplia a fonte. Fontes acima de Full HD são recusadas; extratores podem escolher uma versão menor quando disponível. Faixas separadas são baixadas pelo transporte validado e unidas localmente. FFmpeg recebe somente arquivos locais. Formatos sem perda geram estéreo 44,1 kHz/16 bits; converter uma fonte comprimida não recupera dados perdidos. O limite por instância não substitui um limitador distribuído em instalações com tráfego elevado.
+A resolução nunca amplia a fonte. Fontes acima de Full HD são recusadas; extratores podem escolher uma versão menor quando disponível. Faixas separadas são baixadas pelo transporte validado e unidas localmente. FFmpeg recebe somente arquivos locais. Faixas compatíveis são copiadas para o contêiner de saída sem recodificação quando atendem aos ajustes escolhidos, preservando os pacotes e reduzindo o processamento. Cortes precisos, normalização, mudanças de bitrate, rotação, resolução e codecs incompatíveis usam conversão. Áudio sem perda compatível preserva os samples originais; outras conversões sem perda geram estéreo 44,1 kHz/16 bits. Converter uma fonte comprimida não recupera dados perdidos. O limite por instância não substitui um limitador distribuído em instalações com tráfego elevado. A aceitação sem limite por duração não elimina os limites de tamanho e prazo da hospedagem.
 
 ## Ferramentas de mídia
 
-- **Corte por tempo:** início e fim em segundos ou `mm:ss`/`hh:mm:ss`, dentro da duração da mídia. O corte não amplia o limite de duração da fonte.
+- **Corte por tempo:** início e fim em segundos ou `mm:ss`/`hh:mm:ss`, dentro da duração da mídia, inclusive posições após uma hora.
 - **Limpeza de metadados:** ligada por padrão; remove tags pessoais/de autoria, localização, capas/anexos e capítulos. Subtítulos não são incluídos. Campos técnicos gerados pelo contêiner/codificador podem permanecer. Textos e imagens presentes no conteúdo não são alterados.
 - **Normalização:** filtro de volume com alvo de −16 LUFS, em uma passagem, quando solicitado. O resultado depende da fonte.
 - **Vídeo sem áudio:** remove a faixa sonora; fontes silenciosas também são aceitas.
@@ -51,8 +51,8 @@ O AutoCura usa deploys imutáveis da Vercel, com `scripts/autocura.py` e o model
 1. Pesquisa atualizações das dependências Python fixadas, incluindo yt-dlp, FFmpeg e Deno, verificando integridade dos pacotes.
 2. Constrói uma versão candidata completa sem trocar o domínio ativo.
 3. Verifica ferramentas, canários YouTube e conversões de fontes próprias, cobrindo oito formatos de áudio, quatro de vídeo, corte, silêncio, normalização e remoção de metadados.
-4. Promove o deploy aprovado e verifica novamente; uma falha após a promoção provoca rollback.
-5. Persiste relatórios, estado, versões em quarentena e recuperação de uma promoção interrompida no repositório e nos artefatos do workflow.
+4. Transfere somente o domínio público `onda-audio.vercel.app` para o candidato aprovado e verifica novamente através desse domínio; uma falha após a ativação restaura o domínio anterior.
+5. Persiste relatórios, estado, versões em quarentena e recuperação de uma promoção interrompida no repositório e nos artefatos do workflow. Se o domínio já foi restaurado, conclui a recuperação sem repetir o rollback.
 
 O workflow usa uma política de referência para o YouTube: um bloqueio de IP já existente e idêntico permanece registrado como bloqueado e pode permitir as demais atualizações verificadas. Um novo bloqueio, regressão de extração ou falha dos testes de conversão impede a promoção. O script isolado mantém a política estrita como padrão. A quarentena não confunde automaticamente todo erro de rede com uma versão incompatível.
 

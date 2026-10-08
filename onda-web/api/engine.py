@@ -4,6 +4,7 @@ from __future__ import annotations
 import functools
 from dataclasses import dataclass
 import logging
+import math
 import os
 from pathlib import Path
 import re
@@ -13,7 +14,6 @@ import time
 import urllib.parse
 
 import imageio_ffmpeg
-import mutagen
 import yt_dlp
 from yt_dlp.extractor import gen_extractor_classes
 from yt_dlp.networking import Request
@@ -28,9 +28,9 @@ from .security import AudioError, Guard, PublicRH, public_url
 LOGGER = logging.getLogger("onda")
 MAX_OUTPUT = 100 * 1024 * 1024
 MAX_SOURCE = 128 * 1024 * 1024
-MAX_DURATION = 1200
-LOSSLESS_DURATION = 480
-VIDEO_DURATION = 300
+# No media-length cap: size, execution time and decoded dimensions remain
+# bounded by the actual resources available to this stateless function.
+MAX_DURATION = LOSSLESS_DURATION = VIDEO_DURATION = None
 LOSSLESS = {"wav", "aiff", "flac"}
 FORMATS = {
     "mp3": ("libmp3lame", "audio/mpeg"),
@@ -205,15 +205,14 @@ def translate_error(exc: Exception, guard: Guard) -> AudioError:
     return AudioError("Não foi possível acessar a mídia agora. Confira o link ou tente outra origem.", "upstream_error", 422)
 
 
-def metadata(info: dict, url: str, source: str, max_duration: int = MAX_DURATION) -> dict:
+def metadata(info: dict, url: str, source: str) -> dict:
     if info.get("_type") in ("playlist", "multi_video") or "entries" in info:
         raise AudioError("Cole o link de um vídeo específico, sem playlist.", "playlist", 422)
     if info.get("is_live") or info.get("live_status") == "is_live":
         raise AudioError("Transmissões ao vivo não são suportadas. Use um vídeo já publicado.", "live_video", 422)
     duration = info.get("duration")
-    if duration and duration > max_duration:
-        message = "Vídeos para download aceitam até 5 minutos." if max_duration == VIDEO_DURATION else "Use um vídeo de até 20 minutos. Formatos sem perda aceitam até 8 minutos."
-        raise AudioError(message, "too_long", 413)
+    if not isinstance(duration, (int, float)) or not math.isfinite(duration) or duration <= 0:
+        duration = None
     thumbnail = info.get("thumbnail")
     if thumbnail:
         try:
@@ -272,7 +271,7 @@ def inspect_media(url: str, guard: Guard, cookies: str | None = None, media_type
             info = downloader.extract_info(url, download=False)
         if not info:
             raise AudioError("Não foi possível identificar esse áudio.")
-        return metadata(info, url, source, VIDEO_DURATION if media_type == "video" else MAX_DURATION)
+        return metadata(info, url, source)
     except Exception as exc:
         raise translate_error(exc, guard) from exc
     finally:
@@ -306,9 +305,6 @@ def acquire_media(url: str, directory: Path, guard: Guard, audio_format: str, co
             if not info:
                 raise AudioError("Não foi possível identificar esse áudio.")
             details = metadata(info, url, source_name)
-            limit = LOSSLESS_DURATION if audio_format in LOSSLESS else MAX_DURATION
-            if details["duration"] and details["duration"] > limit:
-                raise AudioError("Formatos sem perda aceitam vídeos de até 8 minutos. Escolha MP3, M4A, AAC, OGG ou OPUS para vídeos maiores.", "lossless_too_long", 413)
             # Force only native downloaders. FFmpeg must never receive an internet URL.
             formats = info.get("formats") or [info]
             info["formats"] = [item for item in formats if item.get("protocol") in
@@ -404,7 +400,7 @@ def acquire_video_media(url: str, directory: Path, guard: Guard, video_resolutio
             info = downloader.extract_info(url, download=False)
             if not info:
                 raise AudioError("Não foi possível identificar esse vídeo.", "no_video", 422)
-            details = metadata(info, url, source_name, VIDEO_DURATION)
+            details = metadata(info, url, source_name)
             video, audio = select_video_formats(info, str(video_resolution), guard.maximum_bytes - guard.received, mute)
             video_path, audio_path = directory / "source-video.media", None
             for item, path in ((video, video_path), (audio, directory / "source-audio.media")):
@@ -512,24 +508,31 @@ def probe_media(source: Path, guard: Guard):
     duration = sum(float(value) * multiplier for value, multiplier in zip(duration_match.groups(), (3600, 60, 1))) if duration_match else None
     streams = list(re.finditer(r"^  Stream #0:(\d+)[^:\r\n]*:\s+(Video|Audio):\s+([^\r\n]+)$", text, re.M))
     video_stream = next((item for item in streams if item[2] == "Video" and "attached pic" not in item[3]), None)
+    audio_stream = next((item for item in streams if item[2] == "Audio"), None)
     video = video_stream[3] if video_stream else None
+    audio = audio_stream[3] if audio_stream else None
     dimensions = re.search(r"(?:^|,)\s*([1-9]\d{0,5})x([1-9]\d{0,5})(?:[\s,]|$)", video or "")
     fps = re.search(r"(\d+(?:\.\d+)?) fps", video or "")
+    aspect = re.search(r"\[SAR (\d+):(\d+)", video or "")
+    rotation = re.search(r"^ {4,6}displaymatrix: rotation of (-?\d+(?:\.\d+)?) degrees", text, re.M)
     return {"duration": duration, "video": bool(video), "audio": any(item[2] == "Audio" for item in streams),
             "width": int(dimensions[1]) if dimensions else None,
             "height": int(dimensions[2]) if dimensions else None,
-            "fps": float(fps[1]) if fps else 30, "video_index": int(video_stream[1]) if video_stream else 0}
+            "fps": float(fps[1]) if fps else None, "video_index": int(video_stream[1]) if video_stream else 0,
+            "video_codec": video.split()[0].rstrip(",") if video else None,
+            "audio_codec": audio.split()[0].rstrip(",") if audio else None,
+            "pixel_format": "yuv420p" if re.search(r",\s*yuv420p(?:[,(\s]|$)", video or "") else None,
+            "sample_aspect_ratio": (int(aspect[1]), int(aspect[2])) if aspect else None,
+            "rotation": float(rotation[1]) if rotation else 0}
 
 
-def validate_trim(settings: MediaSettings, duration: float | None, limit: int):
-    if duration is None:
-        raise AudioError("Não foi possível confirmar a duração completa dessa mídia. Use outro link ou um arquivo com duração definida.", "duration_unknown", 422)
-    if duration and duration > limit + .05:
-        raise AudioError(f"Essa mídia ultrapassa o limite de {limit // 60} minutos para o formato escolhido.", "too_long", 413)
+def validate_trim(settings: MediaSettings, duration: float | None):
     start = settings.trim_start or 0
     if duration and (start >= duration or settings.trim_end is not None and settings.trim_end > duration + .05):
         raise AudioError("O corte precisa ficar dentro da duração da mídia.", "invalid_trim", 422)
-    return start, settings.trim_end - start if settings.trim_end is not None else limit + 1
+    # Unknown duration is valid for finite files. FFmpeg reads until EOF, with
+    # the same output-size and wall-clock budget as a known-duration source.
+    return start, settings.trim_end - start if settings.trim_end is not None else None
 
 
 def metadata_command(strip: bool):
@@ -537,7 +540,7 @@ def metadata_command(strip: bool):
             else ["-map_metadata", "0", "-map_chapters", "0"])
 
 
-def run_conversion(command, target, directory, guard, limit):
+def run_conversion(command, target, directory, guard):
     process = None
     log = directory / "ffmpeg.log"
     progress_path = directory / "progress.log"
@@ -554,10 +557,6 @@ def run_conversion(command, target, directory, guard, limit):
                 time.sleep(.1)
         if process.returncode != 0 or not target.exists() or target.stat().st_size == 0:
             raise AudioError("A mídia não contém as faixas necessárias ou não pode ser convertida.", "conversion_failed", 422)
-        progress = progress_path.read_text(errors="replace")
-        times = [int(value) / 1_000_000 for value in re.findall(r"^out_time_us=(\d+)$", progress, re.M)]
-        if times and max(times) > limit + .05:
-            raise AudioError(f"Essa mídia ultrapassa o limite de {limit // 60} minutos para o formato escolhido.", "too_long", 413)
         if target.stat().st_size > MAX_OUTPUT:
             raise AudioError("A mídia convertida ultrapassa 100 MB. Escolha uma resolução menor ou uma mídia mais curta.", "output_too_large", 413)
         guard.check()
@@ -570,20 +569,10 @@ def run_conversion(command, target, directory, guard, limit):
 
 def convert_audio(source: Path, directory: Path, audio_format: str, quality: int | str, guard: Guard, settings: MediaSettings | None = None):
     settings = settings or MediaSettings()
-    limit = LOSSLESS_DURATION if audio_format in LOSSLESS else MAX_DURATION
-    try:
-        audio = mutagen.File(source)
-        duration = getattr(getattr(audio, "info", None), "length", None)
-        if duration and duration > limit:
-            raise AudioError(f"Esse áudio ultrapassa o limite de {limit // 60} minutos para o formato escolhido.", "too_long", 413)
-    except AudioError:
-        raise
-    except Exception:
-        pass  # FFmpeg validates containers not handled by mutagen.
     inspected = probe_media(source, guard)
     if not inspected["audio"]:
         raise AudioError("Esse arquivo não contém uma faixa de áudio válida.", "no_audio", 422)
-    start, output_duration = validate_trim(settings, inspected["duration"], limit)
+    start, output_duration = validate_trim(settings, inspected["duration"])
     target = directory / f"audio.{audio_format}"
     codec, _ = FORMATS[audio_format]
     command = [imageio_ffmpeg.get_ffmpeg_exe(), "-hide_banner", "-loglevel", "warning", "-nostats", "-nostdin", "-y"]
@@ -594,20 +583,30 @@ def convert_audio(source: Path, directory: Path, audio_format: str, quality: int
     if start:
         command += ["-ss", str(start)]
     command += ["-map", "0:a:0", "-vn", "-sn", "-dn"]
-    command += metadata_command(settings.strip_metadata) + [
-               "-threads", "1", "-ac", "2", "-ar", "48000" if audio_format == "opus" else "44100",
-               "-c:a", codec, "-t", str(output_duration)]
-    if settings.normalize_audio:
-        command += ["-af", "loudnorm=I=-16:TP=-1.5:LRA=11"]
-    if audio_format not in LOSSLESS:
-        command += ["-b:a", f"{quality}k"]
-    elif audio_format == "flac":
-        command += ["-sample_fmt", "s16"]
+    command += metadata_command(settings.strip_metadata)
+    # Preserve original samples for a compatible lossless source. A selected
+    # lossy bitrate is always encoded; an average bitrate is not a guarantee
+    # that a copied stream meets the user's requested encoding settings.
+    copy_audio = (quality == "source" and audio_format in LOSSLESS and not start
+                  and output_duration is None and not settings.normalize_audio
+                  and inspected.get("audio_codec") == codec)
+    if copy_audio:
+        command += ["-c:a", "copy"]
+    else:
+        command += ["-threads", "1", "-ac", "2", "-ar", "48000" if audio_format == "opus" else "44100", "-c:a", codec]
+        if settings.normalize_audio:
+            command += ["-af", "loudnorm=I=-16:TP=-1.5:LRA=11"]
+        if audio_format not in LOSSLESS:
+            command += ["-b:a", f"{quality}k"]
+        elif audio_format == "flac":
+            command += ["-sample_fmt", "s16"]
+    if output_duration is not None:
+        command += ["-t", str(output_duration)]
     if audio_format == "m4a":
         command += ["-movflags", "+faststart"]
     if audio_format == "aac":
         command += ["-f", "adts"]
-    return run_conversion(command, target, directory, guard, limit)
+    return run_conversion(command, target, directory, guard)
 
 
 def convert_video(source: VideoSources | Path, directory: Path, video_format: str, quality: int | str,
@@ -620,12 +619,13 @@ def convert_video(source: VideoSources | Path, directory: Path, video_format: st
         raise AudioError("As dimensões desse vídeo não são suportadas.", "no_video", 422)
     if inspected["width"] * inspected["height"] > 1920 * 1080 or max(inspected["width"], inspected["height"]) > 1920:
         raise AudioError("A fonte ultrapassa a resolução de 1080p suportada. Use uma origem com resolução menor.", "unavailable_resolution", 422)
-    start, output_duration = validate_trim(settings, inspected["duration"], VIDEO_DURATION)
+    start, output_duration = validate_trim(settings, inspected["duration"])
+    audio_inspected = inspected
     if sources.audio:
         audio_inspected = probe_media(sources.audio, guard)
         if not audio_inspected["audio"]:
             raise AudioError("A origem não entregou uma faixa de áudio válida.", "no_audio", 422)
-        validate_trim(settings, audio_inspected["duration"], VIDEO_DURATION)
+        validate_trim(settings, audio_inspected["duration"])
     cap = 1080 if settings.video_resolution == "source" else int(settings.video_resolution)
     # Bounds never increase the source dimensions. H.264 requires even pixels.
     long_edge = (int(cap * 16 / 9) // 2) * 2
@@ -636,6 +636,32 @@ def convert_video(source: VideoSources | Path, directory: Path, video_format: st
                "force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1")
     fps = min(inspected["fps"] or 30, 30)
     video_codec, audio_codec, _ = VIDEO_FORMATS[video_format]
+    compatible_video_codec = "vp9" if video_format == "webm" else "h264"
+    compatible_audio_codec = "opus" if video_format == "webm" else "aac"
+    # Copy only streams whose decoded presentation already meets the output
+    # contract. Seeking, scaling, rotation and normalization retain the precise
+    # encode path; copying would otherwise silently lose the requested changes.
+    copy_video = (not start and output_duration is None
+                  and inspected.get("video_codec") == compatible_video_codec
+                  and inspected.get("pixel_format") == "yuv420p"
+                  and inspected.get("fps") is not None and inspected["fps"] <= 30
+                  and inspected["width"] % 2 == inspected["height"] % 2 == 0
+                  and min(inspected["width"], inspected["height"]) <= cap
+                  and max(inspected["width"], inspected["height"]) <= long_edge
+                  and inspected.get("sample_aspect_ratio") in (None, (1, 1))
+                  and not inspected.get("rotation"))
+    copy_audio = (quality == "source" and not start and output_duration is None
+                  and not settings.normalize_audio
+                  and audio_inspected.get("audio_codec") == compatible_audio_codec)
+    # Prefer encoding over a copy that is already known to exceed the output
+    # budget. Count all source bytes conservatively, plus newly encoded audio.
+    estimated_output = sources.video.stat().st_size
+    if sources.audio and not settings.mute:
+        estimated_output += sources.audio.stat().st_size
+    if not settings.mute and not copy_audio and inspected["duration"]:
+        estimated_output += inspected["duration"] * (192 if quality == "source" else int(quality)) * 1000 / 8
+    if estimated_output > MAX_OUTPUT * .95:
+        copy_video = False
     target = directory / f"video.{video_format}"
     command = [imageio_ffmpeg.get_ffmpeg_exe(), "-hide_banner", "-loglevel", "warning", "-nostats", "-nostdin", "-y"]
     command += input_command(sources.video)
@@ -649,25 +675,34 @@ def convert_video(source: VideoSources | Path, directory: Path, video_format: st
     if settings.mute:
         command += ["-an"]
     else:
-        command += ["-map", "1:a:0?" if sources.audio else "0:a:0?",
-                    "-c:a", audio_codec, "-b:a", f"{192 if quality == 'source' else quality}k", "-ac", "2", "-ar", "48000"]
-        if settings.normalize_audio:
-            command += ["-af", "loudnorm=I=-16:TP=-1.5:LRA=11"]
+        command += ["-map", "1:a:0?" if sources.audio else "0:a:0?"]
+        if copy_audio:
+            command += ["-c:a", "copy"]
+        else:
+            command += ["-c:a", audio_codec, "-b:a", f"{192 if quality == 'source' else quality}k", "-ac", "2", "-ar", "48000"]
+            if settings.normalize_audio:
+                command += ["-af", "loudnorm=I=-16:TP=-1.5:LRA=11"]
     command += ["-sn", "-dn"] + metadata_command(settings.strip_metadata)
     effective_duration = (settings.trim_end - start if settings.trim_end is not None
-                          else max(.1, (inspected["duration"] or VIDEO_DURATION) - start))
-    video_bitrate = max(256, min(3500, int(MAX_OUTPUT * .8 * 8 / effective_duration / 1000) - (0 if settings.mute else 320)))
-    command += ["-vf", filters, "-r", f"{fps:g}", "-c:v", video_codec, "-pix_fmt", "yuv420p",
-                "-b:v", f"{video_bitrate}k", "-threads", "1", "-t", str(output_duration)]
-    if video_codec == "libx264":
-        command += ["-preset", "ultrafast", "-maxrate", f"{video_bitrate}k", "-bufsize", f"{video_bitrate * 2}k"]
+                          else max(.1, inspected["duration"] - start) if inspected["duration"] else None)
+    if copy_video:
+        command += ["-c:v", "copy"]
     else:
-        command += ["-deadline", "realtime", "-cpu-used", "8", "-row-mt", "1"]
+        video_bitrate = (max(64, min(3500, int(MAX_OUTPUT * .8 * 8 / effective_duration / 1000)
+                                          - (0 if settings.mute else 320))) if effective_duration else 3500)
+        command += ["-vf", filters, "-r", f"{fps:g}", "-c:v", video_codec, "-pix_fmt", "yuv420p",
+                    "-b:v", f"{video_bitrate}k", "-threads", "1"]
+        if video_codec == "libx264":
+            command += ["-preset", "ultrafast", "-maxrate", f"{video_bitrate}k", "-bufsize", f"{video_bitrate * 2}k"]
+        else:
+            command += ["-deadline", "realtime", "-cpu-used", "8", "-row-mt", "1"]
+    if output_duration is not None:
+        command += ["-t", str(output_duration)]
     if video_format in ("mp4", "mov"):
         command += ["-movflags", "+faststart"]
-    result = run_conversion(command, target, directory, guard, VIDEO_DURATION)
+    result = run_conversion(command, target, directory, guard)
     verified = probe_media(result, guard)
-    if not verified["video"] or not verified["duration"]:
+    if not verified["video"]:
         raise AudioError("A conversão não produziu uma faixa de vídeo válida.", "conversion_failed", 422)
     expects_audio = not settings.mute and (sources.audio is not None or inspected["audio"])
     if settings.mute and verified["audio"] or expects_audio and not verified["audio"]:

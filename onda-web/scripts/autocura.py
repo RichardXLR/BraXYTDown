@@ -737,9 +737,9 @@ class Vercel:
     def promote(self, deployment):
         ready = self.inspect(deployment["id"])
         try:
-            self.api(f'/v10/projects/{self.project}/promote/{ready["id"]}', payload={}, method="POST")
+            self.api(f'/v2/deployments/{ready["id"]}/aliases', payload={"alias": self.production_alias}, method="POST")
         except CureError as error:
-            current = self.current() if error.http_status == 409 else None
+            current = self.current() if error.http_status in {409, 422} else None
             if not current or current["id"] != ready["id"]:
                 raise
         self.wait_current(ready["id"])
@@ -747,12 +747,18 @@ class Vercel:
     def rollback(self, deployment):
         ready = self.inspect(deployment["id"])
         try:
-            self.api(f'/v1/projects/{self.project}/rollback/{ready["id"]}', payload={}, method="POST")
+            self.api(f'/v2/deployments/{ready["id"]}/aliases', payload={"alias": self.production_alias}, method="POST")
         except CureError as error:
-            current = self.current() if error.http_status == 409 else None
+            current = self.current() if error.http_status in {409, 422} else None
             if not current or current["id"] != ready["id"]:
                 raise
         self.wait_current(ready["id"])
+
+    def production_view(self, deployment):
+        current = self.current()
+        if not current or current["id"] != deployment["id"]:
+            raise CureError("production_mapping_not_confirmed")
+        return {**current, "url": "https://" + self.production_alias}
 
     def wait_current(self, expected_id):
         deadline = time.monotonic() + 90
@@ -870,9 +876,11 @@ class AutoCura:
             self.state["status"] = "recovery_requires_baseline"
             self.save(durable=True)
             raise CureError("missing_known_good_baseline")
-        # Rollback runs even when promote raised: the provider may have changed
-        # domains before its response was lost.
-        self.provider.rollback(previous)
+        # A prior recovery may already have restored the known good domain.
+        # Vercel can reject a redundant rollback, so check the actual alias first.
+        current = self.provider.current()
+        if not current or current["id"] != previous["id"]:
+            self.provider.rollback(previous)
         self.quarantine(pending.get("versions", {}), "unconfirmed_interrupted_promotion", pending.get("candidate"))
         self.state.pop("pending", None)
         self.state["status"] = "rolled_back"
@@ -928,7 +936,8 @@ class AutoCura:
                 self.save(durable=True)
                 try:
                     self.provider.promote(candidate)
-                    post = self.checks.verify(candidate, versions=versions)
+                    production_view = getattr(self.provider, "production_view", None)
+                    post = self.checks.verify(production_view(candidate) if production_view else candidate, versions=versions)
                     self.state["last_check"] = post
                     if post["status"] != "passed":
                         raise CureError("post_promotion_check_failed")
@@ -937,6 +946,7 @@ class AutoCura:
                     self.state["previous_versions"] = previous_versions
                     self.state["versions"] = versions
                     self.state["status"] = "passed"
+                    self.state.pop("last_error", None)
                     self.state["quarantine"] = [item for item in self.state.get("quarantine", []) if item.get("versions") != versions]
                     self.state.pop("pending", None)
                     self.state.setdefault("history", []).append({"event": "promoted", "at": now(), "versions": versions, "deployment_id": candidate["id"]})

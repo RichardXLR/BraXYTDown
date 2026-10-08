@@ -136,6 +136,8 @@ def register(app):
             "limits": {"maxDuration": engine.MAX_DURATION,
                        "maxLosslessDuration": engine.LOSSLESS_DURATION,
                        "maxVideoDuration": engine.VIDEO_DURATION,
+                       "maxSourceMB": engine.MAX_SOURCE // 1024 // 1024,
+                       "operationTimeoutSeconds": 240,
                        "maxOutputMB": engine.MAX_OUTPUT // 1024 // 1024},
             "formats": {"audio": list(engine.FORMATS), "video": list(engine.VIDEO_FORMATS)},
             "testScope": "metadata",
