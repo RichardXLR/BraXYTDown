@@ -161,6 +161,9 @@ def register(app):
                 options["cookies"] = body.cookies
             if body.media_type != "audio":
                 options["media_type"] = body.media_type
+            session = body.session_options()
+            if session is not None:
+                options["session"] = session
             if options:
                 inspect = functools.partial(inspect, **options)
             details = await run_guarded(request, guard, inspect, body.url)

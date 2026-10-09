@@ -20,9 +20,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from starlette.background import BackgroundTask
 
-from .engine import FORMATS, VIDEO_FORMATS, MediaSettings, VIDEO_DURATION, LOSSLESS, MAX_DURATION, LOSSLESS_DURATION, inspect_media, prepare_download, runtime_options
+from .engine import FORMATS, VIDEO_FORMATS, MediaSettings, SessionOptions, VIDEO_DURATION, LOSSLESS, MAX_DURATION, LOSSLESS_DURATION, inspect_media, prepare_download, runtime_options, source_for
 from .security import AudioError, Guard, public_url
-from .cookies import MAX_COOKIE_BYTES
+from .cookies import MAX_COOKIE_BYTES, validate_session
 from .auth import register_auth, auth_capabilities
 from .account import register_account
 
@@ -35,6 +35,8 @@ class LinkInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     url: str = Field(min_length=8, max_length=4096)
     cookies: str | None = Field(default=None, max_length=MAX_COOKIE_BYTES, repr=False)
+    video_password: str | None = Field(default=None, max_length=256, strict=True, repr=False)
+    user_agent: str | None = Field(default=None, max_length=512, strict=True, repr=False)
     media_type: Literal["audio", "video"] = "audio"
 
     @field_validator("url")
@@ -50,6 +52,37 @@ class LinkInput(BaseModel):
         if value is not None and len(value.encode("utf-8")) > MAX_COOKIE_BYTES:
             raise AudioError("O arquivo de cookies deve ter no máximo 64 KB.", "invalid_cookies", 422)
         return value
+
+    @field_validator("video_password")
+    @classmethod
+    def validate_video_password(cls, value):
+        return SessionOptions(video_password=value).video_password
+
+    @field_validator("user_agent")
+    @classmethod
+    def validate_user_agent(cls, value):
+        return SessionOptions(user_agent=value).user_agent
+
+    def session_options(self):
+        if not self.video_password and not self.user_agent:
+            return None
+        return SessionOptions(video_password=self.video_password, user_agent=self.user_agent)
+
+
+class SessionValidationInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    url: str = Field(min_length=8, max_length=4096)
+    cookies: str = Field(min_length=1, max_length=MAX_COOKIE_BYTES, repr=False)
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value):
+        return LinkInput.validate_url(value)
+
+    @field_validator("cookies")
+    @classmethod
+    def validate_cookie_bytes(cls, value):
+        return LinkInput.validate_cookie_bytes(value)
 
 
 class DownloadInput(LinkInput):
@@ -187,9 +220,19 @@ async def inspect_link(body: LinkInput, request: Request):
     guard = Guard(seconds=40, maximum_bytes=16 * 1024 * 1024)
     try:
         # Adapt the shared runner's final guard argument to metadata extraction.
-        return await run_guarded(request, guard, functools.partial(inspect_media, cookies=body.cookies, media_type=body.media_type), body.url)
+        session = body.session_options()
+        options = {"cookies": body.cookies, "media_type": body.media_type}
+        if session is not None:
+            options["session"] = session
+        return await run_guarded(request, guard, functools.partial(inspect_media, **options), body.url)
     finally:
         SLOTS.release()
+
+
+@app.post("/api/session/validate")
+async def validate_imported_session(body: SessionValidationInput):
+    source = source_for(body.url)
+    return validate_session(body.cookies, body.url, direct_media=source == "Arquivo direto")
 
 
 def download_headers(title: str, audio_format: str, size: int):
@@ -223,7 +266,11 @@ async def download_link(body: DownloadInput, request: Request):
                 cleaned = True
 
     try:
-        target, details = await run_guarded(request, guard, functools.partial(prepare_download, cookies=body.cookies, settings=body.settings()),
+        options = {"cookies": body.cookies, "settings": body.settings()}
+        session = body.session_options()
+        if session is not None:
+            options["session"] = session
+        target, details = await run_guarded(request, guard, functools.partial(prepare_download, **options),
                                            body.url, directory, body.format, body.quality)
         headers = download_headers(details["title"], body.format, target.stat().st_size)
         recovery = details.get("recovery", {})

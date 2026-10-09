@@ -194,6 +194,17 @@ def test_real_account_transport_cancels_conflict_body_before_reload_and_preserve
     assert 'Account transport: 409 cancellation/retry' in completed.stdout
 
 
+def test_actual_account_lifecycle_finishes_sdk_logout_without_reopening_the_session():
+    node = shutil.which('node')
+    if node is None:
+        pytest.skip('Node is unavailable for the browser lifecycle regression test.')
+    root = Path(__file__).resolve().parents[1]
+    completed = subprocess.run([node, str(root / 'tests/account_lifecycle.cjs')],
+                               cwd=root, capture_output=True, text=True, timeout=15)
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert 'Account lifecycle: pending SDK logout' in completed.stdout
+
+
 @pytest.mark.parametrize("key,value", [("cookies", "secret"), ("user_id", "user_Bob"), ("session", "secret")])
 def test_unknown_sensitive_fields_are_rejected_before_storage(client, state, key, value):
     state[key] = value

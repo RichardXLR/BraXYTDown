@@ -292,7 +292,8 @@ async def _authorize_machine(request: Request, config: AuthConfiguration):
             raise ValueError("large body")
         body = json.loads(raw)
         if (not isinstance(body, dict) or not isinstance(body.get("url"), str)
-                or body.get("cookies") not in {None, ""}):
+                or any(body.get(field) not in {None, ""}
+                       for field in ("cookies", "video_password", "user_agent"))):
             raise ValueError("invalid canary")
     except (ValueError, TypeError):
         raise AuthFailure("auth_forbidden", 403) from None

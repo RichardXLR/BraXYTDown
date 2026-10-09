@@ -180,16 +180,14 @@
     // Automatic previews never upload sensitive session data. Only this
     // explicit button action may use the currently supplied session.
     if (withCookies) {
-      const cookies = document.getElementById('cookies-input')?.value.trim();
-      if (cookies) {
-        if (new TextEncoder().encode(cookies).byteLength > 64 * 1024) {
-          controller = null;
-          retry.hidden = false;
-          showState('unavailable', 'Reduza ou limpe os cookies: o limite é 64 KB.');
-          return;
-        }
-        payload.cookies = cookies;
+      const session = window.OndaSession?.requestOptions();
+      if (session === null) {
+        controller = null;
+        retry.hidden = false;
+        showState('unavailable', 'Confira os campos de Acesso à fonte antes de atualizar a prévia.');
+        return;
       }
+      if (session) Object.assign(payload, session);
     }
     let timedOut = false;
     const timeout = setTimeout(() => { timedOut = true; requestController.abort(); }, 30000);

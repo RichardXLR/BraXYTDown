@@ -30,6 +30,18 @@
   const EXAMPLE_URL = new URL('/canary.wav', window.location.origin).href;
   const VIDEO_EXAMPLE_URL = new URL('/canary.mp4', window.location.origin).href;
   const MAX_COOKIE_BYTES = 65536;
+  let cookieValidationController = null;
+  let sessionImportGeneration = 0;
+  let validatedCookieLink = '';
+  let cookieVault = null;
+  let sessionLocked = false;
+  let cookieSaveSequence = 0;
+  let cookieSavePromise = Promise.resolve(true);
+  const cookieVaultReady = window.OndaCookieStore.open(window.Clerk.user.id).then((vault) => {
+    if (sessionLocked) { vault.close(); return null; }
+    cookieVault = vault;
+    return vault;
+  }).catch(() => null);
   let activeController = null;
   let activeKind = null;
   let timeoutId = null;
@@ -201,39 +213,241 @@
     updateTools();
   }
 
-  function updateCookieStatus(message) {
-    const bytes = new TextEncoder().encode($('cookies-input').value.trim()).byteLength;
-    const overLimit = bytes > MAX_COOKIE_BYTES;
-    $('cookies-status').textContent = message || (overLimit
-      ? 'Este conteúdo ultrapassa 64 KB. Reduza ou limpe os cookies.'
-      : bytes ? `Cookies fornecidos · ${formatBytes(bytes)}. Não são salvos no histórico.` : 'Nenhum cookie fornecido.');
-    $('cookies-status').classList.toggle('invalid', overLimit);
-    if (overLimit) $('cookies-input').setAttribute('aria-invalid', 'true');
+  function describeCookies(raw) {
+    if (!raw) return { text: 'Nenhum cookie fornecido.' };
+    const bytes = new TextEncoder().encode(raw).byteLength;
+    if (bytes > MAX_COOKIE_BYTES) return { error: 'Este conteúdo ultrapassa 64 KB. Reduza ou limpe os cookies.' };
+    if (raw.startsWith('[') || raw.startsWith('{')) {
+      try {
+        const data = JSON.parse(raw);
+        const records = Array.isArray(data) ? data : data?.cookies;
+        if (!Array.isArray(records) || !records.length || records.length > 300) return { error: 'O JSON deve conter uma lista de 1 a 300 cookies.' };
+        return { text: `JSON · ${records.length} registros · ${formatBytes(bytes)}. Valide para o link informado.` };
+      } catch { return { error: 'O JSON está incompleto ou inválido. Importe uma exportação de cookies válida.' }; }
+    }
+    if (!/^# (?:Netscape HTTP|HTTP) Cookie File(?:\r?\n|$)/.test(raw)) return { error: 'Use cookies Netscape (TXT) ou uma exportação JSON.' };
+    return { text: `Netscape · ${formatBytes(bytes)}. Valide para o link informado.` };
+  }
+
+  function updateCookieStatus(message, invalid = false) {
+    validatedCookieLink = '';
+    const content = describeCookies($('cookies-input').value.trim());
+    const hasError = invalid || (!message && Boolean(content.error));
+    $('cookies-status').textContent = message || content.error || content.text;
+    $('cookies-status').classList.toggle('invalid', hasError);
+    $('cookies-status').classList.remove('validated');
+    if (hasError) $('cookies-input').setAttribute('aria-invalid', 'true');
     else $('cookies-input').removeAttribute('aria-invalid');
+    updateCookieApplicability();
+  }
+
+  function invalidateCookieValidation() {
+    cookieValidationController?.abort();
+    cookieValidationController = null;
+    $('validate-cookies').disabled = Boolean(activeController);
+    $('validate-cookies').textContent = 'Validar para este link';
+    updateCookieStatus();
+  }
+
+  function cookieMemoryStatus(text, state = 'idle') {
+    $('cookies-memory-status').textContent = text;
+    $('cookies-memory-status').dataset.state = state;
+  }
+
+  function persistCookies() {
+    const sequence = ++cookieSaveSequence;
+    const cookies = $('cookies-input').value.trim();
+    const filename = $('cookies-filename').textContent.replace(/[\u0000-\u001f\u007f-\u009f]/g, '').slice(0, 160).replace(/[\ud800-\udbff]$/, '');
+    if (describeCookies(cookies).error) {
+      cookieMemoryStatus('Alteração não salva. Revise o formato dos cookies.', 'error');
+      return Promise.resolve(false);
+    }
+    cookieMemoryStatus(cookies ? 'Salvando neste dispositivo…' : 'Removendo cookies salvos…', 'pending');
+    cookieSavePromise = (async () => {
+      const vault = await cookieVaultReady;
+      if (sessionLocked || sequence !== cookieSaveSequence) return false;
+      if (!vault) throw new Error('storage unavailable');
+      if (cookies) await vault.save(cookies, filename === 'Nenhum arquivo selecionado' ? '' : filename);
+      else await vault.remove();
+      if (sessionLocked || sequence !== cookieSaveSequence) return false;
+      cookieMemoryStatus(cookies ? 'Salvos neste dispositivo até você remover.' : 'Nenhum cookie salvo neste dispositivo.', cookies ? 'saved' : 'idle');
+      return true;
+    })().catch(() => {
+      if (!sessionLocked && sequence === cookieSaveSequence) cookieMemoryStatus('Não foi possível salvar neste dispositivo. Os campos continuam disponíveis nesta página.', 'error');
+      return false;
+    });
+    return cookieSavePromise;
+  }
+
+  async function restoreSavedCookies() {
+    const generation = sessionImportGeneration;
+    cookieMemoryStatus('Verificando cookies salvos…', 'pending');
+    try {
+      const vault = await cookieVaultReady;
+      if (!vault) throw new Error('storage unavailable');
+      const saved = await vault.load();
+      if (sessionLocked || generation !== sessionImportGeneration) return;
+      if (saved) {
+        $('cookies-input').value = saved.cookies;
+        $('cookies-filename').textContent = saved.filename || 'Sessão restaurada';
+        updateCookieStatus();
+      }
+      cookieMemoryStatus(saved ? 'Restaurados deste dispositivo. Permanecem salvos até você remover.' : 'Nenhum cookie salvo neste dispositivo.', saved ? 'saved' : 'idle');
+    } catch {
+      if (!sessionLocked && generation === sessionImportGeneration) cookieMemoryStatus('O armazenamento local está indisponível. Você pode usar uma sessão temporária nesta página.', 'error');
+    }
+  }
+
+  function accessOptions(report = false) {
+    const password = $('video-password').value;
+    const agent = $('session-user-agent').value.trim();
+    const invalidPassword = password.length > 256 || /[\u0000-\u001f\u007f]/.test(password);
+    const invalidAgent = agent.length > 512 || /[^\x20-\x7e]/.test(agent);
+    if (invalidPassword || invalidAgent) {
+      if (report) {
+        const field = $(invalidPassword ? 'video-password' : 'session-user-agent');
+        field.setAttribute('aria-invalid', 'true');
+        $('advanced-options').open = true;
+        window.OndaUI?.activate('download');
+        field.focus();
+        announce(invalidPassword ? 'A senha do vídeo deve ter até 256 caracteres, sem quebras de linha.' : 'A identificação deve ter até 512 caracteres de texto simples, sem quebras de linha.');
+      }
+      return null;
+    }
+    return { ...(password ? { video_password: password } : {}), ...(agent ? { user_agent: agent } : {}) };
+  }
+
+  function cookiesMatchSource(cookies, url) {
+    if (!cookies || !url) return Boolean(cookies);
+    if (detectSource(url) === 'Arquivo direto') return false;
+    let host;
+    let domains;
+    try {
+      host = new URL(url).hostname.toLowerCase();
+      if (cookies.startsWith('[') || cookies.startsWith('{')) {
+        const data = JSON.parse(cookies);
+        const records = Array.isArray(data) ? data : data.cookies;
+        domains = records.map((cookie) => cookie.domain);
+      } else {
+        domains = cookies.split(/\r?\n/).slice(1).filter((line) => line.trim() && (!line.startsWith('#') || line.startsWith('#HttpOnly_'))).map((line) => line.replace(/^#HttpOnly_/, '').split('\t')[0]);
+      }
+      // This only decides whether to include an optional session. The server
+      // still applies the public-suffix, HTTPS, expiry and cookie policies.
+      if (!domains.length || domains.some((domain) => typeof domain !== 'string' || !/^\.?[a-z0-9.-]+$/i.test(domain))) return true;
+      domains = domains.map((domain) => domain.toLowerCase().replace(/^\./, ''));
+      const families = [
+        [['youtube.com', 'youtube-nocookie.com', 'youtu.be'], ['youtube.com', 'youtube-nocookie.com', 'youtu.be', 'google.com', 'googlevideo.com', 'ytimg.com']],
+        [['facebook.com', 'fb.watch', 'fb.com'], ['facebook.com', 'fb.watch', 'fb.com']],
+        [['twitter.com', 'x.com', 't.co'], ['twitter.com', 'x.com', 't.co']],
+      ];
+      const family = families.find(([sources]) => sources.some((source) => host === source || host.endsWith(`.${source}`)));
+      return family ? domains.some((domain) => family[1].some((scope) => domain === scope || domain.endsWith(`.${scope}`)))
+        : domains.some((domain) => host === domain || host.endsWith(`.${domain}`) || domain.endsWith(`.${host}`));
+    } catch { return true; }
+  }
+
+  function updateCookieApplicability() {
+    const cookies = $('cookies-input').value.trim();
+    const url = input.value.trim();
+    $('cookies-use-hint').textContent = !cookies ? 'Os cookies serão usados apenas nas ações que você iniciar.'
+      : !url ? 'Seus cookies serão usados quando corresponderem à plataforma do link.'
+      : cookiesMatchSource(cookies, url) ? 'Esta sessão será incluída nas suas solicitações para este link.'
+      : 'Cookies preservados. Este link usa acesso público porque pertence a outra fonte.';
   }
 
   function getCookies() {
     const cookies = $('cookies-input').value.trim();
-    if (new TextEncoder().encode(cookies).byteLength > MAX_COOKIE_BYTES) {
+    const content = describeCookies(cookies);
+    if (content.error) {
       updateCookieStatus();
       window.OndaUI?.activate('download');
       $('advanced-options').open = true;
       $('cookies-input').focus();
-      announce('O limite de cookies é 64 KB. Reduza o conteúdo antes de continuar.');
+      announce(content.error);
       return null;
     }
+    if (!accessOptions(true)) return null;
     return cookies;
   }
 
   function withCookies(payload, cookies) {
-    return cookies ? { ...payload, cookies } : payload;
+    return { ...payload, ...(cookiesMatchSource(cookies, payload.url || input.value.trim()) ? { cookies } : {}), ...accessOptions() };
   }
 
-  function clearCookies() {
+  window.OndaSession = Object.freeze({
+    requestOptions() {
+      const cookies = getCookies();
+      return cookies === null ? null : withCookies({}, cookies);
+    },
+    flushCookieSave() { return cookieSavePromise; },
+  });
+
+  async function validateCookies() {
+    if (activeController || cookieValidationController) return;
+    const url = getURL();
+    if (!url) return;
+    const cookies = getCookies();
+    if (cookies === null) return;
+    if (!cookies) { updateCookieStatus('Importe ou cole os cookies antes de validar.'); $('cookies-input').focus(); return; }
+    const controller = new AbortController();
+    cookieValidationController = controller;
+    $('validate-cookies').disabled = true;
+    $('validate-cookies').textContent = 'Validando…';
+    updateCookieStatus('Verificando formato, plataforma e expiração…');
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    try {
+      const response = await window.OndaAuth.fetch('/api/session/validate', {
+        method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, cookies }), signal: controller.signal,
+      });
+      if (!response.ok) throw await responseError(response);
+      const data = await response.json();
+      if (cookieValidationController !== controller || input.value.trim() !== url || $('cookies-input').value.trim() !== cookies) return;
+      const count = Number(data.validCookies);
+      if (!Number.isInteger(count) || count < 1 || count > 300) throw new Error('O serviço não confirmou a sessão. Valide novamente.');
+      const ignored = Number(data.ignoredCookies) || 0;
+      const expired = Number(data.expiredCookies) || 0;
+      const details = [`${count} cookies compatíveis com a plataforma`];
+      if (ignored) details.push(`${ignored} de outros escopos ignorados`);
+      if (expired) details.push(`${expired} expirados ignorados`);
+      updateCookieStatus(`${details.join(' · ')}. A disponibilidade do vídeo é verificada ao baixar.`);
+      $('cookies-status').classList.add('validated');
+      validatedCookieLink = url;
+      announce('Cookies validados para o link informado.');
+    } catch (error) {
+      if (cookieValidationController === controller) updateCookieStatus(error.name === 'AbortError' ? 'A validação demorou demais. Tente novamente.' : error.message, true);
+    } finally {
+      clearTimeout(timeout);
+      if (cookieValidationController === controller) {
+        cookieValidationController = null;
+        $('validate-cookies').disabled = Boolean(activeController);
+        $('validate-cookies').textContent = 'Validar para este link';
+      }
+    }
+  }
+
+  function clearSessionFields() {
+    sessionImportGeneration += 1;
+    invalidateCookieValidation();
     $('cookies-input').value = '';
     $('cookies-file').value = '';
     $('cookies-filename').textContent = 'Nenhum arquivo selecionado';
+    $('video-password').value = '';
+    $('video-password').type = 'password';
+    $('video-password').removeAttribute('aria-invalid');
+    $('toggle-video-password').textContent = 'Mostrar';
+    $('toggle-video-password').setAttribute('aria-pressed', 'false');
+    $('toggle-video-password').setAttribute('aria-label', 'Mostrar senha do vídeo');
+    $('session-user-agent').value = '';
+    $('session-user-agent').removeAttribute('aria-invalid');
     updateCookieStatus();
+  }
+
+  function lockSourceSession() {
+    sessionLocked = true;
+    cookieSaveSequence += 1;
+    cookieVault?.close();
+    clearSessionFields();
   }
 
   function selectedFormat() {
@@ -285,7 +499,9 @@
   }
 
   function updateSource() {
+    if (validatedCookieLink && validatedCookieLink !== input.value.trim()) invalidateCookieValidation();
     const source = detectSource(input.value.trim());
+    updateCookieApplicability();
     $('source-label').textContent = source ? `${source} · acesso depende da disponibilidade da fonte` : 'YouTube, TikTok e outras fontes suportadas';
     $('url-help').classList.toggle('detected', Boolean(source));
     inspectButton.disabled = Boolean(activeController) || !isPublicURL(input.value.trim());
@@ -367,6 +583,7 @@
   }
 
   function setBusy(kind) {
+    if (kind) invalidateCookieValidation();
     activeKind = kind;
     window.dispatchEvent(new CustomEvent('onda:phase', { detail: { phase: kind || 'idle' } }));
     downloadButton.disabled = Boolean(kind);
@@ -385,6 +602,13 @@
     $('cookies-input').readOnly = Boolean(kind);
     $('cookies-file').disabled = Boolean(kind);
     $('clear-cookies').disabled = Boolean(kind);
+    $('import-cookies').disabled = Boolean(kind);
+    $('validate-cookies').disabled = Boolean(kind) || Boolean(cookieValidationController);
+    $('video-password').readOnly = Boolean(kind);
+    $('session-user-agent').readOnly = Boolean(kind);
+    $('toggle-video-password').disabled = Boolean(kind);
+    $('use-browser-agent').disabled = Boolean(kind);
+    $('cookies-dropzone').setAttribute('aria-disabled', String(Boolean(kind)));
     $('test-current-link').disabled = Boolean(kind);
     $('test-platform-link').disabled = Boolean(kind);
     $('compatibility-platform').disabled = Boolean(kind);
@@ -848,7 +1072,7 @@
     }
     const cookies = getCookies();
     if (cookies === null) {
-      showCompatibilityResult('error', 'Ajuste os cookies antes do teste', 'O limite é 64 KB. Reduza o conteúdo ou use “Limpar cookies”.');
+      showCompatibilityResult('error', 'Confira o acesso à fonte', 'Revise o formato dos cookies e os campos de sessão antes de testar.');
       return;
     }
     const controller = startOperation('compatibility');
@@ -893,35 +1117,80 @@
     resetTools();
     announce('Ajustes restaurados. Remover metadados continua ativado por padrão.');
   });
-  input.addEventListener('input', updateSource);
+  input.addEventListener('input', () => { invalidateCookieValidation(); updateSource(); });
   inspectButton.addEventListener('click', inspect);
-  $('cookies-input').addEventListener('input', () => updateCookieStatus());
-  $('clear-cookies').addEventListener('click', () => {
-    clearCookies();
-    announce('Cookies removidos desta página.');
+  $('cookies-input').addEventListener('input', () => { sessionImportGeneration += 1; invalidateCookieValidation(); void persistCookies(); });
+  $('clear-cookies').addEventListener('click', async () => {
+    clearSessionFields();
+    const removed = await persistCookies();
+    announce(removed ? 'Cookies removidos deste dispositivo. Os campos da sessão também foram limpos.' : 'Campos limpos. Não foi possível confirmar a remoção dos cookies salvos; tente novamente.');
   });
-  $('cookies-file').addEventListener('change', async () => {
-    const file = $('cookies-file').files?.[0];
-    if (!file) return;
-    $('cookies-filename').textContent = file.name;
+  async function importCookieFile(file) {
+    if (!file || activeController) return;
+    const generation = ++sessionImportGeneration;
+    invalidateCookieValidation();
     if (file.size > MAX_COOKIE_BYTES) {
       $('cookies-file').value = '';
       $('cookies-filename').textContent = 'Nenhum arquivo selecionado';
-      updateCookieStatus('Arquivo não importado: o limite é 64 KB.');
-      $('cookies-status').classList.add('invalid');
+      updateCookieStatus('Arquivo não importado: o limite é 64 KB.', true);
       return;
     }
     try {
-      const text = await file.text();
-      if (activeController) return;
+      let text = (await file.text()).trim();
+      if (generation !== sessionImportGeneration || activeController) return;
+      if (text.startsWith('{') || text.startsWith('[')) {
+        const data = JSON.parse(text);
+        const records = Array.isArray(data) ? data : data?.cookies;
+        if (!Array.isArray(records)) throw new Error('O JSON deve conter uma lista de cookies.');
+        // Browser storage exports can also contain localStorage. Keep only
+        // the deliberately imported cookie records, without browser storage.
+        text = JSON.stringify(records);
+      }
+      const content = describeCookies(text);
+      if (content.error) throw new Error(content.error);
       $('cookies-input').value = text;
+      $('cookies-filename').textContent = file.name;
       updateCookieStatus();
-      announce('Arquivo de cookies importado somente para esta página.');
-    } catch {
-      updateCookieStatus('Não foi possível ler o arquivo. Selecione um arquivo de texto Netscape.');
-      $('cookies-status').classList.add('invalid');
+      void persistCookies();
+      announce('Cookies importados. O salvamento neste dispositivo é automático.');
+    } catch (error) {
+      if (generation !== sessionImportGeneration) return;
+      $('cookies-file').value = '';
+      $('cookies-filename').textContent = 'Nenhum arquivo selecionado';
+      updateCookieStatus(error instanceof SyntaxError ? 'O arquivo JSON não é válido. Exporte novamente os cookies da plataforma.' : 'Não foi possível importar. Use Netscape (TXT) ou JSON, com até 64 KB e 300 cookies.', true);
     }
+  }
+  $('cookies-file').addEventListener('change', () => importCookieFile($('cookies-file').files?.[0]));
+  $('import-cookies').addEventListener('click', () => $('cookies-file').click());
+  $('validate-cookies').addEventListener('click', validateCookies);
+  $('cookies-dropzone').addEventListener('dragover', (event) => {
+    event.preventDefault();
+    if (!activeController) $('cookies-dropzone').classList.add('is-dragging');
   });
+  $('cookies-dropzone').addEventListener('dragleave', (event) => {
+    if (!$('cookies-dropzone').contains(event.relatedTarget)) $('cookies-dropzone').classList.remove('is-dragging');
+  });
+  $('cookies-dropzone').addEventListener('drop', (event) => {
+    event.preventDefault();
+    $('cookies-dropzone').classList.remove('is-dragging');
+    if (activeController) return;
+    const files = event.dataTransfer?.files;
+    if (files?.length !== 1) { updateCookieStatus('Importe um arquivo de cookies por vez.', true); return; }
+    importCookieFile(files[0]);
+  });
+  $('toggle-video-password').addEventListener('click', () => {
+    const shown = $('video-password').type === 'password';
+    $('video-password').type = shown ? 'text' : 'password';
+    $('toggle-video-password').setAttribute('aria-pressed', String(shown));
+    $('toggle-video-password').setAttribute('aria-label', shown ? 'Ocultar senha do vídeo' : 'Mostrar senha do vídeo');
+    $('toggle-video-password').textContent = shown ? 'Ocultar' : 'Mostrar';
+  });
+  $('use-browser-agent').addEventListener('click', () => {
+    $('session-user-agent').value = navigator.userAgent.slice(0, 512);
+    $('session-user-agent').removeAttribute('aria-invalid');
+    announce('Identificação deste navegador preenchida. Não será salva na conta.');
+  });
+  for (const field of [$('video-password'), $('session-user-agent')]) field.addEventListener('input', () => field.removeAttribute('aria-invalid'));
   $('refresh-compatibility').addEventListener('click', () => { loadCompatibility(); loadMaintenance(true); });
   $('test-current-link').addEventListener('click', () => testCompatibility());
   $('test-platform-link').addEventListener('click', () => {
@@ -986,10 +1255,10 @@
     if (!activeController && !form.contains(document.activeElement)) { restoreDraft(); updateChoices(); updateSource(); }
   });
   window.addEventListener('onda:auth', (event) => {
-    if (!event.detail?.signedIn) { clearCookies(); releaseFile(); activeController?.abort(); compatibilityStatusController?.abort(); providersController?.abort(); maintenanceController?.abort(); }
+    if (!event.detail?.signedIn) { lockSourceSession(); releaseFile(); activeController?.abort(); compatibilityStatusController?.abort(); providersController?.abort(); maintenanceController?.abort(); }
   });
   window.addEventListener('pagehide', () => {
-    clearCookies();
+    lockSourceSession();
     releaseFile();
     activeController?.abort();
     compatibilityStatusController?.abort();
@@ -1012,6 +1281,7 @@
   updateChoices();
   updateSource();
   renderHistory();
+  void restoreSavedCookies();
   checkHealth();
   loadCompatibility();
   if (!$('panel-compatibility').hidden) { loadProviders(); loadMaintenance(); }

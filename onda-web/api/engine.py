@@ -4,7 +4,7 @@ from __future__ import annotations
 import functools
 import copy
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 import math
 import os
@@ -67,6 +67,45 @@ VIDEO_COPY_CODECS = {
 }
 NATIVE_PROTOCOLS = {"http", "https", "m3u8_native", "http_dash_segments"}
 INPUT_FORMATS = "aac,aiff,asf,avi,flac,flv,matroska,webm,mov,mp4,m4a,3gp,3g2,mj2,mp3,mpeg,mpegts,ogg,wav"
+
+
+@dataclass(frozen=True)
+class SessionOptions:
+    """Access hints owned by one request, never by saved media preferences."""
+    video_password: str | None = field(default=None, repr=False)
+    user_agent: str | None = field(default=None, repr=False)
+
+    def __post_init__(self):
+        password = self.video_password
+        if password is not None and (not isinstance(password, str) or len(password) > 256
+                                     or any(ord(char) < 32 or 127 <= ord(char) <= 159
+                                            or 0xD800 <= ord(char) <= 0xDFFF for char in password)):
+            raise AudioError("A senha do vídeo deve ter até 256 caracteres e não conter caracteres de controle.",
+                             "invalid_video_password", 422)
+        agent = self.user_agent
+        if agent is not None and (not isinstance(agent, str) or len(agent) > 512
+                                  or any(not 32 <= ord(char) <= 126 for char in agent)):
+            raise AudioError("O identificador do navegador deve ter até 512 caracteres, sem quebras de linha.",
+                             "invalid_user_agent", 422)
+        object.__setattr__(self, "video_password", password or None)
+        object.__setattr__(self, "user_agent", (agent.strip() or None) if agent is not None else None)
+
+    def extraction_options(self, opts: dict) -> dict:
+        result = dict(opts)
+        if self.video_password:
+            result["videopassword"] = self.video_password
+        if self.user_agent:
+            result["http_headers"] = {**result.get("http_headers", {}), "User-Agent": self.user_agent}
+        return result
+
+    def for_source(self, source: str, url: str):
+        if source == "Arquivo direto" and self.video_password:
+            raise AudioError("A senha do vídeo só é usada em páginas de plataformas que oferecem esse recurso.",
+                             "password_not_supported", 422)
+        if self.video_password and urllib.parse.urlsplit(url).scheme != "https":
+            raise AudioError("Use um link HTTPS para enviar a senha do vídeo à plataforma.",
+                             "password_https_required", 422)
+        return self
 
 
 @dataclass(frozen=True)
@@ -245,6 +284,12 @@ def translate_error(exc: Exception, guard: Guard) -> AudioError:
     if isinstance(exc, AudioError):
         return exc
     text = str(exc).lower()
+    if any(token in text for token in ("wrong password", "incorrect password", "invalid password", "password verification failed")):
+        return AudioError("A plataforma não aceitou a senha desse vídeo. Confira a senha fornecida pelo criador.",
+                          "video_password_invalid", 422)
+    if any(token in text for token in ("--video-password", "protected by a password", "password-protected", "password protected")):
+        return AudioError("Esse vídeo exige uma senha. Informe a senha do vídeo fornecida pelo criador em Acesso à fonte.",
+                          "video_password_required", 422)
     if "429" in text or "too many requests" in text:
         return AudioError("A origem limitou temporariamente as solicitações. Aguarde um pouco e tente novamente.", "upstream_rate_limited", 429)
     if any(token in text for token in ("http error 500", "http error 502", "http error 503", "http error 504", "connection reset", "remote end closed", "incomplete read")):
@@ -287,8 +332,9 @@ def direct_title(url: str):
     return urllib.parse.unquote(Path(urllib.parse.urlsplit(url).path).stem)[:240] or "Áudio"
 
 
-def direct_handler(guard: Guard):
-    return PublicRH(guard=guard, logger=QuietLogger(), timeout=8, prefer_system_certs=True)
+def direct_handler(guard: Guard, *, user_agent: str | None = None):
+    headers = {"User-Agent": user_agent} if user_agent else {}
+    return PublicRH(guard=guard, logger=QuietLogger(), timeout=8, prefer_system_certs=True, headers=headers)
 
 
 def verify_media_response(response, url: str):
@@ -302,15 +348,18 @@ def verify_media_response(response, url: str):
         raise AudioError("O endereço redirecionou para um formato de arquivo não suportado.", "not_media", 422)
 
 
-def inspect_media(url: str, guard: Guard, cookies: str | None = None, media_type: str = "audio"):
+def inspect_media(url: str, guard: Guard, cookies: str | None = None, media_type: str = "audio",
+                  session: SessionOptions | None = None):
     cookiejar = None
     try:
         source = source_for(url)
+        session = (session or SessionOptions()).for_source(source, url)
         cookiejar = parse_netscape(cookies, url, direct_media=source == "Arquivo direto")
         public_url(url)
         guard.check()
         if source == "Arquivo direto":
-            with direct_handler(guard) as handler:
+            factory = functools.partial(direct_handler, user_agent=session.user_agent) if session.user_agent else direct_handler
+            with factory(guard) as handler:
                 try:
                     response = handler.send(Request(url, method="HEAD"))
                 except Exception as exc:
@@ -324,7 +373,7 @@ def inspect_media(url: str, guard: Guard, cookies: str | None = None, media_type
                         raise AudioError("O arquivo de origem ultrapassa o limite de 128 MB.", "source_too_large", 413)
             return {"title": direct_title(url), "duration": None, "thumbnail": None,
                     "source": source, "webpage_url": url}
-        with SafeYoutubeDL(options(guard), guard, cookiejar=cookiejar) as downloader:
+        with SafeYoutubeDL(session.extraction_options(options(guard)), guard, cookiejar=cookiejar) as downloader:
             info = downloader.extract_info(url, download=False)
         if not info:
             raise AudioError("Não foi possível identificar esse áudio.")
@@ -339,22 +388,25 @@ def inspect_media(url: str, guard: Guard, cookies: str | None = None, media_type
             cookiejar.clear()
 
 
-def direct_download(url: str, directory: Path, guard: Guard):
-    return download_direct(url, directory, guard, handler_factory=direct_handler,
+def direct_download(url: str, directory: Path, guard: Guard, *, session: SessionOptions | None = None):
+    factory = functools.partial(direct_handler, user_agent=session.user_agent) if session and session.user_agent else direct_handler
+    return download_direct(url, directory, guard, handler_factory=factory,
                            verify_response=verify_media_response, title_factory=direct_title)
 
 
-def acquire_media(url: str, directory: Path, guard: Guard, audio_format: str, cookies: str | None = None):
+def acquire_media(url: str, directory: Path, guard: Guard, audio_format: str, cookies: str | None = None,
+                  session: SessionOptions | None = None):
     source_name = source_for(url)
+    session = (session or SessionOptions()).for_source(source_name, url)
     cookiejar = parse_netscape(cookies, url, direct_media=source_name == "Arquivo direto")
     try:
         if source_name == "Arquivo direto":
             # source_for already validates the authority. Resolve and pin
             # direct media inside its bounded transfer attempts, so an initial
             # temporary DNS failure can recover before any TCP connection.
-            return direct_download(url, directory, guard)
+            return direct_download(url, directory, guard, **({"session": session} if session.user_agent else {}))
         public_url(url)
-        with SafeYoutubeDL(options(guard, directory), guard, cookiejar=cookiejar) as downloader:
+        with SafeYoutubeDL(session.extraction_options(options(guard, directory)), guard, cookiejar=cookiejar) as downloader:
             info = downloader.extract_info(url, download=False)
             if not info:
                 raise AudioError("Não foi possível identificar esse áudio.")
@@ -488,15 +540,16 @@ def clone_download_cookies(cookiejar):
 
 
 def acquire_video_media(url: str, directory: Path, guard: Guard, video_resolution="source", cookies=None, mute=False,
-                        video_format="mp4"):
+                        video_format="mp4", session: SessionOptions | None = None):
     source_name = source_for(url)
+    session = (session or SessionOptions()).for_source(source_name, url)
     cookiejar = parse_netscape(cookies, url, direct_media=source_name == "Arquivo direto")
     try:
         if source_name == "Arquivo direto":
-            path, details = direct_download(url, directory, guard)
+            path, details = direct_download(url, directory, guard, **({"session": session} if session.user_agent else {}))
             return VideoSources(path), details
         public_url(url)
-        opts = options(guard, directory)
+        opts = session.extraction_options(options(guard, directory))
         # Extraction lists every format. Downloads below receive individual
         # streams, not the bestvideo+bestaudio merger path.
         opts["format"] = "bestvideo/best/bestaudio"
@@ -896,15 +949,17 @@ def convert_video(source: VideoSources | Path, directory: Path, video_format: st
     return result
 
 
-def acquire_with_recovery(url, directory, audio_format, guard, settings, cookies):
+def acquire_with_recovery(url, directory, audio_format, guard, settings, cookies,
+                          session: SessionOptions | None = None):
     """Recover native extraction without resetting request limits or sharing files."""
     source_name = source_for(url)
+    session_args = {"session": session} if session and (session.video_password or session.user_agent) else {}
 
     def acquire(folder, attempt_guard):
         if settings.media_type == "video":
             return acquire_video_media(url, folder, attempt_guard, settings.video_resolution,
-                                       cookies=cookies, mute=settings.mute, video_format=audio_format)
-        return acquire_media(url, folder, attempt_guard, audio_format, cookies=cookies)
+                                       cookies=cookies, mute=settings.mute, video_format=audio_format, **session_args)
+        return acquire_media(url, folder, attempt_guard, audio_format, cookies=cookies, **session_args)
 
     # The direct transfer owns its three HTTP requests and safe range resume.
     if source_name == "Arquivo direto":
@@ -954,10 +1009,11 @@ def acquire_with_recovery(url, directory, audio_format, guard, settings, cookies
 
 
 def prepare_download(url, directory, audio_format, quality, guard, cookies: str | None = None,
-                     settings: MediaSettings | None = None):
+                     settings: MediaSettings | None = None, session: SessionOptions | None = None):
     settings = settings or MediaSettings()
     try:
-        sources, details = acquire_with_recovery(url, directory, audio_format, guard, settings, cookies)
+        session_args = {"session": session} if session and (session.video_password or session.user_agent) else {}
+        sources, details = acquire_with_recovery(url, directory, audio_format, guard, settings, cookies, **session_args)
         if settings.media_type == "video":
             try:
                 target = convert_video(sources, directory, audio_format, quality, guard, settings)

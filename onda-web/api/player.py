@@ -35,6 +35,8 @@ class PlayerInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     url: str = Field(min_length=8, max_length=4096)
     cookies: str | None = Field(default=None, max_length=MAX_COOKIE_BYTES, repr=False)
+    video_password: str | None = Field(default=None, max_length=256, strict=True, repr=False)
+    user_agent: str | None = Field(default=None, max_length=512, strict=True, repr=False)
 
     @field_validator("url")
     @classmethod
@@ -49,6 +51,21 @@ class PlayerInput(BaseModel):
         if value is not None and len(value.encode("utf-8")) > MAX_COOKIE_BYTES:
             raise AudioError("O arquivo de cookies deve ter no máximo 64 KB.", "invalid_cookies", 422)
         return value
+
+    @field_validator("video_password")
+    @classmethod
+    def bounded_video_password(cls, value):
+        return engine.SessionOptions(video_password=value).video_password
+
+    @field_validator("user_agent")
+    @classmethod
+    def bounded_user_agent(cls, value):
+        return engine.SessionOptions(user_agent=value).user_agent
+
+    def session_options(self):
+        if not self.video_password and not self.user_agent:
+            return None
+        return engine.SessionOptions(video_password=self.video_password, user_agent=self.user_agent)
 
 
 def _family(host, domain):
@@ -227,7 +244,8 @@ def _readable_media(url, guard, media_type=None):
             return response.url, inferred
 
 
-def resolve_player(url: str, parent_host: str, guard: Guard, cookies: str | None = None):
+def resolve_player(url: str, parent_host: str, guard: Guard, cookies: str | None = None,
+                   session: engine.SessionOptions | None = None):
     public_url(url, resolve=False)
     embedded = official_embed(url, parent_host)
     if embedded:
@@ -235,12 +253,15 @@ def resolve_player(url: str, parent_host: str, guard: Guard, cookies: str | None
         # its own browser session according to the user's browser settings.
         if cookies:
             embedded["message"] += " Os cookies fornecidos ao serviço não são usados no player incorporado."
+        if session and session.video_password:
+            embedded["message"] += " Se necessário, digite a senha diretamente no player da plataforma."
         return embedded
 
     cookiejar = None
     provider = "Origem"
     try:
         provider = engine.source_for(url)
+        session = (session or engine.SessionOptions()).for_source(provider, url)
         cookiejar = parse_netscape(cookies, url, direct_media=provider == "Arquivo direto")
         public_url(url)
         guard.check()
@@ -249,7 +270,7 @@ def resolve_player(url: str, parent_host: str, guard: Guard, cookies: str | None
             return {"kind": "direct", "media_type": media_type, "url": direct,
                     "provider": provider, "title": engine.direct_title(url),
                     "message": "Toque em reproduzir. O arquivo é transmitido diretamente pela origem, sem conversão."}
-        opts = engine.options(guard)
+        opts = session.extraction_options(engine.options(guard))
         opts["format"] = "best[height<=720]/best/bestaudio"
         with engine.SafeYoutubeDL(opts, guard, cookiejar=cookiejar) as downloader:
             info = downloader.extract_info(url, download=False)
@@ -293,11 +314,17 @@ def register(app):
         if embedded:
             if body.cookies:
                 embedded["message"] += " Os cookies fornecidos ao serviço não são usados no player incorporado."
+            if body.video_password:
+                embedded["message"] += " Se necessário, digite a senha diretamente no player da plataforma."
             return embedded
         acquire_slot()
         guard = Guard(seconds=25, maximum_bytes=8 * 1024 * 1024)
         try:
-            return await run_guarded(request, guard, functools.partial(resolve_player, cookies=body.cookies),
+            options = {"cookies": body.cookies}
+            session = body.session_options()
+            if session is not None:
+                options["session"] = session
+            return await run_guarded(request, guard, functools.partial(resolve_player, **options),
                                      body.url, request.url.hostname)
         finally:
             SLOTS.release()

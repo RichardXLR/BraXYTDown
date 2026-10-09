@@ -34,12 +34,13 @@
     ...Object.keys(draftDefault).map((key) => `draft.${key}`)]);
   const dirty = new Map();
   const requests = new Set();
-  const studioScripts = ['/ui.js', '/app.js', '/player.js', '/intro.js'];
+  const studioScripts = ['/ui.js', '/session-store.js', '/app.js', '/player.js', '/intro.js'];
   let state = defaults();
   let revision = 0;
   let userId = null;
   let accountReady = false;
   let appLoaded = false;
+  let studioStarted = false;
   let appBooting = false;
   let clerkLoaded = false;
   let clerkLoading = null;
@@ -56,6 +57,7 @@
   let syncState = 'loading';
   let authMode = new URL(location.href).searchParams.get('account') === 'sign-up' ? 'sign-up' : 'sign-in';
   let mountedAuthMode = null;
+  let signingOut = false;
 
   function copy(value) { return JSON.parse(JSON.stringify(value)); }
   function defaults() { return { preferences: { ...preferencesDefault }, sound: false, intro_seen: false, draft: { ...draftDefault }, history: [] }; }
@@ -427,6 +429,7 @@
       saveCache();
       // A returning account is hydrated before any preferences, draft, sound,
       // history or opening-animation code can read or write account state.
+      studioStarted = true;
       for (const script of studioScripts) {
         await loadScript(script);
         if (generation !== authGeneration || !signedIn()) return;
@@ -447,12 +450,14 @@
   function observeSession({ user, session }) {
     const identity = user && session ? user.id : null;
     if (identity === userId) return;
-    if (userId || appLoaded || appBooting) {
+    if (userId || studioStarted || appLoaded || appBooting) {
       authGeneration += 1;
       resetAccount();
-      // Existing studio closures never receive another person's account.
-      // A fresh document also prevents duplicated listeners after signing in.
-      if (appLoaded || appBooting) { location.reload(); return; }
+      // Clerk publishes the signed-out state before its signOut promise and
+      // redirect finish. Reloading here interrupts that work and can reopen
+      // the previous session. A fresh document is required only when another
+      // signed-in account would receive the existing studio closures.
+      if (identity && (studioStarted || appLoaded || appBooting)) { location.reload(); return; }
     }
     if (identity) void openAccount(identity);
     else mountAuth();
@@ -497,13 +502,15 @@
   document.getElementById('account-sign-up').addEventListener('click', () => mountAuth('sign-up', { resetRoute: true }));
   document.getElementById('account-sync').addEventListener('click', () => dirty.size ? flush() : refreshAccount());
   document.getElementById('account-sign-out').addEventListener('click', async (event) => {
-    if (!signedIn()) return;
+    if (!signedIn() || signingOut) return;
     const button = event.currentTarget; button.disabled = true;
     try {
       if (dirty.size && !await flush()) { status(navigator.onLine === false ? 'offline' : 'error'); return; }
+      await window.OndaSession?.flushCookieSave?.();
+      signingOut = true;
       await window.Clerk.signOut({ redirectUrl: '/' });
     } catch { status('error'); }
-    finally { button.disabled = false; }
+    finally { signingOut = false; button.disabled = false; }
   });
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) { if (dirty.size) void flush(); }
@@ -514,8 +521,10 @@
   addEventListener('pagehide', () => { saveCache(); if (dirty.size) void flush(); });
   addEventListener('pageshow', (event) => {
     if (!event.persisted) return;
-    if (!signedIn()) { authGeneration += 1; resetAccount(); location.reload(); }
-    else void refreshAccount();
+    if (!signedIn()) { authGeneration += 1; resetAccount(); }
+    // pagehide cancels transfers and locks the decrypted source session.
+    // Restore from the current account in a fresh document after bfcache.
+    location.reload();
   });
   addEventListener('storage', (event) => {
     if (!accountReady || !userId || event.key !== cacheKey() || !event.newValue) return;

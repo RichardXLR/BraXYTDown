@@ -131,6 +131,7 @@ _NEVER_CODES = frozenset({
     "unsafe_url", "invalid_url", "invalid_source", "invalid_trim",
     "invalid_cookies", "cookie_domain", "cookie_https_required",
     "cookies_expired", "cookies_not_supported", "auth_required",
+    "video_password_required", "video_password_invalid", "password_not_supported", "password_https_required",
     "authentication_required", "auth_forbidden", "auth_not_configured",
     "auth_unavailable", "login_required", "cookies_required", "private",
     "drm", "drm_protected", "removed", "unsupported_source",
