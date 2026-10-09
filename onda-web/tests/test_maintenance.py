@@ -42,7 +42,7 @@ def test_successful_job_requires_its_own_persisted_report(monkeypatch):
 
 
 def test_real_report_exposes_nested_release_gate_and_existing_platform_block(monkeypatch):
-    gate = {'status': 'passed', 'youtube_verified': False, 'accepted_existing_blocks': ['youtube_canary']}
+    gate = {'status': 'passed', 'youtube_verified': False, 'accepted_existing_blocks': ['me_at_zoo_metadata']}
     remote_evidence(monkeypatch,
         run={'id': 42, 'status': 'completed', 'conclusion': 'success'},
         report={'automation_enabled': True,
@@ -104,7 +104,7 @@ def test_missing_report_does_not_hide_pending_or_failed_workflow(monkeypatch, ru
     result = maintenance.inspect_maintenance()
     assert result['state'] == expected and result['automated'] is False
     assert result['run']['id'] == 42
-    assert len(calls) == 2
+    assert len(calls) == 4
 
 
 @pytest.mark.parametrize('execution', [['unexpected'], 'invalid', 42, True, None])

@@ -38,6 +38,7 @@
   let sessionLocked = false;
   let cookieSaveSequence = 0;
   let cookieSavePromise = Promise.resolve(true);
+  let cookieMetadata = null;
   const cookieVaultReady = window.OndaCookieStore.open(window.Clerk.user.id).then((vault) => {
     if (sessionLocked) { vault.close(); return null; }
     cookieVault = vault;
@@ -119,6 +120,7 @@
     $('autocura-last-check').textContent = date && Number.isFinite(date.getTime()) ? date.toLocaleString('pt-BR') : 'Nenhuma execução verificada';
     $('autocura-next-check').textContent = typeof data.schedule === 'string' ? data.schedule : 'Aguardando ativação no GitHub';
     $('autocura-details').dataset.state = data.state || 'unknown';
+    window.OndaMaintenanceCenter?.render(data);
   }
 
   async function loadMaintenance(force = false) {
@@ -181,6 +183,17 @@
     $('tools-error').hidden = true;
     $('trim-start').removeAttribute('aria-invalid');
     $('trim-end').removeAttribute('aria-invalid');
+    if (window.OndaDownloadEstimate) updateDownloadEstimate();
+  }
+
+  function updateDownloadEstimate() {
+    window.OndaDownloadEstimate?.render(metadataURL === input.value.trim() ? metadata : null, {
+      media_type: selectedMediaType(), format: selectedFormat(), quality: selectedQuality(),
+      video_resolution: form.elements.video_resolution.value,
+      trim_start: parseTime($('trim-start').value), trim_end: parseTime($('trim-end').value),
+      mute: selectedMediaType() === 'video' && $('mute-video').checked,
+      normalize_audio: $('normalize-audio').checked, strip_metadata: $('strip-metadata').checked,
+    });
   }
 
   function toolsError(message, field) {
@@ -255,6 +268,7 @@
     if (hasError) $('cookies-input').setAttribute('aria-invalid', 'true');
     else $('cookies-input').removeAttribute('aria-invalid');
     updateCookieApplicability();
+    window.OndaCookieCenter?.render({ cookies: cookieContent($('cookies-input').value.trim()), url: input.value.trim(), metadata: cookieMetadata });
   }
 
   function invalidateCookieValidation() {
@@ -275,6 +289,7 @@
     const raw = $('cookies-input').value.trim();
     const cookies = cookieContent(raw);
     const filename = $('cookies-filename').textContent.replace(/[\u0000-\u001f\u007f-\u009f]/g, '').slice(0, 160).replace(/[\ud800-\udbff]$/, '');
+    const previousMetadata = window.OndaCookieCenter ? cookieMetadata : null;
     if (describeCookies(raw).error) {
       cookieMemoryStatus('Alteração não salva. Revise o formato dos cookies.', 'error');
       return Promise.resolve(false);
@@ -284,9 +299,13 @@
       const vault = await cookieVaultReady;
       if (sessionLocked || sequence !== cookieSaveSequence) return false;
       if (!vault) throw new Error('storage unavailable');
-      if (cookies) await vault.save(cookies, filename === 'Nenhum arquivo selecionado' ? '' : filename);
+      const nextMetadata = cookies && window.OndaCookieCenter ? await window.OndaCookieCenter.createMetadata(cookies, previousMetadata) : null;
+      if (sessionLocked || sequence !== cookieSaveSequence) return false;
+      if (cookies) await vault.save(cookies, filename === 'Nenhum arquivo selecionado' ? '' : filename, nextMetadata);
       else await vault.remove();
       if (sessionLocked || sequence !== cookieSaveSequence) return false;
+      if (window.OndaCookieCenter) cookieMetadata = nextMetadata;
+      window.OndaCookieCenter?.render({ cookies, url: input.value.trim(), metadata: cookieMetadata });
       cookieMemoryStatus(cookies ? 'Salvos neste dispositivo até você remover.' : 'Nenhum cookie salvo neste dispositivo.', cookies ? 'saved' : 'idle');
       return true;
     })().catch(() => {
@@ -305,8 +324,11 @@
       const saved = await vault.load();
       if (sessionLocked || generation !== sessionImportGeneration) return;
       if (saved) {
+        const restoredMetadata = window.OndaCookieCenter ? await window.OndaCookieCenter.createMetadata(saved.cookies, saved.metadata || null) : null;
+        if (sessionLocked || generation !== sessionImportGeneration) return;
         $('cookies-input').value = saved.cookies;
         $('cookies-filename').textContent = saved.filename || 'Sessão restaurada';
+        cookieMetadata = restoredMetadata;
         updateCookieStatus();
       }
       cookieMemoryStatus(saved ? 'Restaurados deste dispositivo. Permanecem salvos até você remover.' : 'Nenhum cookie salvo neste dispositivo.', saved ? 'saved' : 'idle');
@@ -431,6 +453,15 @@
       if (!Number.isInteger(count) || count < 1 || count > 300) throw new Error('O serviço não confirmou a sessão. Valide novamente.');
       const ignored = Number(data.ignoredCookies) || 0;
       const expired = Number(data.expiredCookies) || 0;
+      if (window.OndaCookieCenter) {
+        const validatedMetadata = await window.OndaCookieCenter.createValidation(cookies, url, data, cookieMetadata);
+        if (sessionLocked || cookieValidationController !== controller || controller.signal.aborted
+            || input.value.trim() !== url || cookieContent($('cookies-input').value.trim()) !== cookies) return;
+        cookieMetadata = validatedMetadata;
+        await persistCookies();
+        if (sessionLocked || cookieValidationController !== controller || controller.signal.aborted
+            || input.value.trim() !== url || cookieContent($('cookies-input').value.trim()) !== cookies) return;
+      }
       const details = [`${count} cookies compatíveis com a plataforma`];
       if (ignored) details.push(`${ignored} de outros escopos ignorados`);
       if (expired) details.push(`${expired} expirados ignorados`);
@@ -440,7 +471,20 @@
       updateCookieApplicability();
       announce('Cookies validados para o link informado.');
     } catch (error) {
-      if (cookieValidationController === controller) updateCookieStatus(error.name === 'AbortError' ? 'A validação demorou demais. Tente novamente.' : error.message, true);
+      if (sessionLocked || cookieValidationController !== controller || input.value.trim() !== url
+          || cookieContent($('cookies-input').value.trim()) !== cookies) return;
+      if (window.OndaCookieCenter) {
+        try {
+          const failedMetadata = await window.OndaCookieCenter.createValidationFailure(cookies, url,
+            error.name === 'AbortError' ? 'timeout' : error.code, cookieMetadata);
+          if (sessionLocked || cookieValidationController !== controller || input.value.trim() !== url
+              || cookieContent($('cookies-input').value.trim()) !== cookies) return;
+          cookieMetadata = failedMetadata;
+          await persistCookies();
+        } catch { /* Failure details remain visible when local storage is unavailable. */ }
+      }
+      if (!sessionLocked && cookieValidationController === controller && input.value.trim() === url
+          && cookieContent($('cookies-input').value.trim()) === cookies) updateCookieStatus(error.name === 'AbortError' ? 'A validação demorou demais. Tente novamente.' : error.message, true);
     } finally {
       clearTimeout(timeout);
       if (cookieValidationController === controller) {
@@ -453,6 +497,7 @@
 
   function clearSessionFields() {
     sessionImportGeneration += 1;
+    cookieMetadata = null;
     invalidateCookieValidation();
     $('cookies-input').value = '';
     $('cookies-file').value = '';
@@ -544,6 +589,8 @@
     input.removeAttribute('aria-invalid');
     window.dispatchEvent(new CustomEvent('onda:source'));
     saveDraft();
+    if (window.OndaDownloadEstimate) updateDownloadEstimate();
+    window.OndaCookieCenter?.render({ cookies: cookieContent($('cookies-input').value.trim()), url: input.value.trim(), metadata: cookieMetadata });
   }
 
   function updateChoices() {
@@ -588,6 +635,7 @@
       } catch { /* Mode still works when history is unavailable. */ }
       window.dispatchEvent(new CustomEvent('onda:media', { detail: { media_type: type } }));
     }
+    if (window.OndaDownloadEstimate) updateDownloadEstimate();
   }
 
   function showStatus(kind, title, message) {
@@ -595,6 +643,8 @@
     status.className = `operation-status ${kind}`;
     statusTitle.textContent = title;
     statusMessage.textContent = message;
+    if (activeKind !== 'download') $('download-progress').hidden = true;
+    if (activeKind === 'download' && ['error', 'info'].includes(kind)) $('download-progress').dataset.state = 'stopped';
     window.dispatchEvent(new CustomEvent('onda:feedback', { detail: { kind } }));
     if (kind !== 'success') saveButton.hidden = true;
     if (kind !== 'loading') {
@@ -648,7 +698,7 @@
     $('cancel-compatibility-test').hidden = kind !== 'compatibility';
     $('test-current-link').textContent = kind === 'compatibility' ? 'Testando a fonte…' : 'Testar meu link →';
     $('download-button-label').textContent = kind === 'download' ? `Preparando seu ${mediaLabel()}…` : `Baixar ${mediaLabel()}`;
-    inspectButton.textContent = kind === 'inspect' ? 'Analisando…' : 'Ver detalhes →';
+    inspectButton.textContent = kind === 'inspect' ? 'Analisando…' : 'Analisar e estimar →';
     form.setAttribute('aria-busy', kind ? 'true' : 'false');
   }
 
@@ -746,6 +796,7 @@
       thumb.hidden = false;
     }
     $('media-preview').hidden = false;
+    if (window.OndaDownloadEstimate) updateDownloadEstimate();
   }
 
   async function inspect() {
@@ -782,6 +833,12 @@
     return `${(value / (1024 * 1024)).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MB`;
   }
 
+  function formatSpeed(value) {
+    if (value < 1024) return `${Math.round(value).toLocaleString('pt-BR')} B/s`;
+    if (value < 1024 * 1024) return `${(value / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} KB/s`;
+    return `${formatBytes(value)}/s`;
+  }
+
   function filenameFromHeader(header, format) {
     if (header) {
       const utf8 = header.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
@@ -802,6 +859,56 @@
   function titleFromHeader(header) {
     if (!header) return '';
     try { return decodeURIComponent(header); } catch { return header; }
+  }
+
+  function renderDownloadProgress(event) {
+    if (event.type !== 'progress') return;
+    const labels = {
+      extracting: ['Extraindo os detalhes', 'Identificando as faixas disponíveis na fonte.'],
+      downloading: ['Transferindo da fonte', 'Recebendo a mídia para preparar o arquivo.'],
+      converting: ['Processando seu arquivo', 'Aplicando o formato e os ajustes selecionados.'],
+      delivering: ['Recebendo seu arquivo', 'A conversão terminou. Transferindo para este dispositivo.'],
+      ready: ['Arquivo pronto', 'Transferência concluída e arquivo verificado.'],
+    };
+    const label = labels[event.stage];
+    if (!label) return;
+    const panel = $('download-progress');
+    const changed = panel.dataset.stage !== event.stage;
+    panel.hidden = false; panel.dataset.state = 'active'; panel.dataset.stage = event.stage;
+    if (changed) {
+      statusTitle.textContent = label[0]; statusMessage.textContent = label[1];
+      $('download-speed').textContent = '—';
+    }
+    const order = ['extracting', 'downloading', 'converting', 'ready'];
+    const index = event.stage === 'delivering' ? 2 : order.indexOf(event.stage);
+    panel.querySelectorAll('[data-download-stage]').forEach((step) => {
+      const position = order.indexOf(step.dataset.downloadStage);
+      step.dataset.state = event.stage === 'ready' || position < index ? 'complete' : position === index ? 'active' : 'waiting';
+      if (step.dataset.state === 'active') step.setAttribute('aria-current', 'step');
+      else step.removeAttribute('aria-current');
+    });
+    const finite = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+    const received = finite(event.downloadedBytes) ? event.downloadedBytes : null;
+    const total = finite(event.totalBytes) && event.totalBytes > 0 ? event.totalBytes : null;
+    if (received !== null) $('download-transferred').textContent = total ? `${formatBytes(received)} / ${formatBytes(total)}` : `${formatBytes(received)} recebidos`;
+    else if (event.stage === 'extracting') $('download-transferred').textContent = 'Aguardando a fonte';
+    if (finite(event.speedBytesPerSecond) && event.speedBytesPerSecond > 0) $('download-speed').textContent = formatSpeed(event.speedBytesPerSecond);
+    let percent = received !== null && total ? received / total * 100 : null;
+    let detail = event.stage === 'delivering' ? 'Onda → dispositivo' : event.stage === 'ready' ? 'Concluído' : event.stage === 'downloading' ? 'Fonte → Onda' : 'Identificando a mídia';
+    if (event.stage === 'converting') {
+      detail = finite(event.processedSeconds) ? `${formatDuration(event.processedSeconds) || '00:00'} processados` : 'Aplicando seus ajustes';
+      if (finite(event.durationSeconds) && event.durationSeconds > 0 && finite(event.processedSeconds)) percent = event.processedSeconds / event.durationSeconds * 100;
+      if (finite(event.outputBytes) && event.outputBytes > 0) detail += ` · ${formatBytes(event.outputBytes)}`;
+    }
+    if (finite(event.attempt) && event.attempt > 1) detail += ` · tentativa ${event.attempt}`;
+    $('download-stage-detail').textContent = detail;
+    progressTrack.hidden = false;
+    if (event.stage === 'ready') percent = 100;
+    progressTrack.classList.toggle('indeterminate', percent === null);
+    progressFill.style.width = percent === null ? '0%' : `${Math.max(0, Math.min(event.stage === 'ready' ? 100 : 99, percent))}%`;
+    if (percent !== null) { progressTrack.setAttribute('role', 'progressbar'); progressTrack.setAttribute('aria-valuemin', '0'); progressTrack.setAttribute('aria-valuemax', '100'); progressTrack.setAttribute('aria-valuenow', String(Math.round(Math.max(0, Math.min(100, percent))))); }
+    else { progressTrack.removeAttribute('role'); progressTrack.removeAttribute('aria-valuenow'); }
+    window.dispatchEvent(new CustomEvent('onda:download-progress', { detail: { stage: event.stage, downloadedBytes: received, totalBytes: total } }));
   }
 
   async function receiveDownload(response, controller, contentType, onProgress) {
@@ -873,10 +980,11 @@
     progressTrack.hidden = false;
     progressTrack.classList.add('indeterminate');
     progressFill.style.width = '0%';
+    renderDownloadProgress({ type: 'progress', stage: 'extracting' });
     try {
       const response = await window.OndaAuth.fetch('/api/download', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Accept: window.OndaDownloadStream?.CONTENT_TYPE || 'application/octet-stream' },
         body: JSON.stringify(withCookies({ url, media_type: type, format, quality, ...options }, cookies)),
         signal: controller.signal,
       });
@@ -884,17 +992,30 @@
       if (!response.ok) throw await responseError(response);
       const contentType = response.headers.get('Content-Type') || 'application/octet-stream';
       if (contentType.includes('application/json')) throw await responseError(response);
+      const streamed = contentType.toLowerCase().startsWith('application/x-onda-download');
       const mediaType = contentType.split(';', 1)[0].trim().toLowerCase();
-      const allowedType = type === 'video'
+      const allowedType = streamed || (type === 'video'
         ? mediaType.startsWith('video/') || ['application/octet-stream', 'application/x-matroska'].includes(mediaType)
-        : mediaType.startsWith('audio/') || ['application/octet-stream', 'application/ogg'].includes(mediaType);
+        : mediaType.startsWith('audio/') || ['application/octet-stream', 'application/ogg'].includes(mediaType));
       if (!allowedType) {
+        try { await response.body?.cancel(); } catch { /* Preserve the invalid-response error. */ }
         throw new Error(`O serviço retornou uma resposta inesperada em vez do ${mediaLabel(type)}. Tente novamente em alguns instantes.`);
       }
       let lastUpdate = 0;
-      statusTitle.textContent = `Recebendo seu ${mediaLabel(type)}`;
-      statusMessage.textContent = 'A conversão está pronta. Recebendo o arquivo…';
-      const blob = await receiveDownload(response, controller, contentType, (received, total) => {
+      let fileDetails = null;
+      const result = streamed ? await window.OndaDownloadStream.receive(response, {
+        signal: controller.signal, ensureOperation: () => ensureOperation(controller), maxBytes: MAX_DOWNLOAD_BYTES,
+        onEvent(event) {
+          ensureOperation(controller);
+          if (event.type === 'progress') renderDownloadProgress(event);
+          if (event.type === 'file') {
+            if (!(type === 'video' ? event.mime.startsWith('video/') : event.mime.startsWith('audio/'))) throw new Error('O arquivo recebido não corresponde ao tipo de mídia escolhido.');
+            fileDetails = event;
+          }
+        },
+      }) : null;
+      if (!streamed) renderDownloadProgress({ type: 'progress', stage: 'delivering' });
+      const blob = result?.blob || await receiveDownload(response, controller, contentType, (received, total) => {
         const now = Date.now();
         if (now - lastUpdate > 250 || (total && received >= total)) {
           statusMessage.textContent = total ? `${formatBytes(received)} de ${formatBytes(total)} recebidos.` : `${formatBytes(received)} recebidos. O tamanho total não foi informado.`;
@@ -907,28 +1028,35 @@
       });
       ensureOperation(controller);
       if (blob.size === 0) throw new Error(`A fonte não retornou um arquivo de ${mediaLabel(type)}. Tente outro link.`);
-      const filename = filenameFromHeader(response.headers.get('Content-Disposition'), format);
-      const title = titleFromHeader(response.headers.get('X-Media-Title') || response.headers.get('X-Audio-Title')) || (metadataURL === url && metadata?.title) || filename.replace(/\.[^.]+$/, '');
+      if (fileDetails && !(type === 'video' ? fileDetails.mime.startsWith('video/') : fileDetails.mime.startsWith('audio/'))) throw new Error('O arquivo recebido não corresponde ao tipo de mídia escolhido.');
+      const filename = fileDetails ? safeFilename(fileDetails.name, format) : filenameFromHeader(response.headers.get('Content-Disposition'), format);
+      const title = fileDetails?.title || titleFromHeader(response.headers.get('X-Media-Title') || response.headers.get('X-Audio-Title')) || (metadataURL === url && metadata?.title) || filename.replace(/\.[^.]+$/, '');
       objectURL = URL.createObjectURL(blob);
       saveButton.href = objectURL;
       saveButton.download = filename;
       saveButton.hidden = false;
-      const attempts = Number(response.headers.get('X-Recovery-Attempts') || 1);
+      const attempts = Number(fileDetails?.recovery?.attempts || response.headers.get('X-Recovery-Attempts') || 1);
       const recovered = (Number.isInteger(attempts) && attempts > 1 && attempts <= 3)
+        || fileDetails?.recovery?.resumed === true || fileDetails?.recovery?.conversion_recovered === true || fileDetails?.recovery?.queued === true
         || response.headers.get('X-Recovery-Resumed') === '1' || response.headers.get('X-Recovery-Conversion') === '1'
         || response.headers.get('X-Recovery-Queued') === '1';
-      const resolution = Number(response.headers.get('X-Media-Resolution'));
+      const resolution = Number(fileDetails?.resolution || response.headers.get('X-Media-Resolution'));
       const outputDetail = `${format.toUpperCase()}${type === 'video' && resolution > 0 && resolution <= 2160 ? ` · ${resolution}p` : ''} · ${formatBytes(blob.size)}`;
+      if (!streamed) renderDownloadProgress({ type: 'progress', stage: 'ready', downloadedBytes: blob.size, totalBytes: blob.size });
       showStatus('success', `Seu ${mediaLabel(type)} está pronto`, `${recovered ? 'Recuperado automaticamente. ' : ''}${outputDetail}. Clique em “Salvar arquivo” para baixar no seu dispositivo.`);
       $('save-file-detail').textContent = outputDetail;
+      progressTrack.hidden = true;
+      window.dispatchEvent(new CustomEvent('onda:download-file', { detail: { size: blob.size, resolution: resolution || null, recovery: fileDetails?.recovery || { attempts } } }));
       saveOpen.hidden = false;
       saveDialog.showModal();
       saveButton.focus({ preventScroll: true });
       addHistory({ url, media_type: type, format, quality, options, title: String(title), timestamp: Date.now() });
     } catch (error) {
       if (ownsOperation(controller)) {
+        const cancelled = controller.signal.aborted;
+        controller.abort();
         releaseFile();
-        showOperationError(controller.signal.aborted ? new DOMException('Operação cancelada.', 'AbortError') : error);
+        showOperationError(cancelled ? new DOMException('Operação cancelada.', 'AbortError') : error);
       }
     } finally {
       endOperation(controller);
@@ -1216,7 +1344,7 @@
   });
   input.addEventListener('input', () => { invalidateCookieValidation(); updateSource(); });
   inspectButton.addEventListener('click', inspect);
-  $('cookies-input').addEventListener('input', () => { sessionImportGeneration += 1; invalidateCookieValidation(); void persistCookies(); });
+  $('cookies-input').addEventListener('input', () => { sessionImportGeneration += 1; cookieMetadata = null; invalidateCookieValidation(); void persistCookies(); });
   $('clear-cookies').addEventListener('click', async () => {
     clearSessionFields();
     const removed = await persistCookies();
@@ -1246,6 +1374,7 @@
       const content = describeCookies(text);
       if (content.error) throw new Error(content.error);
       $('cookies-input').value = text;
+      cookieMetadata = null;
       $('cookies-filename').textContent = file.name;
       updateCookieStatus();
       void persistCookies();
@@ -1358,7 +1487,7 @@
     if (!activeController && !form.contains(document.activeElement)) { restoreDraft(); updateChoices(); updateSource(); }
   });
   window.addEventListener('onda:auth', (event) => {
-    if (!event.detail?.signedIn) { lockSourceSession(); releaseFile(); activeController?.abort(); compatibilityStatusController?.abort(); providersController?.abort(); maintenanceController?.abort(); }
+    if (!event.detail?.signedIn) { lockSourceSession(); releaseFile(); activeController?.abort(); compatibilityStatusController?.abort(); providersController?.abort(); maintenanceController?.abort(); window.OndaDownloadEstimate?.render(null, null); $('download-progress').hidden = true; }
   });
   window.addEventListener('pagehide', () => {
     lockSourceSession();

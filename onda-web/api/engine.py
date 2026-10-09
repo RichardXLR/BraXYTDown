@@ -255,6 +255,11 @@ def options(guard: Guard, directory: Path | None = None):
         guard.check()
         if info.get("downloaded_bytes", 0) > guard.maximum_bytes:
             raise AudioError("O arquivo de origem ultrapassa o limite de 128 MB.", "source_too_large", 413)
+        reporter = getattr(guard, "progress", None)
+        if reporter is not None and info.get("status") in ("downloading", "finished"):
+            reporter.transfer(info.get("filename") or "track", info.get("downloaded_bytes", 0),
+                              info.get("total_bytes"), finished=info.get("status") == "finished",
+                              attempt=getattr(guard, "attempt", 1))
 
     opts = {
         "quiet": True, "no_warnings": True, "logger": QuietLogger(),
@@ -308,25 +313,83 @@ def translate_error(exc: Exception, guard: Guard) -> AudioError:
     return AudioError("Não foi possível acessar a mídia agora. Confira o link ou tente outra origem.", "upstream_error", 422)
 
 
+def positive_number(value, maximum=2 ** 53 - 1):
+    return value if (isinstance(value, (int, float)) and not isinstance(value, bool)
+                     and math.isfinite(value) and 0 < value <= maximum) else None
+
+
+def format_summary(item):
+    """A bounded numeric format description, never an extractor stream URL."""
+    summary = {"hasAudio": item.get("acodec") not in (None, "none"),
+               "hasVideo": item.get("vcodec") not in (None, "none")}
+    for output, field, maximum in (("width", "width", 32768), ("height", "height", 32768),
+                                    ("fps", "fps", 240), ("bitrateKbps", "tbr", 1000000),
+                                    ("audioBitrateKbps", "abr", 1000000),
+                                    ("videoBitrateKbps", "vbr", 1000000), ("sizeBytes", "filesize", 2 ** 53 - 1)):
+        value = positive_number(item.get(field), maximum)
+        if value is not None:
+            summary[output] = value
+    if "width" in summary and "height" in summary:
+        summary["resolution"] = min(summary["width"], summary["height"])
+    container = item.get("ext")
+    if isinstance(container, str) and container in set(FORMATS) | set(VIDEO_FORMATS) | {"m4v", "3gp", "ts"}:
+        summary["container"] = container
+    video_codec = canonical_video_codec(item.get("vcodec") if isinstance(item.get("vcodec"), str) else None)
+    if video_codec in {"h264", "hevc", "vp9", "vp8", "av1"}:
+        summary["videoCodec"] = video_codec
+    audio_codec = str(item.get("acodec") or "").split(".", 1)[0].lower()
+    if audio_codec == "mp4a":
+        audio_codec = "aac"
+    if audio_codec in {"aac", "opus", "vorbis", "mp3", "flac", "pcm_s16le", "pcm_s16be"}:
+        summary["audioCodec"] = audio_codec
+    return summary
+
+
 def metadata(info: dict, url: str, source: str) -> dict:
     if info.get("_type") in ("playlist", "multi_video") or "entries" in info:
         raise AudioError("Cole o link de um vídeo específico, sem playlist.", "playlist", 422)
     if info.get("is_live") or info.get("live_status") == "is_live":
         raise AudioError("Transmissões ao vivo não são suportadas. Use um vídeo já publicado.", "live_video", 422)
-    duration = info.get("duration")
-    if not isinstance(duration, (int, float)) or not math.isfinite(duration) or duration <= 0:
-        duration = None
+    duration = positive_number(info.get("duration"))
     thumbnail = info.get("thumbnail")
     if thumbnail:
         try:
             public_url(thumbnail, resolve=False)
         except AudioError:
             thumbnail = None
-    return {
+    result = {
         "title": str(info.get("title") or "Áudio")[:240],
         "duration": duration, "thumbnail": thumbnail,
         "source": source, "webpage_url": url,
     }
+    selected = format_summary(info)
+    for source_key, output_key in (("sizeBytes", "sourceSizeBytes"), ("bitrateKbps", "sourceBitrateKbps"),
+                                    ("audioBitrateKbps", "audioBitrateKbps"), ("videoBitrateKbps", "videoBitrateKbps"),
+                                    ("width", "width"), ("height", "height"), ("fps", "fps"),
+                                    ("videoCodec", "videoCodec"), ("audioCodec", "audioCodec")):
+        if source_key in selected:
+            result[output_key] = selected[source_key]
+    summaries, seen = [], set()
+    formats = info.get("formats")
+    formats = formats if isinstance(formats, list) else [info]
+    for item in formats[:512]:
+        if not isinstance(item, dict) or item.get("has_drm"):
+            continue
+        summary = format_summary(item)
+        if not summary["hasAudio"] and not summary["hasVideo"]:
+            continue
+        key = tuple(sorted(summary.items()))
+        if key not in seen:
+            summaries.append(summary)
+            seen.add(key)
+    # Keep the highest-quality representations visible when an extractor
+    # provides dozens of intermediate variants, without unbounded responses.
+    ranked = sorted(summaries, key=lambda item: (item.get("resolution", 0), item.get("bitrateKbps", 0)), reverse=True)
+    video = [item for item in ranked if item["hasVideo"]]
+    audio = [item for item in ranked if not item["hasVideo"] and item["hasAudio"]]
+    reserved_audio = min(4, len(audio))
+    result["formats"] = video[:64 - reserved_audio] + audio[:reserved_audio]
+    return result
 
 
 def direct_title(url: str):
@@ -373,11 +436,20 @@ def inspect_media(url: str, guard: Guard, cookies: str | None = None, media_type
                     response = handler.send(Request(url, headers={"Range": "bytes=0-0"}))
                 with response:
                     verify_media_response(response, response.url)
-                    length = response.headers.get("Content-Length")
-                    if length and length.isdigit() and int(length) > MAX_SOURCE:
+                    from .direct_transfer import _length, _range
+                    length = _length(response.headers)
+                    if response.status == 206:
+                        start, end, total = _range(response.headers)
+                        if start != 0 or length not in (None, end - start + 1):
+                            raise AudioError("A origem retornou um tamanho de arquivo inconsistente.", "invalid_media_response", 502)
+                        length = total
+                    if length is not None and length > MAX_SOURCE:
                         raise AudioError("O arquivo de origem ultrapassa o limite de 128 MB.", "source_too_large", 413)
-            return {"title": direct_title(url), "duration": None, "thumbnail": None,
-                    "source": source, "webpage_url": url}
+            result = {"title": direct_title(url), "duration": None, "thumbnail": None,
+                      "source": source, "webpage_url": url, "formats": []}
+            if length is not None:
+                result["sourceSizeBytes"] = length
+            return result
         with SafeYoutubeDL(session.extraction_options(options(guard)), guard, cookiejar=cookiejar) as downloader:
             info = downloader.extract_info(url, download=False)
         if not info:
@@ -401,6 +473,7 @@ def direct_download(url: str, directory: Path, guard: Guard, *, session: Session
 
 def acquire_media(url: str, directory: Path, guard: Guard, audio_format: str, cookies: str | None = None,
                   session: SessionOptions | None = None):
+    guard.report("extracting", attempt=getattr(guard, "attempt", 1))
     source_name = source_for(url)
     session = (session or SessionOptions()).for_source(source_name, url)
     cookiejar = parse_netscape(cookies, url, direct_media=source_name == "Arquivo direto")
@@ -424,6 +497,8 @@ def acquire_media(url: str, directory: Path, guard: Guard, audio_format: str, co
                                and str(item.get("format_id") or "") not in excluded]
             if not info["formats"]:
                 raise AudioError("Não há uma faixa de áudio pública compatível nesse vídeo.", "no_audio", 422)
+            if getattr(guard, "progress", None) is not None:
+                guard.progress.begin_download(attempt=getattr(guard, "attempt", 1))
             downloader.process_ie_result(info, download=True)
         files = [path for path in directory.glob("source.*") if path.is_file() and not path.name.endswith((".part", ".ytdl"))]
         if len(files) != 1 or not files[0].stat().st_size:
@@ -546,6 +621,7 @@ def clone_download_cookies(cookiejar):
 
 def acquire_video_media(url: str, directory: Path, guard: Guard, video_resolution="source", cookies=None, mute=False,
                         video_format="mp4", session: SessionOptions | None = None):
+    guard.report("extracting", attempt=getattr(guard, "attempt", 1))
     source_name = source_for(url)
     session = (session or SessionOptions()).for_source(source_name, url)
     cookiejar = parse_netscape(cookies, url, direct_media=source_name == "Arquivo direto")
@@ -588,6 +664,9 @@ def acquire_video_media(url: str, directory: Path, guard: Guard, video_resolutio
                 streams.append((stream_info, path))
             streams = [(stream_info, path, clone_download_cookies(downloader.cookiejar))
                        for stream_info, path in streams]
+            if getattr(guard, "progress", None) is not None:
+                guard.progress.begin_download({str(path): positive_number(item.get("filesize"))
+                                               for item, path, _ in streams}, attempt=getattr(guard, "attempt", 1))
 
             def download_stream(stream):
                 stream_info, path, stream_cookies = stream
@@ -762,17 +841,45 @@ def run_conversion(command, target, directory, guard):
     process = None
     log = directory / "ffmpeg.log"
     progress_path = directory / "progress.log"
+    duration = positive_number(getattr(guard, "conversion_duration", None))
+    guard.report("converting", **({"durationSeconds": duration} if duration else {}))
     command += ["-progress", str(progress_path), str(target)]
+    position, pending = 0, ""
+
+    def report_conversion(*, force=False):
+        nonlocal position, pending
+        if getattr(guard, "progress", None) is None or not progress_path.is_file():
+            return
+        with progress_path.open("r", encoding="utf-8", errors="replace") as progress_file:
+            progress_file.seek(position)
+            chunk = progress_file.read(16 * 1024)
+            position = progress_file.tell()
+        pending = (pending + chunk)[-32 * 1024:]
+        lines = pending.split("\n")
+        pending = lines.pop()
+        counters = {}
+        for line in lines:
+            key, _, value = line.partition("=")
+            if key in ("out_time_us", "total_size") and len(value) <= 20 and value.lstrip("-").isascii() and value.lstrip("-").isdigit():
+                number = int(value)
+                if number >= 0:
+                    counters["processedSeconds" if key == "out_time_us" else "outputBytes"] = number / 1000000 if key == "out_time_us" else number
+        if counters:
+            if duration:
+                counters["durationSeconds"] = duration
+            guard.report("converting", force=force, **counters)
     try:
         with log.open("wb") as error_output:
             process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=error_output)
             while process.poll() is None:
                 guard.check()
+                report_conversion()
                 if target.exists() and target.stat().st_size > MAX_OUTPUT:
                     raise AudioError("A mídia convertida ultrapassa 100 MB. Escolha uma resolução menor ou uma mídia mais curta.", "output_too_large", 413)
                 if log.stat().st_size > 1024 * 1024:
                     raise AudioError("Essa mídia contém erros e não pode ser convertida.", "conversion_failed", 422)
                 time.sleep(.1)
+        report_conversion(force=True)
         if process.returncode != 0 or not target.exists() or target.stat().st_size == 0:
             raise AudioError("A mídia não contém as faixas necessárias ou não pode ser convertida.", "conversion_failed", 422)
         # A successful mux can still create only a container header when a
@@ -832,6 +939,8 @@ def convert_audio(source: Path, directory: Path, audio_format: str, quality: int
         command += ["-movflags", "+faststart"]
     if audio_format == "aac":
         command += ["-f", "adts"]
+    guard.conversion_duration = (output_duration if output_duration is not None else
+                                 max(0, inspected["duration"] - start) if inspected["duration"] else None)
     return run_conversion(command, target, directory, guard)
 
 
@@ -943,6 +1052,7 @@ def convert_video(source: VideoSources | Path, directory: Path, video_format: st
         command += ["-t", str(output_duration)]
     if video_format in ("mp4", "mov"):
         command += ["-movflags", "+faststart"]
+    guard.conversion_duration = effective_duration
     result = run_conversion(command, target, directory, guard)
     verified = probe_media(result, guard)
     if not verified["video"]:

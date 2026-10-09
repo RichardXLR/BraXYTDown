@@ -34,7 +34,7 @@
     ...Object.keys(draftDefault).map((key) => `draft.${key}`)]);
   const dirty = new Map();
   const requests = new Set();
-  const studioScripts = ['/ui.js', '/session-store.js', '/app.js', '/player.js', '/intro.js'];
+  const studioScripts = ['/ui.js', '/session-store.js', '/cookie-center.js', '/maintenance-center.js', '/download-estimate.js', '/download-stream.js', '/app.js', '/player.js', '/intro.js'];
   let state = defaults();
   let revision = 0;
   let userId = null;

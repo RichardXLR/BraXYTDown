@@ -1,0 +1,24 @@
+.download-estimate,.cookie-center{border:1px solid var(--line,#294361);background:var(--panel-inset,#0b1b30);border-radius:18px;padding:20px;margin-top:22px;min-width:0}
+.estimate-heading,.cookie-center-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.experience-eyebrow{font-size:10px;font-weight:750;letter-spacing:.14em;color:var(--muted,#9fb6d2)}
+.estimate-badge{font-size:10px;color:var(--lime,#7cbcff);border:1px solid color-mix(in srgb,var(--lime,#7cbcff) 26%,transparent);background:color-mix(in srgb,var(--lime,#7cbcff) 8%,transparent);padding:5px 9px;border-radius:99px;white-space:nowrap}
+.estimate-main{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:15px}
+.estimate-main h3{font-size:14px;margin:0 0 6px}.estimate-main p{font-size:12px;line-height:1.6;color:var(--muted,#9fb6d2);margin:0;max-width:430px}
+#estimate-value{font-size:25px;letter-spacing:-.04em;color:var(--lime,#7cbcff);white-space:nowrap;font-variant-numeric:tabular-nums}
+.estimate-comparison{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.estimate-comparison:empty{display:none}
+.estimate-comparison>*{display:grid;gap:5px;flex:1;min-width:95px;border:1px solid var(--line,#294361);border-radius:11px;padding:10px 12px;font-size:11px;color:var(--muted,#9fb6d2)}
+.estimate-comparison strong{font-size:12px;color:var(--text,#edf5ff)}.estimate-comparison [data-selected="true"],.estimate-comparison .selected{border-color:var(--lime,#7cbcff);background:color-mix(in srgb,var(--lime,#7cbcff) 8%,transparent)}
+.download-estimate[data-warning="true"]{border-color:#d99743}.download-estimate[data-warning="true"] #estimate-value{color:#eebd7c}
+.cookie-center{padding:16px;margin-top:14px}.cookie-center-facts{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:18px 0 0}.cookie-center-facts>div:last-child{grid-column:1/-1}
+.cookie-center-facts dt,.download-metrics dt{font-size:10px;color:var(--muted,#9fb6d2);margin-bottom:6px}.cookie-center-facts dd{margin:0;font-size:12px;line-height:1.6;overflow-wrap:anywhere;color:var(--text,#edf5ff)}
+.cookie-renewal-note{font-size:11px;line-height:1.7;padding-top:12px;margin:14px 0 0;border-top:1px solid var(--line,#294361);color:var(--muted,#9fb6d2)}
+.cookie-center[data-state="expired"],.cookie-center[data-state="renew-soon"]{border-color:#a37443}.cookie-center[data-state="expired"] .cookie-renewal-note,.cookie-center[data-state="renew-soon"] .cookie-renewal-note{color:#f1c48a}
+.download-progress{margin-top:20px}.download-stages{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));list-style:none;padding:0;margin:0;gap:10px}
+.download-stages li{font-size:11px;font-weight:650;color:var(--muted,#9fb6d2);display:grid;gap:8px;padding-top:13px;border-top:2px solid var(--line,#294361);transition:border-color .25s,color .25s}
+.download-stages li>span{font-size:10px;letter-spacing:.08em;color:var(--muted,#9fb6d2)}.download-stages li[data-state="active"]{border-color:var(--lime,#7cbcff);color:var(--text,#edf5ff)}
+.download-stages li[data-state="complete"]{border-color:var(--lime,#7cbcff);color:var(--lime,#7cbcff)}.download-stages li[data-state="active"]>span{color:var(--lime,#7cbcff)}
+.download-metrics{display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:15px;margin:20px 0 0;padding:15px 0 0;border-top:1px solid var(--line,#294361)}.download-metrics dd{font-size:12px;line-height:1.5;margin:0;color:var(--text,#edf5ff);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.download-progress[data-state="stopped"] .download-stages li[data-state="active"]{border-color:#c18d71;color:#eec5ac}
+@media(max-width:600px){.download-estimate{padding:16px}.estimate-main{align-items:flex-start;flex-direction:column;gap:12px}#estimate-value{font-size:23px}.estimate-comparison>*{min-width:calc(50% - 10px)}.download-stages{gap:7px}.download-stages li{font-size:10px}.download-metrics{grid-template-columns:1fr 1fr}.download-metrics>div:last-child{grid-column:1/-1}.cookie-center-facts{grid-template-columns:1fr}.cookie-center-facts>div:last-child{grid-column:auto}}
+@media(max-width:360px){.download-stages{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(prefers-reduced-motion:reduce){.download-stages li{transition:none}}

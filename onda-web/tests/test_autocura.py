@@ -1007,6 +1007,7 @@ def test_release_gate_uses_real_api_editing_and_local_converters(monkeypatch):
         guard.check()
         source = directory / "source.wav"
         source.write_bytes((public / "canary.wav").read_bytes())
+        guard.report("downloading", downloadedBytes=source.stat().st_size, totalBytes=source.stat().st_size)
         return source, {"title": "Owned tone", "duration": 1, "source": "Arquivo direto", "webpage_url": url}
 
     monkeypatch.setattr(engine, "acquire_video_media", acquire_video)

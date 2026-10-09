@@ -14,6 +14,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 import os
 from pathlib import Path, PurePosixPath
 import re
@@ -40,6 +41,9 @@ CANARIES = (
 )
 MAX_RESPONSE = 8 * 1024 * 1024
 MAX_PACKAGE_METADATA_RESPONSE = 32 * 1024 * 1024
+DOWNLOAD_PROGRESS_CONTENT_TYPE = "application/x-onda-download;version=1"
+DOWNLOAD_PROGRESS_JSON_LIMIT = 16 * 1024
+DOWNLOAD_PROGRESS_BINARY_LIMIT = 64 * 1024
 
 
 class CureError(RuntimeError):
@@ -491,6 +495,136 @@ def verify_downloaded_audio(content, audio_format):
         return {"audioCodec": audio[1], "decoded": True}
 
 
+def verify_progress_download(content, response_headers):
+    """Independently validate the bounded v1 wire contract and returned MP3.
+
+    This probe downloads only the project's short tone. The journal receives
+    controlled fields, never server messages, titles, URLs or arbitrary codes.
+    A successful HTTP response alone cannot prove a complete streamed file.
+    """
+    media_type = response_headers.get("Content-Type", "")
+    if not isinstance(media_type, str):
+        raise CureError("download_progress_not_supported")
+    parts = [part.strip().lower() for part in media_type.split(";")]
+    if parts[0] != "application/x-onda-download" or "version=1" not in parts[1:]:
+        raise CureError("download_progress_not_supported")
+    if not isinstance(content, bytes) or not 1 <= len(content) <= MAX_RESPONSE:
+        raise CureError("download_progress_invalid")
+    stages = ("extracting", "downloading", "converting", "delivering", "ready")
+    numeric_fields = {"downloadedBytes", "totalBytes", "speedBytesPerSecond", "processedSeconds",
+                      "durationSeconds", "outputBytes", "attempt"}
+    seen, position, frames, file_size, received = [], 0, 0, None, 0
+    delivering = ready = complete = False
+    chunks = []
+    while position < len(content):
+        if complete:
+            raise CureError("download_progress_invalid")
+        if len(content) - position < 5:
+            raise CureError("download_progress_truncated")
+        kind = content[position]
+        size = int.from_bytes(content[position + 1:position + 5], "big")
+        position += 5
+        frames += 1
+        limit = DOWNLOAD_PROGRESS_JSON_LIMIT if kind == 1 else DOWNLOAD_PROGRESS_BINARY_LIMIT
+        if kind not in {1, 2} or not 0 < size <= limit or frames > 4096:
+            raise CureError("download_progress_invalid")
+        if len(content) - position < size:
+            raise CureError("download_progress_truncated")
+        payload = content[position:position + size]
+        position += size
+        if kind == 2:
+            if file_size is None or not delivering or ready:
+                raise CureError("download_progress_invalid")
+            received += size
+            if received > file_size:
+                raise CureError("download_progress_size_mismatch")
+            chunks.append(payload)
+            continue
+        try:
+            event = json.loads(payload)
+        except (ValueError, UnicodeError, RecursionError):
+            raise CureError("download_progress_invalid") from None
+        if not isinstance(event, dict):
+            raise CureError("download_progress_invalid")
+        event_type = event.get("type")
+        if event_type == "error":
+            raise CureError("download_progress_remote_error")
+        if event_type == "heartbeat":
+            continue
+        if event_type == "progress":
+            stage = event.get("stage")
+            if not isinstance(stage, str) or stage not in stages:
+                raise CureError("download_progress_invalid")
+            for key in numeric_fields & event.keys():
+                value = event[key]
+                if (isinstance(value, bool) or not isinstance(value, (int, float))
+                        or not 0 <= value <= 2 ** 53 - 1 or not math.isfinite(value)):
+                    raise CureError("download_progress_invalid")
+            if "attempt" in event and (not isinstance(event["attempt"], int)
+                                       or not 1 <= event["attempt"] <= 3):
+                raise CureError("download_progress_invalid")
+            if file_size is None:
+                if stage not in stages[:3] or (not seen and stage != "extracting"):
+                    raise CureError("download_progress_invalid")
+                if stage == "downloading" and "downloadedBytes" not in event:
+                    raise CureError("download_progress_invalid")
+                if stage not in seen:
+                    if stage != stages[len(seen)]:
+                        raise CureError("download_progress_invalid")
+                    seen.append(stage)
+            else:
+                if stage not in {"delivering", "ready"} or ready:
+                    raise CureError("download_progress_invalid")
+                if (event.get("totalBytes") != file_size or "downloadedBytes" not in event
+                        or event["downloadedBytes"] != received):
+                    raise CureError("download_progress_size_mismatch")
+                delivering = True
+                if stage == "ready":
+                    if received != file_size or "delivering" not in seen:
+                        raise CureError("download_progress_size_mismatch")
+                    ready = True
+                if stage not in seen:
+                    seen.append(stage)
+            continue
+        if event_type == "file":
+            size_value, recovery = event.get("size"), event.get("recovery")
+            title, name = event.get("title"), event.get("name")
+            if (file_size is not None or seen != list(stages[:3])
+                    or isinstance(size_value, bool) or not isinstance(size_value, int)
+                    or not 100 <= size_value <= MAX_RESPONSE or event.get("mime") != "audio/mpeg"
+                    or not isinstance(title, str) or not 1 <= len(title) <= 160 or not title.strip()
+                    or not isinstance(name, str) or not 1 <= len(name) <= 200 or not name.endswith(".mp3")
+                    or any(char in name for char in ("/", "\\"))
+                    or not isinstance(recovery, dict)
+                    or isinstance(recovery.get("attempts"), bool)
+                    or not isinstance(recovery.get("attempts"), int) or not 1 <= recovery["attempts"] <= 3
+                    or any(not isinstance(recovery.get(key), bool)
+                           for key in ("resumed", "conversion_recovered", "queued"))):
+                raise CureError("download_progress_invalid")
+            resolution = event.get("resolution")
+            if resolution is not None and (isinstance(resolution, bool) or not isinstance(resolution, int)
+                                           or not 1 <= resolution <= 2160):
+                raise CureError("download_progress_invalid")
+            file_size = size_value
+            continue
+        if event_type == "complete":
+            if (not ready or file_size is None or isinstance(event.get("size"), bool)
+                    or not isinstance(event.get("size"), int) or event["size"] != file_size
+                    or received != file_size):
+                raise CureError("download_progress_size_mismatch")
+            complete = True
+            continue
+        raise CureError("download_progress_invalid")
+    if not complete:
+        raise CureError("download_progress_truncated")
+    try:
+        inspection = verify_downloaded_audio(b"".join(chunks), "mp3")
+    except CureError:
+        raise CureError("download_progress_audio_invalid") from None
+    return {"protocol": DOWNLOAD_PROGRESS_CONTENT_TYPE, "stages": list(stages),
+            "completed": True, "bytes": received, "inspection": inspection}
+
+
 def verify_downloaded_video(content, *, muted=False, expected_duration=.6, video_format="mp4", normalized=False):
     """Decode the actual returned bytes and check codecs, trim and privacy tags.
 
@@ -708,7 +842,11 @@ class DeploymentChecks:
         }
         return self.platform_baseline
 
-    def verify(self, deployment, versions=None):
+    def verify_candidate(self, deployment, versions=None):
+        """Every newly staged release must implement the v1 progress contract."""
+        return self.verify(deployment, versions=versions, require_progress=True)
+
+    def verify(self, deployment, versions=None, *, require_progress=False):
         base = deployment_url(deployment["url"])
         public_headers = self.api_headers(deployment, include_machine=False)
         checks = []
@@ -733,6 +871,11 @@ class DeploymentChecks:
             checks.append({"name": "runtime_authentication" if checks else "runtime",
                            "status": classify(str(exc)), "code": str(exc)})
             return self.report(checks)
+        progress = health.get("downloadProgress")
+        progress_advertised = isinstance(progress, dict) and progress.get("enabled") is True
+        progress_required = require_progress or progress_advertised
+        progress_supported = (progress_advertised
+                              and progress.get("protocol") == DOWNLOAD_PROGRESS_CONTENT_TYPE)
         try:
             compatibility = self.http.json(base + "/api/compatibility", headers=headers)
             actual = compatibility.get("versions") if isinstance(compatibility, dict) else None
@@ -816,6 +959,37 @@ class DeploymentChecks:
                 checks.append({"name": name, "status": "passed", "inspection": inspection})
             except CureError as exc:
                 checks.append({"name": name, "status": classify(str(exc)), "code": str(exc)})
+        if progress_required:
+            try:
+                if not progress_supported:
+                    raise CureError("download_progress_not_supported")
+                if source_status:
+                    raise CureError(source_status)
+                # The stream probe never extends the scope to other media,
+                # including when an administrator runs it without M2M auth.
+                if (parsed_audio.netloc not in {urllib.parse.urlsplit(base).netloc,
+                                               urllib.parse.urlsplit(CANONICAL_ORIGIN).netloc}
+                        or parsed_audio.path != "/canary.wav"):
+                    raise CureError("download_progress_canary_scope")
+                content, response_headers = self.http.request(base + "/api/download", method="POST",
+                    payload={"url": audio_url, "format": "mp3", "quality": 192},
+                    headers={**headers, "Accept": DOWNLOAD_PROGRESS_CONTENT_TYPE}, timeout=90)
+                inspection = verify_progress_download(content, response_headers)
+                checks.append({"name": "download_progress", "status": "passed",
+                               "scope": "project_owned_tone", "inspection": inspection})
+            except CureError as exc:
+                code = str(exc)
+                # This endpoint can return arbitrary upstream code strings.
+                # Preserve only fixed probe codes and known network outcomes.
+                if code not in {"download_progress_not_supported", "download_progress_invalid",
+                        "download_progress_truncated", "download_progress_size_mismatch",
+                        "download_progress_remote_error", "download_progress_audio_invalid",
+                        "download_progress_canary_scope",
+                        "network_unavailable", "upstream_timeout", "timeout", "busy",
+                        "audio_canary_not_public", "invalid_audio_canary_configuration",
+                        "machine_download_canary_scope"} and not re.fullmatch(r"http_[45][0-9]{2}", code):
+                    code = "download_progress_failed"
+                checks.append({"name": "download_progress", "status": classify(code), "code": code})
         if self.youtube_audio_canary_url:
             try:
                 if self.machine_credentials:
@@ -861,7 +1035,10 @@ class DeploymentChecks:
                 "platform_baseline": self.platform_baseline,
                 "coverage": {"youtube": "metadata_and_audio" if self.youtube_audio_canary_url else "metadata_only",
                              "youtube_status": "not_tested" if not youtube_complete else "passed" if youtube_verified else "blocked" if accepted else result,
-                             "audio_conversion": "project_owned_tone", "video_conversion": "project_owned_clip"}}
+                             "audio_conversion": "project_owned_tone", "video_conversion": "project_owned_clip",
+                             "download_progress": next((check["status"] for check in checks
+                                                        if check["name"] == "download_progress"),
+                                                       "legacy_not_advertised")}}
 
 
 def same_version(first, second):
@@ -1247,7 +1424,8 @@ class AutoCura:
                 self.state["status"] = "candidate_verification_pending"
                 self.save()
                 candidate = self.provider.stage()
-                report = self.checks.verify(candidate, versions=versions)
+                verify_candidate = getattr(self.checks, "verify_candidate", self.checks.verify)
+                report = verify_candidate(candidate, versions=versions)
                 self.state["last_check"] = report
                 if report["status"] != "passed":
                     self.state["status"] = report["status"]
@@ -1271,7 +1449,7 @@ class AutoCura:
                 try:
                     self.provider.promote(candidate)
                     production_view = getattr(self.provider, "production_view", None)
-                    post = self.checks.verify(production_view(candidate) if production_view else candidate, versions=versions)
+                    post = verify_candidate(production_view(candidate) if production_view else candidate, versions=versions)
                     self.state["last_check"] = post
                     if post["status"] != "passed":
                         raise CureError("post_promotion_check_failed")

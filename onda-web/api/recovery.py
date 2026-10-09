@@ -63,6 +63,14 @@ class AttemptGuard:
     def received(self):
         return self.parent.received
 
+    @property
+    def progress(self):
+        return self.parent.progress
+
+    def report(self, stage, **values):
+        values.setdefault("attempt", self.attempt)
+        self.parent.report(stage, **values)
+
     def check(self):
         # A master cancellation, deadline, or aggregate-budget failure always
         # wins over the local error that caused a representation to be retried.

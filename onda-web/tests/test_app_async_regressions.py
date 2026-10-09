@@ -20,6 +20,9 @@ import pytest
     "compatibility_failure_before_maintenance",
     "direct_url_scope",
     "trailing_dot_platform_scope",
+    "validation_failure_updates_saved_summary",
+    "validation_failure_metadata_after_signout",
+    "restore_metadata_preserves_newer_edit",
 ])
 def test_app_async_action_regression(case):
     node = shutil.which("node")

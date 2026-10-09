@@ -71,6 +71,11 @@ class Guard:
     sockets: set = field(default_factory=set)
     socket_lock: threading.Lock = field(default_factory=threading.Lock)
     byte_lock: threading.Lock = field(default_factory=threading.Lock)
+    progress: object | None = field(default=None, repr=False, compare=False)
+
+    def report(self, stage, **values):
+        if self.progress is not None:
+            self.progress.emit(stage, **values)
 
     @property
     def remaining(self) -> float:

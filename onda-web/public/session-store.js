@@ -7,6 +7,7 @@
   const VERSION = 1;
   const MAX_BYTES = 64 * 1024;
   const MAX_FILENAME_BYTES = 512;
+  const MAX_METADATA_BYTES = 2048;
   const encoder = new TextEncoder();
   const decoder = new TextDecoder('utf-8', { fatal: true });
   const scopes = new Map();
@@ -47,13 +48,59 @@
     return true;
   }
 
-  function validatePayload(cookies, filename) {
+  function validateMetadata(metadata) {
+    if (metadata === null || metadata === undefined) return null;
+    const exactKeys = (value, keys) => value && typeof value === 'object' && !Array.isArray(value)
+      && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
+    const timestamp = value => Number.isInteger(value) && value > 0 && value <= 4102444800000;
+    const count = (value, minimum = 0) => Number.isInteger(value) && value >= minimum && value <= 300;
+    if (!exactKeys(metadata, ['version', 'contentHash', 'savedAt', 'validation']) || metadata.version !== 1
+      || typeof metadata.contentHash !== 'string' || !/^[0-9a-f]{64}$/.test(metadata.contentHash)
+      || !timestamp(metadata.savedAt)) throw failure('invalid');
+    let validation = null;
+    if (metadata.validation !== null) {
+      const value = metadata.validation;
+      const keys = value?.status === 'valid'
+        ? ['checkedAt', 'scope', 'status', 'validCookies', 'expiredCookies', 'ignoredCookies', 'sessionCookies', 'earliestExpiry']
+        : ['checkedAt', 'scope', 'status', 'code'];
+      if (!exactKeys(value, keys) || !timestamp(value.checkedAt) || typeof value.scope !== 'string'
+        || value.scope.length > 253 || !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9-]{2,63}$/.test(value.scope)) throw failure('invalid');
+      if (value.status === 'valid') {
+        if (!count(value.validCookies, 1) || !count(value.expiredCookies) || !count(value.ignoredCookies)
+          || !count(value.sessionCookies) || value.sessionCookies > value.validCookies
+          || !(value.earliestExpiry === null || (Number.isInteger(value.earliestExpiry)
+            && value.earliestExpiry >= 0 && value.earliestExpiry <= 999999999999))) throw failure('invalid');
+      } else if (value.status !== 'invalid' || !['invalid_cookies', 'cookie_domain', 'cookies_expired',
+        'cookie_https_required', 'cookies_not_supported', 'timeout', 'validation_failed'].includes(value.code)) throw failure('invalid');
+      validation = Object.fromEntries(keys.map(key => [key, value[key]]));
+    }
+    const clean = { version: 1, contentHash: metadata.contentHash, savedAt: metadata.savedAt, validation };
+    if (encoder.encode(JSON.stringify(clean)).byteLength > MAX_METADATA_BYTES) throw failure('invalid');
+    return clean;
+  }
+
+  function validatePayload(cookies, filename, metadata = null) {
     if (typeof cookies !== 'string' || !cookies || !wellFormed(cookies)
       || encoder.encode(cookies).byteLength > MAX_BYTES
       || typeof filename !== 'string' || filename.length > 180 || !wellFormed(filename)
       || /[\u0000-\u001f\u007f-\u009f]/.test(filename)
       || encoder.encode(filename).byteLength > MAX_FILENAME_BYTES) throw failure('invalid');
-    return { cookies, filename };
+    const cleanMetadata = validateMetadata(metadata);
+    return { cookies, filename, ...(cleanMetadata ? { metadata: cleanMetadata } : {}) };
+  }
+
+  async function metadataMatches(payload) {
+    if (!payload.metadata) return true;
+    let normalized = payload.cookies.trim();
+    if (normalized.startsWith('{')) {
+      try {
+        const records = JSON.parse(normalized)?.cookies;
+        if (Array.isArray(records)) normalized = JSON.stringify(records);
+      } catch {}
+    }
+    const digest = await crypto.subtle.digest('SHA-256', encoder.encode(normalized));
+    const hash = [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, '0')).join('');
+    return hash === payload.metadata.contentHash;
   }
 
   function nonce() {
@@ -75,7 +122,7 @@
       && key.usages.length === 2 && key.usages.includes('encrypt') && key.usages.includes('decrypt')
       && sealed && sealed.iv instanceof ArrayBuffer && sealed.iv.byteLength === 12
       && sealed.ciphertext instanceof ArrayBuffer && sealed.ciphertext.byteLength >= 16
-      && sealed.ciphertext.byteLength <= MAX_BYTES * 6 + MAX_FILENAME_BYTES * 6 + 64;
+      && sealed.ciphertext.byteLength <= MAX_BYTES * 6 + MAX_FILENAME_BYTES * 6 + MAX_METADATA_BYTES + 64;
   }
 
   function checkedRecord(record, id) {
@@ -257,8 +304,12 @@
                 additionalData: aad(id, record.epoch) }, record.key, record.sealed.ciphertext);
               assertCurrent(generation);
               plaintext = JSON.parse(decoder.decode(decoded));
-              if (!plaintext || Object.keys(plaintext).length !== 2) throw failure('corrupt');
-              validatePayload(plaintext.cookies, plaintext.filename);
+              if (!plaintext || ![2, 3].includes(Object.keys(plaintext).length)
+                || !Object.hasOwn(plaintext, 'cookies') || !Object.hasOwn(plaintext, 'filename')
+                || (Object.keys(plaintext).length === 3 && !Object.hasOwn(plaintext, 'metadata'))) throw failure('corrupt');
+              plaintext = validatePayload(plaintext.cookies, plaintext.filename, plaintext.metadata);
+              if (!await metadataMatches(plaintext)) throw failure('corrupt');
+              assertCurrent(generation);
             } catch (error) {
               assertCurrent(generation);
               throw sanitized(error, 'corrupt');
@@ -272,9 +323,9 @@
         });
       },
 
-      save(cookies, filename = '') {
+      save(cookies, filename = '', metadata = null) {
         let payload;
-        try { assertOpen(); payload = validatePayload(cookies, filename); }
+        try { assertOpen(); payload = validatePayload(cookies, filename, metadata); }
         catch (error) { return Promise.reject(sanitized(error)); }
         const generation = state.removal;
         // Capture the removal epoch immediately, even while an older operation is queued.
@@ -286,6 +337,8 @@
           const current = await read();
           assertCurrent(generation);
           if (current.epoch !== start.epoch) throw failure('removed');
+          if (!await metadataMatches(payload)) throw failure('invalid');
+          assertCurrent(generation);
           const key = current.key || await crypto.subtle.generateKey(
             { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
           assertCurrent(generation);

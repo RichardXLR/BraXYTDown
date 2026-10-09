@@ -5,11 +5,13 @@ import asyncio
 import functools
 import logging
 import os
+import queue
 from pathlib import Path
 import re
 import shutil
 import tempfile
 import threading
+import time
 import urllib.parse
 from typing import Literal
 
@@ -25,6 +27,7 @@ from .security import AudioError, Guard, public_url
 from .cookies import MAX_COOKIE_BYTES, validate_session
 from .auth import register_auth, auth_capabilities
 from .account import register_account
+from .progress import CONTENT_TYPE as PROGRESS_CONTENT_TYPE, ProgressReporter, accepts_stream, frame, binary_frame
 
 app = FastAPI(title="Onda API", version="1.0.0", docs_url=None, redoc_url=None, openapi_url=None)
 SLOTS = threading.BoundedSemaphore(2)
@@ -165,6 +168,7 @@ async def health():
             "durationLimited": False, "operationTimeoutSeconds": 240,
             "downloadRecovery": {"enabled": True, "maxAttempts": 3, "resume": True,
                                  "nativeAlternatives": True, "requiresCompleteFile": True},
+            "downloadProgress": {"enabled": True, "protocol": PROGRESS_CONTENT_TYPE},
             "auth": auth_capabilities(),
             "deploymentId": deployment_id,
             "jsRuntime": next(iter(runtime_options()), None)}
@@ -286,6 +290,96 @@ def download_headers(title: str, audio_format: str, size: int):
             "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
 
 
+def progress_download(body, request, directory, guard, cleanup, queued):
+    """Start processing only when the ASGI iterator owns its cleanup lifecycle."""
+    reporter = ProgressReporter()
+    guard.progress = reporter
+
+    async def stream():
+        worker = None
+        try:
+            options = {"cookies": body.cookies, "settings": body.settings()}
+            session = body.session_options()
+            if session is not None:
+                options["session"] = session
+            reporter.emit("extracting", force=True)
+            worker = asyncio.create_task(run_guarded(request, guard, functools.partial(prepare_download, **options),
+                                                     body.url, directory, body.format, body.quality))
+            last_frame = time.monotonic()
+            while True:
+                while True:
+                    try:
+                        event = reporter.events.get_nowait()
+                    except queue.Empty:
+                        break
+                    yield frame(event)
+                    last_frame = time.monotonic()
+                if worker.done():
+                    break
+                if time.monotonic() - last_frame >= 5:
+                    yield frame({"type": "heartbeat"})
+                    last_frame = time.monotonic()
+                await asyncio.wait({worker}, timeout=.25)
+            target, details = await worker
+            size = target.stat().st_size
+            if not 0 < size <= 100 * 1024 * 1024:
+                raise AudioError("O arquivo preparado ultrapassa 100 MB ou está vazio.", "output_too_large", 413)
+            title = re.sub(r"[\x00-\x1f\x7f/\\]", "", str(details.get("title") or "Mídia")).strip()[:160] or "Mídia"
+            mime = VIDEO_FORMATS[body.format][2] if body.media_type == "video" else FORMATS[body.format][1]
+            recovery = details.get("recovery") or {}
+            safe_recovery = {"attempts": max(1, min(3, recovery.get("attempts", 1)))
+                             if isinstance(recovery.get("attempts", 1), int) else 1,
+                             "resumed": recovery.get("resumed") is True,
+                             "conversion_recovered": recovery.get("conversion_recovered") is True,
+                             "queued": bool(queued)}
+            file_event = {"type": "file", "name": f"{title}.{body.format}", "title": title,
+                          "mime": mime, "size": size, "recovery": safe_recovery}
+            resolution = details.get("output_resolution")
+            if isinstance(resolution, int) and not isinstance(resolution, bool) and 0 < resolution <= 2160:
+                file_event["resolution"] = resolution
+            yield frame(file_event)
+            delivered, started, last_update = 0, time.monotonic(), -1.0
+            yield frame({"type": "progress", "stage": "delivering", "downloadedBytes": 0, "totalBytes": size})
+            with target.open("rb") as file:
+                while chunk := file.read(64 * 1024):
+                    guard.check()
+                    delivered += len(chunk)
+                    if delivered > size:
+                        raise AudioError("O arquivo mudou durante a transferência.", "download_incomplete", 502)
+                    yield binary_frame(chunk)
+                    now = time.monotonic()
+                    if now - last_update >= .25 or delivered == size:
+                        values = {"type": "progress", "stage": "delivering", "downloadedBytes": delivered, "totalBytes": size}
+                        if now - started > 0:
+                            values["speedBytesPerSecond"] = delivered / (now - started)
+                        yield frame(values)
+                        last_update = now
+                    await asyncio.sleep(0)
+            if delivered != size:
+                raise AudioError("A transferência foi interrompida antes de concluir o arquivo.", "download_incomplete", 502)
+            yield frame({"type": "progress", "stage": "ready", "downloadedBytes": size, "totalBytes": size})
+            yield frame({"type": "complete", "size": size})
+        except AudioError as exc:
+            LOGGER.warning("audio_request_failed code=%s status=%d", exc.code, exc.status)
+            error_event = {"type": "error", "code": exc.code, "error": exc.message}
+            attempts = getattr(exc, "recovery_attempts", None)
+            if isinstance(attempts, int) and 1 <= attempts <= 3:
+                error_event["recovery"] = {"attempts": attempts, "exhausted": bool(getattr(exc, "recovery_exhausted", False))}
+            yield frame(error_event)
+        except Exception:
+            # Never expose an upstream exception, URL, cookie or log line.
+            yield frame({"type": "error", "code": "download_failed", "error": "Não foi possível concluir o download. Tente novamente."})
+        finally:
+            guard.abort()
+            if worker is not None:
+                await settle_worker(worker)
+            cleanup()
+
+    return DownloadResponse(stream(), cleanup=cleanup, media_type=PROGRESS_CONTENT_TYPE,
+                            headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+                                     "X-Accel-Buffering": "no"})
+
+
 @app.post("/api/download")
 async def download_link(body: DownloadInput, request: Request):
     queued = await acquire_download_slot(request)
@@ -307,6 +401,8 @@ async def download_link(body: DownloadInput, request: Request):
                 cleaned = True
 
     try:
+        if accepts_stream(getattr(request, "headers", {}).get("accept", "")):
+            return progress_download(body, request, directory, guard, cleanup, queued)
         options = {"cookies": body.cookies, "settings": body.settings()}
         session = body.session_options()
         if session is not None:

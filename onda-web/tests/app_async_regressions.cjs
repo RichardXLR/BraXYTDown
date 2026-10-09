@@ -40,6 +40,58 @@ function fixture() {
   return { context, field, timers, saved, notices };
 }
 const cases = {
+  async validation_failure_updates_saved_summary() {
+    const { context, field } = fixture();
+    context.cookieValidationController = null; context.validatedCookieLink = '';
+    context.cookieMetadata = { validation: { status: 'valid', checkedAt: 10 } };
+    context.getURL = () => 'https://vimeo.com/123';
+    context.getCookies = () => 'fixture-cookies'; context.cookieContent = text => text;
+    context.input.value = context.getURL(); field('cookies-input').value = context.getCookies();
+    context.updateCookieStatus = text => { field('cookies-status').textContent = text; };
+    context.responseError = async () => Object.assign(new Error('Cookies expirados.'), { code: 'cookies_expired' });
+    context.window.OndaAuth = { async fetch() { return { ok: false }; } };
+    context.window.OndaCookieCenter = { async createValidationFailure(cookies, url, code, previous) {
+      assert.equal(code, 'cookies_expired'); assert.equal(previous.validation.status, 'valid');
+      return { validation: { status: 'invalid', checkedAt: 20 } };
+    } };
+    let saved;
+    context.persistCookies = async () => { saved = context.cookieMetadata; return true; };
+    vm.runInContext(between('  async function validateCookies(', '  function clearSessionFields('), context);
+    await context.validateCookies();
+    assert.equal(saved.validation.status, 'invalid');
+    assert.equal(context.cookieMetadata.validation.checkedAt, 20);
+    assert.match(field('cookies-status').textContent, /expirados/);
+  },
+  async validation_failure_metadata_after_signout() {
+    const { context, field } = fixture();
+    context.cookieValidationController = null; context.cookieMetadata = { validation: { status: 'valid' } };
+    context.getURL = () => 'https://vimeo.com/123'; context.getCookies = () => 'fixture';
+    context.cookieContent = text => text; context.input.value = context.getURL(); field('cookies-input').value = 'fixture';
+    context.updateCookieStatus = () => {}; context.responseError = async () => new Error('Unavailable');
+    context.window.OndaAuth = { async fetch() { return { ok: false }; } };
+    let resolveMetadata, saves = 0;
+    context.window.OndaCookieCenter = { createValidationFailure() { return new Promise(resolve => { resolveMetadata = resolve; }); } };
+    context.persistCookies = async () => { saves += 1; return true; };
+    vm.runInContext(between('  async function validateCookies(', '  function clearSessionFields('), context);
+    const pending = context.validateCookies(); await new Promise(setImmediate);
+    context.sessionLocked = true; context.cookieValidationController = null; context.cookieMetadata = null;
+    resolveMetadata({ validation: { status: 'invalid' } }); await pending;
+    assert.equal(saves, 0); assert.equal(context.cookieMetadata, null, 'Late failure metadata must not restore account content after logout.');
+  },
+  async restore_metadata_preserves_newer_edit() {
+    const { context, field } = fixture();
+    context.sessionImportGeneration = 0; context.cookieMetadata = null;
+    context.cookieMemoryStatus = () => {}; context.updateCookieStatus = () => {};
+    context.cookieVaultReady = Promise.resolve({ async load() { return { cookies: 'old-file', filename: 'old.txt' }; } });
+    let resolveMetadata;
+    context.window.OndaCookieCenter = { createMetadata() { return new Promise(resolve => { resolveMetadata = resolve; }); } };
+    vm.runInContext(between('  async function restoreSavedCookies(', '  function accessOptions('), context);
+    const pending = context.restoreSavedCookies(); await new Promise(setImmediate);
+    context.sessionImportGeneration += 1;
+    field('cookies-input').value = 'new-file'; context.cookieMetadata = { marker: 'new-file' };
+    resolveMetadata({ marker: 'old-file' }); await pending;
+    assert.equal(field('cookies-input').value, 'new-file'); assert.equal(context.cookieMetadata.marker, 'new-file');
+  },
   async reset_persists() {
     const { context, field, saved } = fixture();
     context.form = { elements: Object.fromEntries([

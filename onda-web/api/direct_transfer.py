@@ -150,6 +150,10 @@ def download_direct(url, directory, guard, *, handler_factory, verify_response, 
                         raise AudioError("O arquivo de origem ultrapassa o limite de 128 MB.", "source_too_large", 413)
                     representation = _Representation(response.url, current_validator, total)
                     written = 0
+                    reporter = getattr(guard, "progress", None)
+                    if reporter is not None:
+                        reporter.begin_download({"direct": total}, offsets={"direct": prefix}, attempt=attempt)
+                        reporter.transfer("direct", prefix, total, attempt=attempt)
                     with source.open("ab" if append else "wb") as output:
                         while body_length is None or written < body_length:
                             guard.check()
@@ -166,9 +170,13 @@ def download_direct(url, directory, guard, *, handler_factory, verify_response, 
                             output.write(chunk)
                             written += len(chunk)
                             resumed = resumed or append
+                            if reporter is not None:
+                                reporter.transfer("direct", prefix + written, total, attempt=attempt)
                     actual = source.stat().st_size
                     if not actual or (body_length is not None and written != body_length) or (total is not None and actual != total):
                         raise _transfer_error("A transferência foi interrompida antes de concluir o arquivo.", "download_incomplete")
+                    if reporter is not None:
+                        reporter.transfer("direct", actual, actual, finished=True, attempt=attempt)
                     return source, {"title": title_factory(url), "duration": None, "thumbnail": None,
                                     "source": "Arquivo direto", "webpage_url": url,
                                     "recovery": {"attempts": attempt, "resumed": resumed, "method": "direct_http"}}
