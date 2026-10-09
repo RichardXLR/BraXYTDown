@@ -50,12 +50,15 @@ def read_json(url):
         # body. A slow upstream cannot extend the total evidence budget.
         chunks, size = [], 0
         read = getattr(response, 'read1', response.read)
-        socket = getattr(getattr(getattr(response, 'fp', None), 'raw', None), '_sock', None)
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError('github_budget_exhausted')
-            if socket is not None:
+            # HTTPResponse closes its connection when read1 consumes the
+            # Content-Length. Re-read fp each time; the next read1 must still
+            # observe clean EOF without touching the previous closed socket.
+            socket = getattr(getattr(getattr(response, 'fp', None), 'raw', None), '_sock', None)
+            if socket is not None and socket.fileno() >= 0:
                 socket.settimeout(min(3, remaining))
             chunk = read(min(16384, 256 * 1024 + 1 - size))
             if not chunk:
