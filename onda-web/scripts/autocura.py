@@ -863,6 +863,16 @@ class Vercel:
         self.team = os.environ.get("VERCEL_ORG_ID") or os.environ.get("VERCEL_TEAM_ID", "")
         self.production_alias = urllib.parse.urlsplit(deployment_url(
             os.environ.get("AUTOCURA_PRODUCTION_URL", "https://onda-audio.vercel.app"))).hostname
+        mirrors = os.environ.get("AUTOCURA_PRODUCTION_ALIASES", "").strip()
+        mirrors = [alias.strip().lower() for alias in mirrors.split(",")] if mirrors else []
+        aliases = [self.production_alias, *mirrors]
+        if (len(aliases) > 6 or len(set(aliases)) != len(aliases)
+                or any(len(alias) > 253 or not re.fullmatch(
+                    r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+",
+                    alias) for alias in mirrors)):
+            raise CureError("invalid_production_alias_configuration")
+        self.production_aliases = aliases
+        self._baseline_id = self._rollback_from = None
         if not self.token or not self.project or not self.team:
             raise CureError("vercel_credentials_not_configured")
 
@@ -893,6 +903,49 @@ class Vercel:
             return None
         return self.inspect(target)
 
+    def alias_target(self, alias):
+        value = self.api("/v4/aliases/" + urllib.parse.quote(alias, safe=""))
+        if value.get("projectId") != self.project:
+            raise CureError("wrong_production_alias_project")
+        return value.get("deploymentId") or (value.get("deployment") or {}).get("id")
+
+    def release_domains(self, previous):
+        """All mirrors must share a baseline before its recovery journal is saved."""
+        if len(self.production_aliases) == 1:
+            return None
+        if any(self.alias_target(alias) != previous["id"] for alias in self.production_aliases):
+            raise CureError("production_alias_baselines_not_aligned")
+        self._baseline_id = previous["id"]
+        return list(self.production_aliases)
+
+    def recover_domains(self, pending):
+        recorded = pending.get("production_aliases")
+        if not recorded and len(self.production_aliases) == 1:
+            return
+        if recorded != self.production_aliases:
+            raise CureError("production_alias_configuration_changed")
+        permitted = {pending["previous"]["id"], (pending.get("candidate") or {}).get("id")}
+        targets = [self.alias_target(alias) for alias in recorded]
+        if any(target not in permitted for target in targets):
+            raise CureError("production_changed_during_recovery")
+        self._rollback_from = (pending.get("candidate") or {}).get("id")
+        return any(target != pending["previous"]["id"] for target in targets)
+
+    def assign_domains(self, ready):
+        for alias in self.production_aliases:
+            try:
+                self.api(f'/v2/deployments/{ready["id"]}/aliases', payload={"alias": alias}, method="POST")
+            except CureError as error:
+                # A conflict is idempotent only for this exact alias mapping.
+                if len(self.production_aliases) == 1:
+                    current = self.current() if error.http_status in {409, 422} else None
+                    target = (current or {}).get("id")
+                else:
+                    target = self.alias_target(alias) if error.http_status in {409, 422} else None
+                if target != ready["id"]:
+                    raise
+        self.wait_current(ready["id"])
+
     def stage(self):
         # Build a separate preview from the reviewed hash-locked sources.
         # Only explicit promotion can move the production domain after tests.
@@ -906,27 +959,27 @@ class Vercel:
 
     def promote(self, deployment):
         ready = self.inspect(deployment["id"])
-        try:
-            self.api(f'/v2/deployments/{ready["id"]}/aliases', payload={"alias": self.production_alias}, method="POST")
-        except CureError as error:
-            current = self.current() if error.http_status in {409, 422} else None
-            if not current or current["id"] != ready["id"]:
-                raise
-        self.wait_current(ready["id"])
+        self._rollback_from = ready["id"]
+        if len(self.production_aliases) > 1 and (not self._baseline_id or any(
+                self.alias_target(alias) != self._baseline_id for alias in self.production_aliases)):
+            raise CureError("production_alias_baselines_not_aligned")
+        self.assign_domains(ready)
 
     def rollback(self, deployment):
         ready = self.inspect(deployment["id"])
-        try:
-            self.api(f'/v2/deployments/{ready["id"]}/aliases', payload={"alias": self.production_alias}, method="POST")
-        except CureError as error:
-            current = self.current() if error.http_status in {409, 422} else None
-            if not current or current["id"] != ready["id"]:
-                raise
-        self.wait_current(ready["id"])
+        recorded = deployment.get("production_aliases")
+        if recorded is not None and recorded != self.production_aliases:
+            raise CureError("production_alias_configuration_changed")
+        if len(self.production_aliases) > 1:
+            permitted = {ready["id"], self._rollback_from or self.alias_target(self.production_alias)}
+            if any(self.alias_target(alias) not in permitted for alias in self.production_aliases):
+                raise CureError("production_changed_during_recovery")
+        self.assign_domains(ready)
 
     def production_view(self, deployment):
         current = self.current()
-        if not current or current["id"] != deployment["id"]:
+        if (not current or current["id"] != deployment["id"]
+                or any(self.alias_target(alias) != deployment["id"] for alias in self.production_aliases[1:])):
             raise CureError("production_mapping_not_confirmed")
         # The alias API can confirm a new mapping before all edge locations
         # serve it. Wait for the application itself to identify the immutable
@@ -935,8 +988,10 @@ class Vercel:
         headers = {"Cache-Control": "no-cache", "Pragma": "no-cache"}
         if bypass := os.environ.get("VERCEL_AUTOMATION_BYPASS_SECRET"):
             headers["x-vercel-protection-bypass"] = bypass
+        confirmed = set()
         while time.monotonic() < deadline:
-            url = "https://" + self.production_alias + "/api/health?" + urllib.parse.urlencode({
+            alias = next(alias for alias in self.production_aliases if alias not in confirmed)
+            url = "https://" + alias + "/api/health?" + urllib.parse.urlencode({
                 "autocura_deployment": deployment["id"], "nonce": time.monotonic_ns(),
             })
             try:
@@ -944,7 +999,10 @@ class Vercel:
                                         timeout=min(10, max(1, deadline - time.monotonic())))
                 if (isinstance(health, dict) and health.get("ok") is True
                         and health.get("deploymentId") == deployment["id"]):
-                    return {**current, "url": "https://" + self.production_alias}
+                    confirmed.add(alias)
+                    if len(confirmed) == len(self.production_aliases):
+                        return {**current, "url": "https://" + self.production_alias}
+                    continue
             except CureError:
                 # A transient response during propagation must not bypass
                 # identity verification or weaken the subsequent checks.
@@ -958,7 +1016,8 @@ class Vercel:
         deadline = time.monotonic() + 90
         while time.monotonic() < deadline:
             current = self.current()
-            if current and current["id"] == expected_id:
+            if (current and current["id"] == expected_id
+                    and all(self.alias_target(alias) == expected_id for alias in self.production_aliases[1:])):
                 return
             time.sleep(2)
         raise CureError("production_mapping_not_confirmed")
@@ -1070,6 +1129,15 @@ class AutoCura:
             self.state["status"] = "recovery_requires_baseline"
             self.save(durable=True)
             raise CureError("missing_known_good_baseline")
+        recover_domains = getattr(self.provider, "recover_domains", None)
+        try:
+            domains_need_recovery = recover_domains(pending) if recover_domains else False
+        except CureError as error:
+            if str(error) in {"production_changed_during_recovery", "production_alias_configuration_changed"}:
+                self.state["status"] = "recovery_requires_review"
+                self.state["last_error"] = str(error)
+                self.save(durable=True)
+            raise
         # A prior recovery may already have restored the known good domain.
         # Vercel can reject a redundant rollback, so check the actual alias first.
         current = self.provider.current()
@@ -1082,7 +1150,7 @@ class AutoCura:
             self.state["last_error"] = "production_changed_during_recovery"
             self.save(durable=True)
             raise CureError("production_changed_during_recovery")
-        if not current or current["id"] != previous["id"]:
+        if domains_need_recovery or not current or current["id"] != previous["id"]:
             self.provider.rollback(previous)
         self.quarantine(pending.get("versions", {}), "unconfirmed_interrupted_promotion", pending.get("candidate"))
         self.state.pop("pending", None)
@@ -1110,6 +1178,9 @@ class AutoCura:
                     current = self.provider.current()
                     if current is None:
                         raise CureError("missing_known_good_baseline")
+                    release_domains = getattr(self.provider, "release_domains", None)
+                    if release_domains:
+                        release_domains(current)
                     self.capture_baseline(current)
                     self.state["last_check"] = self.checks.verify(current, versions=versions)
                     self.state["status"] = self.state["last_check"]["status"]
@@ -1131,9 +1202,16 @@ class AutoCura:
                         self.quarantine(versions, "candidate_compatibility_failed", candidate)
                     self.save(durable=True)
                     return self.state
+                release_domains = getattr(self.provider, "release_domains", None)
+                domains = release_domains(previous) if release_domains else None
+                if domains:
+                    previous = {**previous, "production_aliases": domains}
+                    candidate = {**candidate, "production_aliases": domains}
                 self.state["pending"] = {"candidate": candidate, "previous": previous, "versions": versions,
                                          "previous_versions": previous_versions, "created_at": now(),
                                          "platform_baseline": self.state.get("baseline_platform_check")}
+                if domains:
+                    self.state["pending"]["production_aliases"] = domains
                 self.state["status"] = "promotion_pending"
                 # This journal is committed to GitHub before assigning domains.
                 self.save(durable=True)
@@ -1196,6 +1274,9 @@ class AutoCura:
             current = self.provider.current()
             if current is None:
                 raise CureError("missing_known_good_baseline")
+            release_domains = getattr(self.provider, "release_domains", None)
+            if release_domains:
+                release_domains(current)
             self.capture_baseline(current)
             self.state["last_check"] = self.checks.verify(current)
             self.state["status"] = self.state["last_check"]["status"]

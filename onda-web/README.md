@@ -1,6 +1,6 @@
 # Onda · áudio e vídeo por link
 
-Site em português publicado em **https://onda-audio.vercel.app**, com extração por link usando yt-dlp, FFmpeg e Deno na Vercel. Exige uma conta Clerk para usar o estúdio e suas APIs. Não usa API paga de extração. O uso gratuito depende das cotas do plano Vercel Hobby; tráfego e processamento têm limites.
+Site em português publicado em **https://ondaittoux.online**, também acessível por **https://www.ondaittoux.online** e **https://onda-audio.vercel.app**, com extração por link usando yt-dlp, FFmpeg e Deno na Vercel. Exige uma conta Clerk para usar o estúdio e suas APIs. Não usa API paga de extração. O uso gratuito depende das cotas do plano Vercel Hobby; tráfego e processamento têm limites.
 
 ## Interface e player
 
@@ -22,7 +22,7 @@ Somente a configuração pública de login e o health check são públicos. As o
 
 A configuração inicial usa a instância **de desenvolvimento** escolhida pelo proprietário. A instância de produção do Clerk requer domínio próprio e DNS; chaves de desenvolvimento exibem essa condição no componente de acesso e têm limites específicos do Clerk. Não confunda uma publicação na Vercel com a ativação de uma instância de produção no Clerk.
 
-Variáveis do servidor: `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`, `CLERK_ALLOWED_ORIGINS`, `BLOB_READ_WRITE_TOKEN` e `ONDA_ACCOUNT_BLOB_STORE_ID`. Não coloque a chave secreta em JavaScript. O armazenamento é privado, com documentos de até 32 KB por conta, escrita condicional e erros de sincronização explícitos. No plano gratuito Blob Hobby há cotas de armazenamento e operações; exceder a cota pode deixar as mudanças pendentes, sem declarar uma gravação falsa.
+Variáveis do servidor: `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`, `CLERK_ALLOWED_ORIGINS`, `BLOB_READ_WRITE_TOKEN` e `ONDA_ACCOUNT_BLOB_STORE_ID`. O CI conserva as três origens públicas verificadas na configuração do Clerk, sem autorizar hosts por wildcard. Não coloque a chave secreta em JavaScript. O armazenamento é privado, com documentos de até 32 KB por conta, escrita condicional e erros de sincronização explícitos. No plano gratuito Blob Hobby há cotas de armazenamento e operações; exceder a cota pode deixar as mudanças pendentes, sem declarar uma gravação falsa.
 
 Quando o arquivo está pronto, o botão vermelho de salvar aparece centralizado com fundo desfocado. Ao acioná-lo, a interface volta ao normal. O navegador inicia o download e controla o salvamento; não existe confirmação de conclusão da gravação no dispositivo. Escape fecha o destaque e permite reabri-lo.
 
@@ -73,7 +73,7 @@ O AutoCura usa deploys imutáveis da Vercel, com `scripts/autocura.py` e o model
 1. Pesquisa atualizações dos componentes principais, incluindo yt-dlp, FFmpeg e Deno, e resolve as versões compatíveis de todas as dependências indiretas. Cada pacote é verificado e fixado por versão e SHA-256 antes de ser executado. A verificação diária também identifica atualizações compatíveis das dependências indiretas quando os componentes principais permanecem na mesma versão.
 2. Constrói uma versão candidata completa sem trocar o domínio ativo.
 3. Verifica ferramentas, canários YouTube e conversões de fontes próprias, cobrindo oito formatos de áudio, quatro de vídeo, corte, silêncio, normalização e remoção de metadados.
-4. Transfere somente o domínio público `onda-audio.vercel.app` para o candidato aprovado e verifica novamente através desse domínio; uma falha após a ativação restaura o domínio anterior.
+4. Transfere `onda-audio.vercel.app` e os espelhos `ondaittoux.online` / `www.ondaittoux.online` para o candidato aprovado e confirma a identidade da versão em cada endereço. Os domínios precisam pertencer ao projeto e compartilhar a mesma versão anterior antes da promoção; uma falha após a ativação restaura essa versão nos três endereços. O conjunto de domínios fica registrado no journal para a recuperação não depender de uma configuração posterior.
 5. Persiste relatórios, estado, versões em quarentena e recuperação de uma promoção interrompida no repositório e nos artefatos do workflow. Se o domínio já foi restaurado, conclui a recuperação sem repetir o rollback. Se outra publicação já assumiu o domínio, preserva essa publicação e registra a necessidade de revisar o journal, em vez de restaurar uma versão antiga sobre ela.
 
 O workflow usa uma política de referência para o YouTube: um bloqueio de IP já existente e idêntico permanece registrado como bloqueado e pode permitir as demais atualizações verificadas. Um novo bloqueio, regressão de extração ou falha dos testes de conversão impede a promoção. O script isolado mantém a política estrita como padrão. A quarentena não confunde automaticamente todo erro de rede com uma versão incompatível.

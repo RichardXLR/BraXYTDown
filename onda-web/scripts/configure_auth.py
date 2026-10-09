@@ -9,6 +9,15 @@ from urllib.parse import urlencode
 from autocura import CureError, HTTP
 
 
+# Explicit origins for the verified domains of the Onda Vercel project.
+# Keep this allowlist in CI so later releases retain custom-domain access.
+VERIFIED_APP_ORIGINS = (
+    "https://onda-audio.vercel.app",
+    "https://ondaittoux.online",
+    "https://www.ondaittoux.online",
+)
+
+
 def configure():
     project = os.environ.get("VERCEL_PROJECT_ID", "")
     team = os.environ.get("VERCEL_ORG_ID", "")
@@ -22,7 +31,7 @@ def configure():
             or any(not re.fullmatch(r"mch_[A-Za-z0-9]+", values[name]) for name in (
                 "CLERK_AUTOCURA_SOURCE_MACHINE_ID", "CLERK_AUTOCURA_TARGET_MACHINE_ID"))):
         raise CureError("clerk_auth_configuration_missing")
-    values["CLERK_ALLOWED_ORIGINS"] = "https://onda-audio.vercel.app"
+    values["CLERK_ALLOWED_ORIGINS"] = ",".join(VERIFIED_APP_ORIGINS)
     body = [{"key": name, "value": value, "type": "encrypted" if name in (
         "CLERK_SECRET_KEY", "CLERK_PUBLISHABLE_KEY") else "plain",
         "target": ["production", "preview", "development"]} for name, value in values.items()]

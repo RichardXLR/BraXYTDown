@@ -85,6 +85,7 @@ jobs:
           AUTOCURA_YOUTUBE_POLICY: baseline
           AUTOCURA_REPOSITORY_SUBDIRECTORY: onda-web
           AUTOCURA_PRODUCTION_URL: https://onda-audio.vercel.app
+          AUTOCURA_PRODUCTION_ALIASES: ondaittoux.online,www.ondaittoux.online
           GITHUB_TOKEN: ${{ github.token }}
           CURE_COMMAND: ${{ inputs.command || 'release' }}
           CURE_FORCE: ${{ inputs.force || false }}

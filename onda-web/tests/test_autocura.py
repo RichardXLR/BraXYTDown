@@ -1103,6 +1103,200 @@ def test_missing_credentials_are_not_claimed_enabled(tmp_path, monkeypatch):
         Vercel(tmp_path)
 
 
+DOMAIN_ALIASES = ['onda-audio.vercel.app', 'ondaittoux.online', 'www.ondaittoux.online']
+
+
+class MirrorMappings:
+    """Real provider contract with isolated aliases; never calls Vercel."""
+    def __init__(self):
+        self.targets = {alias: OLD['id'] for alias in DOMAIN_ALIASES}
+        self.projects = {alias: 'prj_test' for alias in DOMAIN_ALIASES}
+        self.assignments = []
+        self.health_calls = []
+        self.failed_alias = None
+        self.stale_health_alias = None
+
+    def json(self, url, **options):
+        parsed = urllib.parse.urlsplit(url)
+        path = parsed.path
+        if path == '/api/health':
+            self.health_calls.append((parsed.hostname, options))
+            target = OLD['id'] if parsed.hostname == self.stale_health_alias else self.targets[parsed.hostname]
+            return {'ok': True, 'deploymentId': target}
+        if path.startswith('/v9/projects/'):
+            return {'id': 'prj_test'}
+        if path.startswith('/v4/aliases/'):
+            alias = urllib.parse.unquote(path.rsplit('/', 1)[-1])
+            return {'projectId': self.projects[alias], 'deploymentId': self.targets[alias]}
+        if path.startswith('/v13/deployments/'):
+            target = path.rsplit('/', 1)[-1]
+            result = OLD if target == OLD['id'] else NEW
+            assert target == result['id']
+            return {**result, 'projectId': 'prj_test'}
+        assert path.startswith('/v2/deployments/') and path.endswith('/aliases')
+        alias = options['payload']['alias']
+        target = path.split('/')[3]
+        if self.failed_alias == alias and target == NEW['id']:
+            self.failed_alias = None
+            raise CureError('alias_assignment_failed', http_status=500)
+        self.assignments.append((alias, target))
+        self.targets[alias] = target
+        return {'alias': alias}
+
+
+@pytest.fixture
+def mirrors(tmp_path, monkeypatch):
+    monkeypatch.setenv('VERCEL_TOKEN', 'unit-test-placeholder')
+    monkeypatch.setenv('VERCEL_PROJECT_ID', 'prj_test')
+    monkeypatch.setenv('VERCEL_ORG_ID', 'team_test')
+    monkeypatch.setenv('AUTOCURA_PRODUCTION_ALIASES', ','.join(DOMAIN_ALIASES[1:]))
+    monkeypatch.delenv('VERCEL_AUTOMATION_BYPASS_SECRET', raising=False)
+    http = MirrorMappings()
+    return Vercel(tmp_path, http), http
+
+
+@pytest.mark.parametrize('value', [
+    'https://ondaittoux.online', 'ondaittoux.online/', 'ondaittoux.online:443',
+    'onda-audio.vercel.app', 'ondaittoux.online,ondaittoux.online',
+    'ondaittoux.online,', '-ondaittoux.online', 'onda_ittoux.online',
+    'localhost', 'a' * 64 + '.online',
+])
+def test_mirror_configuration_rejects_urls_duplicates_and_invalid_dns_hosts(mirrors, tmp_path, monkeypatch, value):
+    monkeypatch.setenv('AUTOCURA_PRODUCTION_ALIASES', value)
+    with pytest.raises(CureError, match='invalid_production_alias_configuration'):
+        Vercel(tmp_path)
+    with pytest.raises(CureError, match='invalid_deployment_url'):
+        deployment_url('https://ondaittoux.online')
+
+
+def test_mirror_release_records_all_domains_before_moving_any_alias(factory, mirrors, monkeypatch):
+    manager, _, _, records = factory()
+    provider, http = mirrors
+    manager.provider = provider
+    monkeypatch.setattr(provider, 'stage', lambda: dict(NEW))
+    state = manager.release()
+    pending = next(record['pending'] for record in records if record['status'] == 'promotion_pending')
+    assert pending['production_aliases'] == DOMAIN_ALIASES
+    assert pending['previous']['production_aliases'] == DOMAIN_ALIASES
+    assert state['active']['production_aliases'] == DOMAIN_ALIASES
+    assert state['status'] == 'passed' and set(http.targets.values()) == {NEW['id']}
+    assert http.assignments == [(alias, NEW['id']) for alias in DOMAIN_ALIASES]
+    assert [alias for alias, _ in http.health_calls] == DOMAIN_ALIASES
+
+
+def test_misaligned_mirror_aborts_before_promotion_journal_or_any_mutation(factory, mirrors, monkeypatch):
+    manager, _, _, records = factory()
+    provider, http = mirrors
+    manager.provider = provider
+    monkeypatch.setattr(provider, 'stage', lambda: dict(NEW))
+    http.targets[DOMAIN_ALIASES[1]] = NEW['id']
+    state = manager.release()
+    assert state['last_error'] == 'production_alias_baselines_not_aligned'
+    assert not http.assignments and not any('pending' in record for record in records)
+
+
+@pytest.mark.parametrize('changed_aliases', [DOMAIN_ALIASES[:1], DOMAIN_ALIASES])
+def test_later_release_after_journal_is_not_overwritten_by_failed_promotion_rollback(factory, mirrors, monkeypatch, changed_aliases):
+    manager, _, _, records = factory()
+    provider, http = mirrors
+    manager.provider = provider
+    monkeypatch.setattr(provider, 'stage', lambda: dict(NEW))
+    original_checkpoint = manager.checkpoint
+
+    def checkpoint(state, **options):
+        original_checkpoint(state, **options)
+        if state['status'] == 'promotion_pending':
+            http.targets.update({alias: 'dpl_later_release' for alias in changed_aliases})
+
+    manager.checkpoint = checkpoint
+    state = manager.release()
+    assert state['last_error'] == 'production_changed_during_recovery'
+    assert not http.assignments and 'pending' in state
+    assert all(http.targets[alias] == 'dpl_later_release' for alias in changed_aliases)
+    assert 'pending' in records[-1]
+
+
+@pytest.mark.parametrize('failure', ['post_check', 'partial_assignment'])
+def test_mirror_promotion_failure_restores_all_baseline_domains(factory, mirrors, monkeypatch, failure):
+    manager, _, _, records = factory(('passed', 'failed') if failure == 'post_check' else ('passed',))
+    provider, http = mirrors
+    manager.provider = provider
+    monkeypatch.setattr(provider, 'stage', lambda: dict(NEW))
+    if failure == 'partial_assignment':
+        http.failed_alias = DOMAIN_ALIASES[1]
+    state = manager.release()
+    assert state['status'] == 'rolled_back' and 'pending' not in state
+    assert set(http.targets.values()) == {OLD['id']}
+    assert http.assignments[-3:] == [(alias, OLD['id']) for alias in DOMAIN_ALIASES]
+    assert records[-1]['status'] == 'rolled_back'
+
+
+def mirrored_pending():
+    return {'candidate': {**NEW, 'production_aliases': DOMAIN_ALIASES},
+            'previous': {**OLD, 'production_aliases': DOMAIN_ALIASES},
+            'production_aliases': DOMAIN_ALIASES, 'versions': VERSIONS,
+            'previous_versions': {}}
+
+
+def test_recovery_restores_partial_mirrors_even_if_canonical_was_already_restored(factory, mirrors):
+    manager, _, _, records = factory()
+    provider, http = mirrors
+    manager.provider = provider
+    manager.state['pending'] = mirrored_pending()
+    http.targets[DOMAIN_ALIASES[2]] = NEW['id']
+    assert manager.recover()
+    assert set(http.targets.values()) == {OLD['id']}
+    assert manager.state['status'] == 'rolled_back' and 'pending' not in records[-1]
+
+
+@pytest.mark.parametrize('changed_alias', DOMAIN_ALIASES)
+def test_recovery_never_overwrites_a_later_release_on_any_recorded_domain(factory, mirrors, changed_alias):
+    manager, _, _, records = factory()
+    provider, http = mirrors
+    manager.provider = provider
+    manager.state['pending'] = mirrored_pending()
+    http.targets.update({alias: NEW['id'] for alias in DOMAIN_ALIASES})
+    http.targets[changed_alias] = 'dpl_later_release'
+    with pytest.raises(CureError, match='production_changed_during_recovery'):
+        manager.recover()
+    assert not http.assignments and http.targets[changed_alias] == 'dpl_later_release'
+    assert records[-1]['status'] == 'recovery_requires_review' and 'pending' in records[-1]
+
+
+def test_recovery_refuses_changed_domain_configuration_and_preserves_original_journal(factory, mirrors):
+    manager, _, _, records = factory()
+    provider, http = mirrors
+    manager.provider = provider
+    manager.state['pending'] = mirrored_pending()
+    provider.production_aliases = DOMAIN_ALIASES[:2]
+    with pytest.raises(CureError, match='production_alias_configuration_changed'):
+        manager.recover()
+    assert not http.assignments and records[-1]['pending'] == mirrored_pending()
+
+
+def test_mirrors_cannot_mutate_an_alias_owned_by_another_project(mirrors):
+    provider, http = mirrors
+    http.projects[DOMAIN_ALIASES[1]] = 'prj_other'
+    with pytest.raises(CureError, match='wrong_production_alias_project'):
+        provider.release_domains(OLD)
+    assert not http.assignments
+
+
+def test_public_runtime_verification_rejects_a_stale_custom_domain_with_a_shared_deadline(mirrors, monkeypatch):
+    provider, http = mirrors
+    http.targets.update({alias: NEW['id'] for alias in DOMAIN_ALIASES})
+    http.stale_health_alias = DOMAIN_ALIASES[2]
+    clock = [0.0]
+    monkeypatch.setattr('scripts.autocura.time.monotonic', lambda: clock[0])
+    monkeypatch.setattr('scripts.autocura.time.monotonic_ns', lambda: int(clock[0] * 1_000_000_000))
+    monkeypatch.setattr('scripts.autocura.time.sleep', lambda value: clock.__setitem__(0, clock[0] + value))
+    with pytest.raises(CureError, match='production_runtime_identity_not_confirmed'):
+        provider.production_view(NEW)
+    assert clock[0] == 90
+    assert {alias for alias, _ in http.health_calls} == set(DOMAIN_ALIASES)
+    assert all('Authorization' not in options['headers'] for _, options in http.health_calls)
+
+
 def test_manual_test_persists_actual_checks_and_a_history_entry(factory, tmp_path):
     manager, provider, _, records = factory(("passed",))
     state = manager.test()
