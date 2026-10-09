@@ -229,6 +229,16 @@
     return { text: `Netscape · ${formatBytes(bytes)}. Valide para o link informado.` };
   }
 
+  function cookieContent(raw) {
+    if (!raw.startsWith('{')) return raw;
+    // Pasted browser-storage exports receive the same treatment as files:
+    // origins and localStorage are never stored or sent as session data.
+    try {
+      const records = JSON.parse(raw).cookies;
+      return Array.isArray(records) ? JSON.stringify(records) : raw;
+    } catch { return raw; }
+  }
+
   function updateCookieStatus(message, invalid = false) {
     validatedCookieLink = '';
     const content = describeCookies($('cookies-input').value.trim());
@@ -256,9 +266,10 @@
 
   function persistCookies() {
     const sequence = ++cookieSaveSequence;
-    const cookies = $('cookies-input').value.trim();
+    const raw = $('cookies-input').value.trim();
+    const cookies = cookieContent(raw);
     const filename = $('cookies-filename').textContent.replace(/[\u0000-\u001f\u007f-\u009f]/g, '').slice(0, 160).replace(/[\ud800-\udbff]$/, '');
-    if (describeCookies(cookies).error) {
+    if (describeCookies(raw).error) {
       cookieMemoryStatus('Alteração não salva. Revise o formato dos cookies.', 'error');
       return Promise.resolve(false);
     }
@@ -320,6 +331,7 @@
   function cookiesMatchSource(cookies, url) {
     if (!cookies || !url) return Boolean(cookies);
     if (detectSource(url) === 'Arquivo direto') return false;
+    if (validatedCookieLink === url) return true;
     let host;
     let domains;
     try {
@@ -341,7 +353,10 @@
         [['twitter.com', 'x.com', 't.co'], ['twitter.com', 'x.com', 't.co']],
       ];
       const family = families.find(([sources]) => sources.some((source) => host === source || host.endsWith(`.${source}`)));
-      return family ? domains.some((domain) => family[1].some((scope) => domain === scope || domain.endsWith(`.${scope}`)))
+      if (family) return domains.some((domain) => family[1].some((scope) => domain === scope || domain.endsWith(`.${scope}`)));
+      const platforms = ['tiktok.com', 'vimeo.com', 'soundcloud.com', 'spotify.com', 'instagram.com', 'dailymotion.com', 'twitch.tv', 'bilibili.com', 'reddit.com', 'pinterest.com'];
+      const platform = platforms.find((root) => host === root || host.endsWith(`.${root}`));
+      return platform ? domains.some((domain) => domain === platform || domain.endsWith(`.${platform}`))
         : domains.some((domain) => host === domain || host.endsWith(`.${domain}`) || domain.endsWith(`.${host}`));
     } catch { return true; }
   }
@@ -356,8 +371,8 @@
   }
 
   function getCookies() {
-    const cookies = $('cookies-input').value.trim();
-    const content = describeCookies(cookies);
+    const raw = $('cookies-input').value.trim();
+    const content = describeCookies(raw);
     if (content.error) {
       updateCookieStatus();
       window.OndaUI?.activate('download');
@@ -367,7 +382,7 @@
       return null;
     }
     if (!accessOptions(true)) return null;
-    return cookies;
+    return cookieContent(raw);
   }
 
   function withCookies(payload, cookies) {
@@ -402,7 +417,7 @@
       });
       if (!response.ok) throw await responseError(response);
       const data = await response.json();
-      if (cookieValidationController !== controller || input.value.trim() !== url || $('cookies-input').value.trim() !== cookies) return;
+      if (cookieValidationController !== controller || input.value.trim() !== url || cookieContent($('cookies-input').value.trim()) !== cookies) return;
       const count = Number(data.validCookies);
       if (!Number.isInteger(count) || count < 1 || count > 300) throw new Error('O serviço não confirmou a sessão. Valide novamente.');
       const ignored = Number(data.ignoredCookies) || 0;
@@ -413,6 +428,7 @@
       updateCookieStatus(`${details.join(' · ')}. A disponibilidade do vídeo é verificada ao baixar.`);
       $('cookies-status').classList.add('validated');
       validatedCookieLink = url;
+      updateCookieApplicability();
       announce('Cookies validados para o link informado.');
     } catch (error) {
       if (cookieValidationController === controller) updateCookieStatus(error.name === 'AbortError' ? 'A validação demorou demais. Tente novamente.' : error.message, true);
@@ -583,7 +599,7 @@
   }
 
   function setBusy(kind) {
-    if (kind) invalidateCookieValidation();
+    if (kind && cookieValidationController) invalidateCookieValidation();
     activeKind = kind;
     window.dispatchEvent(new CustomEvent('onda:phase', { detail: { phase: kind || 'idle' } }));
     downloadButton.disabled = Boolean(kind);
