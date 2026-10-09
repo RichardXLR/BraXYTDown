@@ -413,8 +413,14 @@
     });
   }
   function resetAccount() {
-    cancelTimers(); abortRequests(); accountReady = false;
-    try { if (cacheKey()) localStorage.removeItem(cacheKey()); } catch { /* Active state is still cleared from memory. */ }
+    cancelTimers(); abortRequests();
+    // The SDK can end a session without the header's flush, or a download can
+    // finish during its asynchronous sign-out handoff. Retain only unsent
+    // account-scoped changes for reconciliation when this same user returns.
+    const pendingChanges = dirty.size > 0;
+    if (pendingChanges) saveCache();
+    accountReady = false;
+    try { if (!pendingChanges && cacheKey()) localStorage.removeItem(cacheKey()); } catch { /* Active state is still cleared from memory. */ }
     state = defaults(); revision = 0; dirty.clear(); historyReplacement = null; inFlight = refreshInFlight = null;
     dispatchEvent(new CustomEvent('onda:auth', { detail: { signedIn: false } }));
     workspace.hidden = true; workspace.inert = true; gate.hidden = false;
@@ -454,9 +460,9 @@
         await loadScript(script);
         if (generation !== authGeneration || !signedIn()) return;
       }
-      appLoaded = true;
       const userButton = document.getElementById('account-user-button');
       window.Clerk.mountUserButton(userButton, { appearance, afterSignOutUrl: '/', userProfileMode: 'modal' });
+      appLoaded = true;
       workspace.hidden = false; workspace.inert = false; gate.hidden = true;
       document.body.dataset.account = 'signed-in';
       dispatchEvent(new CustomEvent('onda:auth', { detail: { signedIn: true } }));
@@ -486,6 +492,9 @@
     if (clerkLoaded) {
       if (window.Clerk?.user && window.Clerk?.session) {
         if (appLoaded) { await refreshAccount(); return; }
+        // A failed script can leave listeners and asynchronous closures behind.
+        // Re-executing the studio in this document would create duplicate work.
+        if (studioStarted && !appBooting) { location.reload(); return; }
         await openAccount(window.Clerk.user.id);
       } else mountAuth();
       return;
@@ -526,16 +535,29 @@
     const button = event.currentTarget; button.disabled = true;
     const generation = authGeneration;
     signingOut = true;
+    workspace.inert = true;
+    const drainChanges = async () => {
+      while (generation === authGeneration && signedIn() && dirty.size) {
+        const saved = await flush();
+        if (generation !== authGeneration || !signedIn()) return false;
+        if (!saved) { status(navigator.onLine === false ? 'offline' : 'error'); return false; }
+      }
+      return generation === authGeneration && signedIn();
+    };
     try {
-      if (dirty.size && !await flush()) { status(navigator.onLine === false ? 'offline' : 'error'); return; }
-      if (generation !== authGeneration || !signedIn()) return;
+      // Each PUT acknowledges only the fields sent in that batch. A finishing
+      // download can update history while it travels, so settle every batch.
+      if (!await drainChanges()) return;
       await window.OndaSession?.flushCookieSave?.();
       // The SDK user menu or another tab can end this identity while its local
       // cookie write is settling. Its old handler cannot sign out a new session.
-      if (generation !== authGeneration || !signedIn()) return;
+      if (!await drainChanges()) return;
       await window.Clerk.signOut({ redirectUrl: '/' });
-    } catch { status('error'); }
-    finally { signingOut = false; button.disabled = false; }
+    } catch { if (generation === authGeneration && signedIn()) status('error'); }
+    finally {
+      signingOut = false; button.disabled = false;
+      if (generation === authGeneration && signedIn() && accountReady) workspace.inert = false;
+    }
   });
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) { if (dirty.size) void flush(); }

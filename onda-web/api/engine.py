@@ -19,6 +19,7 @@ import imageio_ffmpeg
 import yt_dlp
 from yt_dlp.extractor import gen_extractor_classes
 from yt_dlp.networking import Request
+from yt_dlp.networking.exceptions import HTTPError
 from yt_dlp.downloader import get_suitable_downloader
 from yt_dlp.downloader.http import HttpFD
 from yt_dlp.downloader.hls import HlsFD
@@ -362,8 +363,12 @@ def inspect_media(url: str, guard: Guard, cookies: str | None = None, media_type
             with factory(guard) as handler:
                 try:
                     response = handler.send(Request(url, method="HEAD"))
-                except Exception as exc:
-                    if "405" not in str(exc):
+                except HTTPError as exc:
+                    exc.response.close()
+                    # Some origins implement GET but not HEAD. Match the
+                    # actual status, never an incidental number in a URL or
+                    # error message, and release the rejected response first.
+                    if exc.status not in (405, 501):
                         raise
                     response = handler.send(Request(url, headers={"Range": "bytes=0-0"}))
                 with response:

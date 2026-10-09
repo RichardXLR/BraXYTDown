@@ -23,9 +23,10 @@ async function until(condition, message) {
   }
 }
 
-function browser({ holdStudio = null } = {}) {
-  const events = [], scripts = [], reloads = [], fetches = [], saved = new Map();
-  const heldScripts = new Map(), sdkListeners = [];
+function browser({ holdStudio = null, failStudio = null, holdWrites = false, failUserButton = false,
+  savedCache = new Map(), initialIdentity = 'user_local_A' } = {}) {
+  const events = [], scripts = [], reloads = [], fetches = [], saved = savedCache;
+  const heldScripts = new Map(), sdkListeners = [], writes = [];
   let signOutCalls = 0, signOutCompleted = false, pendingSignOut = null;
   const elements = new Map();
   function element(id) {
@@ -62,16 +63,18 @@ function browser({ holdStudio = null } = {}) {
       append(script) {
         scripts.push(script.src);
         if (script.src === holdStudio) heldScripts.set(script.src, script);
+        else if (script.src === failStudio && scripts.filter(url => url === script.src).length === 1) queueMicrotask(() => script.onerror());
         else queueMicrotask(() => script.onload());
       },
     },
   };
   const clerk = {
-    user: { id: 'user_local_A' },
+    user: { id: initialIdentity },
     session: { getToken: async () => 'local-fixture-token' },
     load: async () => {},
     addListener(listener) { sdkListeners.push(listener); return () => {}; },
-    mountUserButton() {}, mountSignIn() {}, mountSignUp() {},
+    mountUserButton() { if (failUserButton) throw new Error('Fixture user control could not mount.'); },
+    mountSignIn() {}, mountSignUp() {},
     unmountSignIn() {}, unmountSignUp() {},
     signOut(options) {
       assert.equal(options.redirectUrl, '/');
@@ -105,6 +108,11 @@ function browser({ holdStudio = null } = {}) {
         return Response.json({ configured: true, publishableKey: 'pk_test_localfixture', frontendApi: 'https://clerk.example' });
       }
       if (url === '/api/account/state') {
+        if (options.method === 'PUT' && holdWrites) {
+          const pending = deferred();
+          writes.push({ update: JSON.parse(options.body), pending });
+          return pending.promise;
+        }
         assert.equal(options.method || 'GET', 'GET', 'The initial hydration must not rewrite account data.');
         return Response.json({ schema: 1, revision: 2, state: {
           preferences: { accent: 'cyan' }, sound: true, draft: { url: 'https://vimeo.com/12345' }, history: [],
@@ -122,7 +130,7 @@ function browser({ holdStudio = null } = {}) {
   };
   vm.runInNewContext(source, context, { filename: 'public/account.js' });
   return {
-    context, clerk, body, element, events, scripts, reloads, fetches, saved,
+    context, clerk, body, element, events, scripts, reloads, fetches, saved, writes,
     get signOutCalls() { return signOutCalls; },
     finishSignOut() { pendingSignOut.resolve(); },
     emit(identity) {
@@ -259,6 +267,153 @@ async function nextIdentityAfterInterruptedStudioBoot() {
   assert.equal(page.context.window.OndaAccount.ready, false);
 }
 
+async function retryAfterPartlyLoadedStudioStartsFreshDocument() {
+  const page = browser({ failStudio: '/player.js' });
+  await until(() => page.body.dataset.account === 'error', 'Failed studio script did not show the retry gate.');
+  assert(page.scripts.includes('/app.js'), 'The failure must happen after stateful studio scripts ran.');
+  const beforeRetry = [...page.scripts];
+  await page.element('account-retry').click();
+  assert.equal(page.reloads.length, 1, 'Retry must isolate partially initialized modules in a fresh document.');
+  assert.deepEqual(page.scripts, beforeRetry, 'Retry cannot execute the studio modules twice in one document.');
+}
+
+async function retryAfterUserControlFailureStartsFreshDocument() {
+  const page = browser({ failUserButton: true });
+  await until(() => page.body.dataset.account === 'error', 'Failed user control did not show the retry gate.');
+  assert(page.scripts.includes('/intro.js'), 'The failure must happen after all studio scripts loaded.');
+  const beforeRetry = [...page.scripts];
+  await page.element('account-retry').click();
+  assert.equal(page.reloads.length, 1, 'A failed final auth control must not leave retry stuck behind an invisible workspace.');
+  assert.deepEqual(page.scripts, beforeRetry);
+}
+
+async function logoutSavesChangesMadeWhileItsWriteIsPending() {
+  const page = browser({ holdWrites: true });
+  await until(() => page.body.dataset.account === 'signed-in', 'Account did not hydrate for the pending-write check.');
+  const account = page.context.window.OndaAccount;
+  account.storage.setItem('onda.preferences.sound.v1', '0');
+  const logout = page.element('account-sign-out').click();
+  await until(() => page.writes.length === 1, 'Logout did not start its first save.');
+  const preferences = JSON.parse(account.storage.getItem('onda.preferences.v2'));
+  account.storage.setItem('onda.preferences.v2', JSON.stringify({ ...preferences, theme: 'light' }));
+  const first = page.writes[0];
+  first.pending.resolve(Response.json({ schema: 1, revision: 3, state: first.update.state }));
+  await until(() => page.writes.length > 1 || page.signOutCalls > 0, 'Logout did not finish or save its pending changes.');
+  assert.equal(page.signOutCalls, 0, 'Logout must save an edit made during its first PUT before ending the SDK session.');
+  assert.equal(page.writes.length, 2);
+  const second = page.writes[1];
+  assert.equal(second.update.base_revision, 3);
+  assert.equal(second.update.state.preferences.theme, 'light');
+  second.pending.resolve(Response.json({ schema: 1, revision: 4, state: second.update.state }));
+  await until(() => page.signOutCalls === 1, 'Logout did not start after all pending state was saved.');
+  page.finishSignOut(); await logout;
+}
+
+async function logoutSavesBackgroundChangesWhileCookiesSettle() {
+  const page = browser({ holdWrites: true });
+  await until(() => page.body.dataset.account === 'signed-in', 'Account did not hydrate for the cookie/save interleaving.');
+  const cookieWrite = deferred();
+  let flushes = 0;
+  page.context.window.OndaSession = {
+    flushCookieSave() { flushes += 1; return cookieWrite.promise; },
+  };
+  const logout = page.element('account-sign-out').click();
+  await until(() => flushes === 1, 'Logout did not reach its cookie barrier.');
+  assert.equal(page.element('onda-workspace').inert, true, 'New interactions are paused while logout settles saves.');
+  // A background completion can still write history while user interactions are paused.
+  const history = [{ url: 'https://example.org/own-media.mp4', media_type: 'video', format: 'mp4', quality: 'source',
+    title: 'Local fixture media', timestamp: Date.now() }];
+  page.context.window.OndaAccount.storage.setItem('onda.audio.history.v1', JSON.stringify(history));
+  cookieWrite.resolve();
+  await until(() => page.writes.length === 1 || page.signOutCalls > 0, 'Logout did not inspect the background change.');
+  assert.equal(page.signOutCalls, 0, 'Changes during the cookie barrier also need a cloud acknowledgement.');
+  const write = page.writes[0];
+  assert.equal(write.update.state.history[0].url, history[0].url);
+  write.pending.resolve(Response.json({ schema: 1, revision: 3, state: write.update.state }));
+  await until(() => page.signOutCalls === 1, 'Logout did not continue after saving background history.');
+  page.finishSignOut(); await logout;
+}
+
+async function failedLogoutSaveRestoresTheExistingWorkspace() {
+  const page = browser({ holdWrites: true });
+  await until(() => page.body.dataset.account === 'signed-in', 'Account did not hydrate for a failed logout save.');
+  page.context.window.OndaAccount.storage.setItem('onda.preferences.sound.v1', '0');
+  const button = page.element('account-sign-out');
+  const logout = button.click();
+  await until(() => page.writes.length === 1, 'Logout did not begin its failing save.');
+  assert.equal(page.element('onda-workspace').inert, true);
+  page.writes[0].pending.resolve(new Response(null, { status: 500 }));
+  await logout;
+  assert.equal(page.signOutCalls, 0, 'Failed saving must retain the active identity and local pending data.');
+  assert.equal(page.context.window.OndaAccount.ready, true);
+  assert.equal(page.context.window.OndaAccount.storage.getItem('onda.preferences.sound.v1'), '0');
+  assert.equal(page.element('onda-workspace').inert, false, 'Failed logout must restore interaction.');
+  assert.equal(button.disabled, false);
+  page.emit(null); // Clear the fixture retry timer without making remote requests.
+}
+
+async function verifyPendingHistoryRecoversOnlyForItsOwner(saved, expectedURL) {
+  const other = browser({ savedCache: saved, initialIdentity: 'user_local_B' });
+  await until(() => other.body.dataset.account === 'signed-in', 'Other account did not hydrate.');
+  assert.deepEqual(JSON.parse(other.context.window.OndaAccount.storage.getItem('onda.audio.history.v1')), [],
+    'A new identity cannot inherit the previous account pending history.');
+  other.emit(null);
+  const owner = browser({ savedCache: saved, holdWrites: true });
+  await until(() => owner.body.dataset.account === 'signed-in', 'Returning owner did not hydrate.');
+  const history = JSON.parse(owner.context.window.OndaAccount.storage.getItem('onda.audio.history.v1'));
+  assert.equal(history[0]?.url, expectedURL, 'The returning owner must recover the accepted but unacknowledged history.');
+  const save = owner.context.window.OndaAccount.flush();
+  await until(() => owner.writes.length === 1, 'Recovered local changes did not reach cloud synchronization.');
+  const write = owner.writes[0];
+  assert.equal(write.update.base_revision, 2);
+  assert.equal(write.update.state.history[0].url, expectedURL);
+  write.pending.resolve(Response.json({ schema: 1, revision: 3, state: write.update.state }));
+  assert.equal(await save, true);
+  owner.emit(null);
+  assert.equal(saved.size, 0, 'After the cloud acknowledgement a normal logout removes the local snapshot.');
+}
+
+async function logoutPreservesLateBackgroundChangeDuringSdkHandoff() {
+  const saved = new Map();
+  const page = browser({ savedCache: saved, holdWrites: true });
+  await until(() => page.body.dataset.account === 'signed-in', 'Account did not hydrate for the SDK handoff.');
+  const sdkHandoff = deferred();
+  const actualSignOut = page.clerk.signOut.bind(page.clerk);
+  let handoffStarted = false;
+  page.clerk.signOut = options => {
+    handoffStarted = true;
+    return sdkHandoff.promise.then(() => actualSignOut(options));
+  };
+  const logout = page.element('account-sign-out').click();
+  await until(() => handoffStarted, 'The asynchronous SDK handoff did not begin.');
+  const url = 'https://example.org/completed-during-logout.mp4';
+  page.context.window.OndaAccount.storage.setItem('onda.audio.history.v1', JSON.stringify([
+    { url, media_type: 'video', format: 'mp4', quality: 'source', title: 'Completed during SDK handoff', timestamp: Date.now() },
+  ]));
+  sdkHandoff.resolve();
+  await until(() => page.signOutCalls === 1, 'The SDK did not end the session.');
+  page.finishSignOut(); await logout;
+  assert.equal(page.context.window.OndaAccount.ready, false);
+  assert.equal(page.context.window.OndaAccount.storage.getItem('onda.audio.history.v1'), null, 'The signed-out document still clears all account state from memory.');
+  assert.equal(page.writes.length, 0, 'This change arrived after the final cloud flush and cannot use an ended SDK session.');
+  assert(saved.has('onda.account.state.v1:user_local_A'), 'The unacknowledged account snapshot must survive the SDK reset.');
+  await verifyPendingHistoryRecoversOnlyForItsOwner(saved, url);
+}
+
+async function sdkOwnedLogoutPreservesUnacknowledgedOwnerState() {
+  const saved = new Map();
+  const page = browser({ savedCache: saved });
+  await until(() => page.body.dataset.account === 'signed-in', 'Account did not hydrate for external SDK logout.');
+  const url = 'https://example.org/completed-before-sdk-logout.mp4';
+  page.context.window.OndaAccount.storage.setItem('onda.audio.history.v1', JSON.stringify([
+    { url, media_type: 'video', format: 'mp4', quality: 'source', title: 'Completed before external SDK logout', timestamp: Date.now() },
+  ]));
+  page.emit(null);
+  assert.equal(page.context.window.OndaAccount.ready, false);
+  assert(saved.has('onda.account.state.v1:user_local_A'), 'SDK-owned logout must also retain unacknowledged edits for their owner.');
+  await verifyPendingHistoryRecoversOnlyForItsOwner(saved, url);
+}
+
 const watchdog = setTimeout(() => {
   console.error('Account lifecycle timed out.');
   process.exitCode = 1;
@@ -269,6 +424,13 @@ const watchdog = setTimeout(() => {
   await sdkLogoutWhileCookiesAreStillSaving();
   await identityChangesWhileStudioIsBooting();
   await nextIdentityAfterInterruptedStudioBoot();
+  await retryAfterPartlyLoadedStudioStartsFreshDocument();
+  await retryAfterUserControlFailureStartsFreshDocument();
+  await logoutSavesChangesMadeWhileItsWriteIsPending();
+  await logoutSavesBackgroundChangesWhileCookiesSettle();
+  await failedLogoutSaveRestoresTheExistingWorkspace();
+  await logoutPreservesLateBackgroundChangeDuringSdkHandoff();
+  await sdkOwnedLogoutPreservesUnacknowledgedOwnerState();
   console.log('Account lifecycle: pending SDK logout, cookie save barrier, stream cancellation and account isolation passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; })
   .finally(() => clearTimeout(watchdog));

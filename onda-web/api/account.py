@@ -276,8 +276,13 @@ def blob_http(method: str, url: str, *, headers: dict, body: bytes | None = None
         with requests.request(method, url, headers=headers, data=body, timeout=(3, 8),
                               allow_redirects=False, stream=True) as response:
             declared = response.headers.get("Content-Length")
-            if declared and (not declared.isdigit() or int(declared) > MAX_STATE_BYTES):
-                raise unavailable()
+            if declared is not None:
+                length = declared.strip()
+                # Check the syntax and number of digits before conversion:
+                # malformed upstream headers must not escape as a ValueError.
+                if (not length.isascii() or not length.isdigit() or len(length) > 20
+                        or int(length) > MAX_STATE_BYTES):
+                    raise unavailable()
             chunks, received = [], 0
             for chunk in response.iter_content(chunk_size=4096):
                 received += len(chunk)
@@ -295,7 +300,7 @@ def blob_error(status: int, data: bytes, *, conditional=False):
     try:
         parsed = parse_json(data)
         code = parsed.get("error", {}).get("code", "") if isinstance(parsed, dict) else ""
-    except (ValueError, TypeError, AttributeError, UnicodeError):
+    except (ValueError, TypeError, AttributeError, UnicodeError, RecursionError):
         code = ""
     if conditional and (status in (409, 412) or code in ("precondition_failed", "blob_already_exists", "already_exists")):
         raise conflict()

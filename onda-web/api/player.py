@@ -15,6 +15,7 @@ from pathlib import Path
 from fastapi import Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from yt_dlp.networking import Request as MediaRequest
+from yt_dlp.networking.exceptions import HTTPError
 
 from . import engine
 from .cookies import MAX_COOKIE_BYTES, parse_netscape
@@ -217,8 +218,9 @@ def _readable_media(url, guard, media_type=None):
     with engine.direct_handler(guard) as handler:
         try:
             response = handler.send(MediaRequest(url, method="HEAD"))
-        except Exception as exc:
-            if "405" not in str(exc) and "501" not in str(exc):
+        except HTTPError as exc:
+            exc.response.close()
+            if exc.status not in (405, 501):
                 raise
             response = handler.send(MediaRequest(url, headers={"Range": "bytes=0-0"}))
         with response:
@@ -238,8 +240,24 @@ def _readable_media(url, guard, media_type=None):
                 raise AudioError("Essa transmissão exige um player próprio da plataforma.", "preview_adaptive", 422)
             if media_type is None and extension not in VIDEO_EXTENSIONS | AUDIO_EXTENSIONS:
                 raise AudioError("Esse formato exige um player externo.", "preview_unsupported", 422)
-            length = response.headers.get("Content-Length", "")
-            if length.isdigit() and int(length) > engine.MAX_SOURCE:
+            declared = response.headers.get("Content-Length")
+            length = None
+            if declared is not None:
+                raw_length = declared.strip()
+                if not re.fullmatch(r"[0-9]{1,20}", raw_length):
+                    raise AudioError("A origem retornou um tamanho de mídia inválido.", "preview_unsupported", 422)
+                length = int(raw_length)
+            if response.status == 206:
+                # A Range probe advertises the size of its one-byte body in
+                # Content-Length; the complete media size lives in Content-Range.
+                content_range = response.headers.get("Content-Range", "").strip()
+                matched = re.fullmatch(r"bytes 0-0/([0-9]{1,20}|\*)", content_range, flags=re.IGNORECASE)
+                if not matched or length not in (None, 1):
+                    raise AudioError("A origem retornou uma prévia parcial inválida.", "preview_unsupported", 422)
+                length = None if matched[1] == "*" else int(matched[1])
+                if length == 0:
+                    raise AudioError("A origem retornou uma prévia parcial inválida.", "preview_unsupported", 422)
+            if length is not None and length > engine.MAX_SOURCE:
                 raise AudioError("A prévia de arquivo direto aceita até 128 MB.", "source_too_large", 413)
             return response.url, inferred
 

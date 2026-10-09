@@ -247,7 +247,12 @@ class PublicRedirectHandler(RedirectHandler):
                 self.guard.error = exc
             raise
         redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
-        if urllib.parse.urlsplit(req.full_url).netloc != urllib.parse.urlsplit(newurl).netloc:
+        previous, following = (urllib.parse.urlsplit(url) for url in (req.full_url, newurl))
+        previous_origin = (previous.scheme, previous.hostname, previous.port or (443 if previous.scheme == "https" else 80))
+        following_origin = (following.scheme, following.hostname, following.port or (443 if following.scheme == "https" else 80))
+        # Scheme is part of the origin: an HTTPS-to-HTTP redirect on the same
+        # hostname must not send Authorization through a plaintext connection.
+        if previous_origin != following_origin:
             redirected.remove_header("Authorization")
         return redirected
 

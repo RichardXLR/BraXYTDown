@@ -328,6 +328,132 @@ def test_manual_rollback_only_uses_saved_ready_baseline(factory):
     assert manager.state["previous"] == NEW
 
 
+def test_manual_rollback_without_checkpoint_cannot_change_production(factory):
+    manager, provider, _, _ = factory(checkpoint=False)
+    manager.state.update(active=NEW, previous=OLD, versions=VERSIONS)
+    provider.active = dict(NEW)
+    with pytest.raises(CureError, match='durable_checkpoint_required_before_promotion'):
+        manager.rollback()
+    assert provider.active == NEW and provider.rollbacks == []
+
+
+@pytest.mark.parametrize('reload_journal', [False, True])
+def test_manual_rollback_without_checkpoint_cannot_mutate_on_retry(factory, reload_journal):
+    manager, provider, _, _ = factory(checkpoint=False)
+    manager.state.update(active=NEW, previous=OLD, versions=VERSIONS)
+    provider.active = dict(NEW)
+    with pytest.raises(CureError, match='durable_checkpoint_required_before_promotion'):
+        manager.rollback()
+    pending = json.loads(manager.path.read_text())['pending']
+
+    retried = factory(checkpoint=False)[0] if reload_journal else manager
+    retried.provider = provider
+    with pytest.raises(CureError, match='durable_checkpoint_required_before_promotion'):
+        retried.rollback()
+    assert provider.active == NEW and provider.rollbacks == []
+    assert json.loads(manager.path.read_text())['pending'] == pending
+
+
+@pytest.mark.parametrize('reload_journal', [False, True])
+def test_failed_initial_rollback_checkpoint_cannot_authorize_retry(factory, mirrors, reload_journal):
+    manager, _, _, _ = factory()
+    provider, http = mirrors
+    manager.provider = provider
+    manager.state.update(active=NEW, previous=OLD, versions=VERSIONS)
+    http.targets.update({alias: NEW['id'] for alias in DOMAIN_ALIASES})
+    attempts = []
+    def unavailable(state, **options):
+        attempts.append(state['status'])
+        raise CureError('repository_checkpoint_unavailable')
+    manager.checkpoint = unavailable
+    with pytest.raises(CureError, match='repository_checkpoint_unavailable'):
+        manager.rollback()
+    pending = json.loads(manager.path.read_text())['pending']
+
+    retried = factory()[0] if reload_journal else manager
+    retried.provider = Vercel(manager.root, http) if reload_journal else provider
+    retried.checkpoint = unavailable
+    with pytest.raises(CureError, match='repository_checkpoint_unavailable'):
+        retried.rollback()
+    assert attempts == ['rollback_pending', 'rollback_pending']
+    assert http.assignments == [] and set(http.targets.values()) == {NEW['id']}
+    assert json.loads(manager.path.read_text())['pending'] == pending
+
+
+@pytest.mark.parametrize('reload_journal', [False, True])
+def test_rollback_retry_confirms_failed_local_journal_before_alias_mutation(factory, reload_journal):
+    manager, provider, events, records = factory()
+    manager.state.update(active=NEW, previous=OLD, versions=VERSIONS)
+    provider.active = dict(NEW)
+    acknowledged = manager.checkpoint
+    def unavailable(state, **options):
+        raise CureError('repository_checkpoint_unavailable')
+    manager.checkpoint = unavailable
+    with pytest.raises(CureError, match='repository_checkpoint_unavailable'):
+        manager.rollback()
+
+    retried = factory()[0] if reload_journal else manager
+    retried.provider, retried.checkpoint = provider, acknowledged
+    retried.rollback()
+    assert events.index('checkpoint:rollback_pending') < events.index('rollback')
+    assert provider.rollbacks == [OLD] and provider.active == OLD
+    assert records[0]['pending']['operation'] == 'manual_rollback'
+    assert records[-1]['status'] == 'rolled_back' and 'pending' not in records[-1]
+
+
+def test_recovering_promotion_without_checkpoint_cannot_change_production(factory):
+    manager, provider, _, _ = factory(checkpoint=False)
+    manager.state['pending'] = {'candidate': NEW, 'previous': OLD, 'versions': VERSIONS}
+    manager.state['status'] = 'promotion_pending'
+    provider.active = dict(NEW)
+    manager.save()
+    with pytest.raises(CureError, match='durable_checkpoint_required_before_promotion'):
+        manager.recover()
+    assert provider.active == NEW and provider.rollbacks == []
+    assert json.loads(manager.path.read_text())['pending']['candidate'] == NEW
+
+
+def test_manual_rollback_writes_recovery_journal_before_mutation(factory):
+    manager, provider, events, records = factory()
+    manager.state.update(active=NEW, previous=OLD, versions=VERSIONS,
+                         previous_versions={'yt-dlp': 'older'})
+    provider.active = dict(NEW)
+    manager.rollback()
+    assert events.index('checkpoint:rollback_pending') < events.index('rollback')
+    assert records[0]['pending']['operation'] == 'manual_rollback'
+    assert records[0]['pending']['candidate'] == NEW
+    assert records[0]['pending']['previous'] == OLD
+    assert records[-1]['active'] == OLD and records[-1]['previous'] == NEW
+    assert records[-1]['versions'] == {'yt-dlp': 'older'}
+    assert records[-1]['previous_versions'] == VERSIONS
+    assert 'pending' not in records[-1] and records[-1]['quarantine'] == []
+    assert len(records) == 2  # Reuse this process's acknowledged pending journal.
+
+
+def test_interrupted_manual_rollback_is_completed_without_second_rollback_or_quarantine(factory):
+    manager, provider, _, _ = factory()
+    manager.state.update(active=NEW, previous=OLD, versions=VERSIONS,
+                         previous_versions={'yt-dlp': 'older'})
+    provider.active = dict(NEW)
+    real_rollback = provider.rollback
+    def interrupt(deployment):
+        real_rollback(deployment)
+        raise SimulatedProcessDeath()
+    provider.rollback = interrupt
+    with pytest.raises(SimulatedProcessDeath):
+        manager.rollback()
+
+    recovered, _, _, records = factory()
+    provider.rollback = real_rollback
+    recovered.provider = provider
+    recovered.rollback()
+    assert provider.active == OLD and provider.rollbacks == [OLD]
+    assert recovered.state['active'] == OLD and recovered.state['previous'] == NEW
+    assert recovered.state['versions'] == {'yt-dlp': 'older'}
+    assert recovered.state['previous_versions'] == VERSIONS
+    assert records[-1]['quarantine'] == [] and 'pending' not in records[-1]
+
+
 def test_atomic_json_and_real_process_lock(tmp_path):
     path = tmp_path / "state.json"
     atomic_json(path, {"state": "one"})
@@ -576,6 +702,51 @@ def test_real_checks_do_not_label_platform_blocks_healthy():
     result = DeploymentChecks(CanaryHTTP(blocked=True)).verify(NEW, versions=VERSIONS)
     assert result["status"] == "blocked"
     assert sum(check["status"] == "blocked" for check in result["checks"]) == 2
+
+
+@pytest.mark.parametrize('health', [None, [], {'ok': True, 'formats': None},
+                                   {'ok': True, 'formats': [{}]},
+                                   {'ok': True, 'formats': ['mp3'], 'videoFormats': None}])
+def test_incomplete_runtime_json_is_a_reported_gate_failure(health):
+    class IncompleteHealth(CanaryHTTP):
+        def json(self, url, **options):
+            return health if url.endswith('/api/health') else super().json(url, **options)
+    result = DeploymentChecks(IncompleteHealth()).verify(NEW, versions=VERSIONS)
+    assert result['status'] == 'failed'
+    assert result['checks'][0]['code'] == 'runtime_health_failed'
+
+
+@pytest.mark.parametrize('versions', [None, [], {'ffmpeg': []},
+                                     {'ffmpeg': '7.0', 'deno': ['2.9.7']}])
+def test_incomplete_version_json_cannot_abort_or_pass_the_release_gate(versions):
+    class IncompleteVersions(CanaryHTTP):
+        def json(self, url, **options):
+            return {'versions': versions} if url.endswith('/api/compatibility') else super().json(url, **options)
+    result = DeploymentChecks(IncompleteVersions()).verify(NEW, versions=VERSIONS)
+    assert result['status'] == 'failed'
+    assert next(check for check in result['checks'] if check['name'] == 'packaged_versions')['code'] == 'packaged_runtime_version_mismatch'
+
+
+@pytest.mark.parametrize('tested', [None, [], {'ok': True, 'status': 'passed', 'details': None},
+                                   {'ok': True, 'status': 'passed', 'details': []},
+                                   {'ok': True, 'status': 'passed', 'details': {'title': ['invalid']}}])
+def test_incomplete_metadata_json_is_a_controlled_failed_check(tested):
+    class IncompleteMetadata:
+        def json(self, *_args, **_options):
+            return tested
+    checks = DeploymentChecks(IncompleteMetadata())
+    result = checks.metadata_check(NEW['url'], checks.canaries[0], {})
+    assert result['status'] == 'failed' and result['code'] == 'invalid_extraction_result'
+
+
+def test_metadata_error_code_never_copies_arbitrary_server_text_into_the_journal():
+    class ArbitraryError:
+        def json(self, *_args, **_options):
+            return {'ok': False, 'status': 'failed', 'code': 'Cookie: secret-value', 'details': {}}
+    checks = DeploymentChecks(ArbitraryError())
+    result = checks.metadata_check(NEW['url'], checks.canaries[0], {})
+    assert result['status'] == 'failed' and result['code'] == 'invalid_extraction_result'
+    assert 'secret-value' not in json.dumps(result)
 
 
 def test_baseline_policy_keeps_existing_youtube_block_visible_without_stalling_codecs():
@@ -1189,6 +1360,95 @@ def test_mirror_release_records_all_domains_before_moving_any_alias(factory, mir
     assert state['status'] == 'passed' and set(http.targets.values()) == {NEW['id']}
     assert http.assignments == [(alias, NEW['id']) for alias in DOMAIN_ALIASES]
     assert [alias for alias, _ in http.health_calls] == DOMAIN_ALIASES
+
+
+def test_partial_manual_rollback_keeps_a_durable_journal_and_restores_every_domain(factory, mirrors, monkeypatch):
+    manager, _, _, records = factory()
+    provider, http = mirrors
+    manager.provider = provider
+    manager.state.update(active=NEW, previous=OLD, versions=VERSIONS,
+                         previous_versions={'yt-dlp': 'older'})
+    http.targets.update({alias: NEW['id'] for alias in DOMAIN_ALIASES})
+    real_request = http.json
+    failed = [False]
+    def partial_failure(url, **options):
+        if (options.get('method') == 'POST' and options.get('payload', {}).get('alias') == DOMAIN_ALIASES[1]
+                and not failed[0]):
+            failed[0] = True
+            raise CureError('alias_assignment_failed', http_status=500)
+        return real_request(url, **options)
+    monkeypatch.setattr(http, 'json', partial_failure)
+    with pytest.raises(CureError, match='alias_assignment_failed'):
+        manager.rollback()
+    assert records[0]['status'] == 'rollback_pending'
+    assert records[0]['pending']['production_aliases'] == DOMAIN_ALIASES
+    assert http.targets[DOMAIN_ALIASES[0]] == OLD['id']
+    assert http.targets[DOMAIN_ALIASES[1]] == NEW['id']
+    assert json.loads(manager.path.read_text())['pending'] == records[0]['pending']
+
+    recovered, _, _, recovered_records = factory()
+    recovered.provider = Vercel(manager.root, http)
+    recovered.rollback()
+    assert set(http.targets.values()) == {OLD['id']}
+    assert recovered_records[-1]['previous']['id'] == NEW['id']
+    assert recovered_records[-1]['quarantine'] == [] and 'pending' not in recovered_records[-1]
+
+
+@pytest.mark.parametrize('changed_alias', DOMAIN_ALIASES)
+def test_manual_rollback_does_not_replace_a_publication_after_its_checkpoint(factory, mirrors, changed_alias):
+    manager, _, _, records = factory()
+    provider, http = mirrors
+    manager.provider = provider
+    manager.state.update(active=NEW, previous=OLD, versions=VERSIONS)
+    http.targets.update({alias: NEW['id'] for alias in DOMAIN_ALIASES})
+    real_checkpoint = manager.checkpoint
+    def changed_after_checkpoint(state, **options):
+        real_checkpoint(state, **options)
+        if state['status'] == 'rollback_pending':
+            http.targets[changed_alias] = 'dpl_later_release'
+    manager.checkpoint = changed_after_checkpoint
+    with pytest.raises(CureError, match='production_changed_during_recovery'):
+        manager.rollback()
+    assert http.assignments == [] and http.targets[changed_alias] == 'dpl_later_release'
+    assert records[-1]['status'] == 'recovery_requires_review'
+    assert records[-1]['pending']['operation'] == 'manual_rollback'
+
+
+def test_manual_rollback_final_checkpoint_failure_remains_locally_recoverable(factory):
+    manager, provider, _, records = factory()
+    manager.state.update(active=NEW, previous=OLD, versions=VERSIONS,
+                         previous_versions={'yt-dlp': 'older'})
+    provider.active = dict(NEW)
+    real_checkpoint = manager.checkpoint
+    def reject_completion(state, **options):
+        if state['status'] == 'rolled_back':
+            raise CureError('reviewed_repository_commit_changed')
+        real_checkpoint(state, **options)
+    manager.checkpoint = reject_completion
+    with pytest.raises(CureError, match='reviewed_repository_commit_changed'):
+        manager.rollback()
+    assert provider.active == OLD and provider.rollbacks == [OLD]
+    assert records[-1]['status'] == 'rollback_pending'
+    assert json.loads(manager.path.read_text())['pending'] == records[-1]['pending']
+
+    recovered, _, _, recovered_records = factory()
+    recovered.provider = provider
+    recovered.rollback()
+    assert provider.rollbacks == [OLD] and recovered.state['previous'] == NEW
+    assert recovered_records[-1]['quarantine'] == [] and 'pending' not in recovered_records[-1]
+
+
+def test_manual_rollback_preserves_a_baseline_recorded_for_different_domains(factory, mirrors):
+    manager, _, _, records = factory()
+    provider, http = mirrors
+    manager.provider = provider
+    saved_previous = {**OLD, 'production_aliases': DOMAIN_ALIASES[:2]}
+    manager.state.update(active=NEW, previous=saved_previous, versions=VERSIONS)
+    http.targets.update({alias: NEW['id'] for alias in DOMAIN_ALIASES})
+    with pytest.raises(CureError, match='production_alias_configuration_changed'):
+        manager.rollback()
+    assert http.assignments == [] and records == []
+    assert manager.state['previous'] == saved_previous and 'pending' not in manager.state
 
 
 def test_misaligned_mirror_aborts_before_promotion_journal_or_any_mutation(factory, mirrors, monkeypatch):

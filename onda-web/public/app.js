@@ -54,6 +54,7 @@
   let history = readHistory();
   let compatibilityStatusController = null;
   let currentMediaType = null;
+  let clipboardGeneration = 0;
 
   function saveDraft() {
     if (!draftRestored) return;
@@ -340,7 +341,7 @@
     let host;
     let domains;
     try {
-      host = new URL(url).hostname.toLowerCase();
+      host = new URL(url).hostname.toLowerCase().replace(/\.$/, '');
       if (cookies.startsWith('[') || cookies.startsWith('{')) {
         const data = JSON.parse(cookies);
         const records = Array.isArray(data) ? data : data.cookies;
@@ -420,9 +421,12 @@
         method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url, cookies }), signal: controller.signal,
       });
+      if (sessionLocked || cookieValidationController !== controller) return;
+      if (controller.signal.aborted) throw new DOMException('Validação cancelada.', 'AbortError');
       if (!response.ok) throw await responseError(response);
       const data = await response.json();
       if (cookieValidationController !== controller || input.value.trim() !== url || cookieContent($('cookies-input').value.trim()) !== cookies) return;
+      if (controller.signal.aborted) throw new DOMException('Validação cancelada.', 'AbortError');
       const count = Number(data.validCookies);
       if (!Number.isInteger(count) || count < 1 || count > 300) throw new Error('O serviço não confirmou a sessão. Valide novamente.');
       const ignored = Number(data.ignoredCookies) || 0;
@@ -506,13 +510,16 @@
 
   function detectSource(value) {
     try {
-      const host = new URL(value).hostname.toLowerCase().replace(/^www\./, '');
+      const url = new URL(value);
+      const host = url.hostname.toLowerCase().replace(/\.$/, '').replace(/^www\./, '');
       if (host === 'youtu.be' || host === 'youtube.com' || host.endsWith('.youtube.com')) return 'YouTube';
       if (host === 'tiktok.com' || host.endsWith('.tiktok.com')) return 'TikTok';
       if (host === 'soundcloud.com' || host.endsWith('.soundcloud.com')) return 'SoundCloud';
       if (host === 'vimeo.com' || host.endsWith('.vimeo.com')) return 'Vimeo';
       if (host === 'instagram.com' || host.endsWith('.instagram.com')) return 'Instagram';
-      if (/\.(mp3|m4a|wav|flac|ogg|opus|aac|aiff|mp4|webm|mov)(?:\?.*)?$/i.test(value)) return 'Arquivo direto';
+      // Query strings and fragments can contain filename-like values. Match
+      // only the actual media path, using the formats accepted by the service.
+      if (/\.(mp3|m4a|mp4|webm|mov|wav|flac|aac|ogg|opus|aif|aiff|avi|mkv|mpeg|mpg|m4v|wma|ts|m2ts)$/i.test(url.pathname)) return 'Arquivo direto';
       return host;
     } catch {
       return '';
@@ -520,6 +527,9 @@
   }
 
   function updateSource() {
+    // Every edit invalidates clipboard reads, even when an edited link returns
+    // to its previous value before the permission prompt finishes.
+    clipboardGeneration += 1;
     if (validatedCookieLink && validatedCookieLink !== input.value.trim()) invalidateCookieValidation();
     const source = detectSource(input.value.trim());
     updateCookieApplicability();
@@ -1118,8 +1128,12 @@
       $('compatibility-dot').classList.add('unavailable');
       $('compatibility-message').textContent = error.name === 'AbortError' ? 'A consulta excedeu o tempo de espera. Use “Atualizar status” para tentar novamente.'
         : error instanceof TypeError ? 'Verifique sua conexão e atualize o status para tentar novamente.' : error.message;
-      $('healing-title').textContent = 'Configuração não confirmada';
-      $('healing-message').textContent = 'Não foi possível confirmar a configuração de manutenção nesta consulta.';
+      // Maintenance has its own request. A failure of the extractor catalog
+      // must not replace a maintenance result that has already been verified.
+      if (!maintenanceLoadedAt) {
+        $('healing-title').textContent = 'Configuração não confirmada';
+        $('healing-message').textContent = 'Não foi possível confirmar a configuração de manutenção nesta consulta.';
+      }
     } finally {
       window.clearTimeout(timer);
       if (compatibilityStatusController === controller) {
@@ -1197,6 +1211,7 @@
   $('reset-tools').addEventListener('click', () => {
     if (activeController) return;
     resetTools();
+    saveDraft();
     announce('Ajustes restaurados. Remover metadados continua ativado por padrão.');
   });
   input.addEventListener('input', () => { invalidateCookieValidation(); updateSource(); });
@@ -1291,6 +1306,9 @@
     }
   });
   $('paste-button').addEventListener('click', async () => {
+    if (sessionLocked || activeController) return;
+    const generation = ++clipboardGeneration;
+    const originalValue = input.value;
     if (!navigator.clipboard?.readText) {
       input.focus();
       announce('Use Ctrl + V ou pressione o campo para colar seu link.');
@@ -1299,12 +1317,15 @@
     }
     try {
       const text = await navigator.clipboard.readText();
-      if (activeController) return;
+      // Permission prompts can outlive this action. Preserve edits made while
+      // waiting and never write clipboard content back after sign-out.
+      if (sessionLocked || activeController || generation !== clipboardGeneration || input.value !== originalValue) return;
       input.value = text.trim();
       updateSource();
       input.focus();
       announce(text.trim() ? 'Link colado. Escolha áudio ou vídeo, o formato e os ajustes.' : 'Sua área de transferência está vazia.');
     } catch {
+      if (sessionLocked || activeController || generation !== clipboardGeneration || input.value !== originalValue) return;
       input.focus();
       showStatus('info', 'Cole o link no campo acima', 'O acesso à área de transferência não foi permitido. Use Ctrl + V ou pressione o campo para colar.');
     }

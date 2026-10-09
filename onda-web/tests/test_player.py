@@ -4,6 +4,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from yt_dlp.networking import Response
+from yt_dlp.networking.exceptions import HTTPError
 
 from api import engine, index, player, security
 from api.security import AudioError, Guard
@@ -100,7 +101,7 @@ def fake_transport(monkeypatch, *, mime="video/mp4", redirected="https://cdn.exa
         def send(self, request):
             calls.append(request)
             if fail_head and request.method == "HEAD":
-                raise RuntimeError("HTTP Error 405")
+                raise HTTPError(Response(io.BytesIO(b""), request.url, {}, status=405))
             return Response(io.BytesIO(b"x"), redirected, {"Content-Type": mime, "Content-Length": str(size)})
     monkeypatch.setattr(engine, "direct_handler", Transport)
     return calls
@@ -139,6 +140,96 @@ def test_direct_preview_head_fallback_requests_only_first_byte(monkeypatch):
     calls = fake_transport(monkeypatch, fail_head=True)
     assert player.resolve_player("https://example.com/video.mp4", "onda-audio.vercel.app", Guard())["kind"] == "direct"
     assert len(calls) == 2 and calls[1].headers["Range"] == "bytes=0-0"
+
+
+def range_probe_transport(monkeypatch, *, total, content_range=None, length="1"):
+    class Transport:
+        def __init__(self, guard): pass
+        def __enter__(self): return self
+        def __exit__(self, *_args): pass
+        def send(self, request):
+            if request.method == "HEAD":
+                raise HTTPError(Response(io.BytesIO(b""), request.url, {}, status=405))
+            assert request.headers["Range"] == "bytes=0-0"
+            return Response(io.BytesIO(b"x"), "https://cdn.example.com/final.mp4",
+                            {"Content-Type": "video/mp4", "Content-Length": length,
+                             "Content-Range": content_range or f"bytes 0-0/{total}"}, status=206)
+    monkeypatch.setattr(engine, "direct_handler", Transport)
+
+
+@pytest.mark.parametrize("total, accepted", [(engine.MAX_SOURCE, True), (engine.MAX_SOURCE + 1, False)])
+def test_range_probe_bounds_the_complete_media_instead_of_the_one_byte_body(monkeypatch, total, accepted):
+    range_probe_transport(monkeypatch, total=total)
+    result = player.resolve_player("https://example.com/video.mp4", "onda-audio.vercel.app", Guard())
+    assert result["kind"] == ("direct" if accepted else "unavailable")
+    if not accepted:
+        assert result["code"] == "source_too_large"
+
+
+@pytest.mark.parametrize("content_range", ["bytes 1-1/100", "bytes 0-1/100", "bytes 0-0/0",
+                                             "not a range"])
+def test_malformed_range_probe_never_claims_a_verified_preview(monkeypatch, content_range):
+    range_probe_transport(monkeypatch, total=100, content_range=content_range)
+    result = player.resolve_player("https://example.com/video.mp4", "onda-audio.vercel.app", Guard())
+    assert result["kind"] == "unavailable"
+
+
+def test_range_probe_rejects_an_inconsistent_response_length(monkeypatch):
+    range_probe_transport(monkeypatch, total=100, length="2")
+    result = player.resolve_player("https://example.com/video.mp4", "onda-audio.vercel.app", Guard())
+    assert result["kind"] == "unavailable"
+
+
+def test_range_probe_with_unknown_complete_length_remains_playable(monkeypatch):
+    range_probe_transport(monkeypatch, total=100, content_range="bytes 0-0/*")
+    result = player.resolve_player("https://example.com/video.mp4", "onda-audio.vercel.app", Guard())
+    assert result["kind"] == "direct"
+
+
+@pytest.mark.parametrize("status", [405, 501])
+def test_head_rejection_is_closed_before_supported_get_fallback(monkeypatch, status):
+    failed_body = io.BytesIO(b"rejected HEAD")
+    calls = []
+    class Transport:
+        def __init__(self, guard): pass
+        def __enter__(self): return self
+        def __exit__(self, *_args): pass
+        def send(self, request):
+            calls.append(request.method)
+            if request.method == "HEAD":
+                raise HTTPError(Response(failed_body, request.url, {}, status=status))
+            assert failed_body.closed, "The rejected HEAD response still owns its connection"
+            return Response(io.BytesIO(b"x"), request.url,
+                            {"Content-Type": "video/mp4", "Content-Length": "1"})
+    monkeypatch.setattr(engine, "direct_handler", Transport)
+    result = player.resolve_player("https://example.com/video.mp4", "onda-audio.vercel.app", Guard())
+    assert result["kind"] == "direct"
+    assert calls == ["HEAD", "GET"]
+    assert failed_body.closed
+
+
+@pytest.mark.parametrize("typed", [True, False])
+def test_incidental_405_text_does_not_retry_a_different_head_failure(monkeypatch, typed):
+    failed_body = io.BytesIO(b"rejected HEAD")
+    calls = []
+    class Transport:
+        def __init__(self, guard): pass
+        def __enter__(self): return self
+        def __exit__(self, *_args): pass
+        def send(self, request):
+            calls.append(request.method)
+            if request.method == "HEAD":
+                if typed:
+                    raise HTTPError(Response(failed_body, request.url, {}, status=403, reason="Origin 405"))
+                raise RuntimeError("Connection to resource 405 failed")
+            return Response(io.BytesIO(b"x"), request.url,
+                            {"Content-Type": "video/mp4", "Content-Length": "1"})
+    monkeypatch.setattr(engine, "direct_handler", Transport)
+    result = player.resolve_player("https://example.com/video.mp4", "onda-audio.vercel.app", Guard())
+    assert result["kind"] == "unavailable"
+    assert calls == ["HEAD"]
+    if typed:
+        assert failed_body.closed
 
 
 @pytest.mark.parametrize("redirected", ["https://127.0.0.1/private.mp4", "https://10.0.0.5/v.mp4", "https://user:password@cdn.example.com/file.mp4"])

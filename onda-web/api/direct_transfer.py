@@ -31,15 +31,27 @@ class _Representation:
 
 
 def _validator(headers):
-    etag = headers.get("ETag", "").strip()
-    if len(etag) <= 512 and _STRONG_ETAG.fullmatch(etag):
-        return "ETag", etag
+    etag = headers.get("ETag")
+    if etag is not None:
+        etag = etag.strip()
+        if len(etag) <= 512 and _STRONG_ETAG.fullmatch(etag):
+            return "ETag", etag
+        # If-Range cannot use a weak entity tag, nor substitute a date when an
+        # entity tag is present. Restart instead of splicing uncertain bytes.
+        return None
     modified = headers.get("Last-Modified", "").strip()
-    if not modified or len(modified) > 128 or "\r" in modified or "\n" in modified:
+    dated = headers.get("Date", "").strip()
+    if any(not value or len(value) > 128 or "\r" in value or "\n" in value for value in (modified, dated)):
         return None
     try:
-        date = parsedate_to_datetime(modified)
-        if date.tzinfo is not None and date.utcoffset().total_seconds() == 0:
+        modified_date = parsedate_to_datetime(modified)
+        response_date = parsedate_to_datetime(dated)
+        # HTTP dates have only one-second precision. A client may infer a
+        # strong Last-Modified validator only when the stored response's Date
+        # is at least 60 seconds later (RFC 9110, section 8.8.2.2).
+        if (all(date.tzinfo is not None and date.utcoffset().total_seconds() == 0
+                for date in (modified_date, response_date))
+                and (response_date - modified_date).total_seconds() >= 60):
             return "Last-Modified", modified
     except (TypeError, ValueError, OverflowError, AttributeError):
         pass

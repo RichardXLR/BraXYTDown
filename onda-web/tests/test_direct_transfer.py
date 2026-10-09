@@ -40,13 +40,15 @@ class Interrupted(io.BytesIO):
 
 def response(data, total=None, *, status=200, start=None, etag=ETAG, modified=None,
              fail=False, content_range=None, content_length=None, url=URL, content_type="video/mp4",
-             after_read=None):
+             after_read=None, date=None):
     total = len(data) if total is None else total
     headers = {"Content-Type": content_type, "Content-Length": str(total if status == 200 else total - start)}
     if etag is not None:
         headers["ETag"] = etag
     if modified is not None:
         headers["Last-Modified"] = modified
+    if date is not None:
+        headers["Date"] = date
     if status == 206:
         headers["Content-Range"] = content_range or f"bytes {start}-{total - 1}/{total}"
     if content_length is not None:
@@ -93,14 +95,14 @@ def test_interrupted_owned_media_resumes_identical_bytes(monkeypatch, tmp_path, 
     assert metadata["recovery"] == {"attempts": 2, "resumed": True, "method": "direct_http"}
 
 
-@pytest.mark.parametrize("etag,modified", [(None, MODIFIED), ('W/"owned-v1"', MODIFIED)])
-def test_valid_last_modified_can_resume_without_strong_etag(monkeypatch, tmp_path, owned_media, etag, modified):
+@pytest.mark.parametrize("date", ["Wed, 21 Oct 2015 07:29:00 GMT", "Wed, 21 Oct 2015 07:30:00 GMT"])
+def test_strong_last_modified_can_resume_without_etag(monkeypatch, tmp_path, owned_media, date):
     prefix = 4096
-    requests = transport(monkeypatch, [response(owned_media[:prefix], len(owned_media), etag=etag, modified=modified),
-        response(owned_media[prefix:], len(owned_media), status=206, start=prefix, etag=etag, modified=modified)])
+    requests = transport(monkeypatch, [response(owned_media[:prefix], len(owned_media), etag=None, modified=MODIFIED, date=date),
+        response(owned_media[prefix:], len(owned_media), status=206, start=prefix, etag=None, modified=MODIFIED, date=date)])
     path, _ = download(tmp_path, Guard())
     assert path.read_bytes() == owned_media
-    assert requests[1].headers["If-Range"] == modified
+    assert requests[1].headers["If-Range"] == MODIFIED
 
 
 @pytest.mark.parametrize("etag,modified", [(None, None), ('W/"weak-v1"', None), ('bad\r\nvalue', None),

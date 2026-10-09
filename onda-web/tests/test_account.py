@@ -290,6 +290,14 @@ def test_input_body_limit_is_bytes_not_unicode_characters(client, state):
     assert client.blob.calls == []
 
 
+def test_deeply_nested_provider_error_is_redacted_and_retryable(client):
+    client.blob.failure = (500, {}, b"[" * 16000 + b'"provider-secret"' + b"]" * 16000)
+    response = client.get("/api/account/state", headers={"x-test-user": "user_Alice"})
+    assert response.status_code == 503
+    assert response.json()["code"] == "account_storage_unavailable"
+    assert "provider-secret" not in response.text
+
+
 @pytest.mark.parametrize("failure", [
     (429, {}, b'{"error":{"code":"rate_limited","message":"provider-token-secret"}}'),
     (403, {}, b'{"error":{"code":"store_suspended","message":"provider-token-secret"}}'),
@@ -503,6 +511,24 @@ def test_http_transport_network_error_is_redacted(monkeypatch):
         account.blob_http("PUT", account.BLOB_API, headers={"Authorization": "Bearer placeholder"})
     assert error.value.status == 503
     assert "provider-token-secret" not in str(error.value)
+
+
+@pytest.mark.parametrize("declared", ["9" * 5000, "１２", "-1", "1, 1"],
+                         ids=["5000-digits", "non-ascii", "negative", "combined"])
+def test_invalid_blob_content_length_is_rejected_before_reading(monkeypatch, declared):
+    class Response:
+        status_code = 200
+        headers = {"Content-Length": declared}
+        def __enter__(self): return self
+        def __exit__(self, *_args): pass
+        def iter_content(self, chunk_size):
+            pytest.fail("A malformed Blob length must be rejected before buffering")
+
+    monkeypatch.setattr(account.requests, "request", lambda *_args, **_kwargs: Response())
+    with pytest.raises(AudioError) as failure:
+        account.blob_http("GET", "https://teststore.private.blob.vercel-storage.com/state.json",
+                          headers={"Authorization": "Bearer placeholder"})
+    assert failure.value.status == 503
 
 
 def test_conditional_write_uses_the_original_blob_representation(monkeypatch):

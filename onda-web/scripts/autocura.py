@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
+from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -672,9 +673,16 @@ class DeploymentChecks:
                 raise CureError("machine_metadata_canary_scope")
             tested = self.http.json(base + "/api/compatibility/test", method="POST",
                 payload={"url": canary["url"]}, headers=headers, timeout=65)
-            details = tested.get("details", {})
-            if tested.get("status") != "passed" or tested.get("ok") is not True or not details.get("title"):
-                raise CureError(str(tested.get("code", "invalid_extraction_result")))
+            if not isinstance(tested, dict):
+                raise CureError("invalid_extraction_result")
+            details = tested.get("details")
+            title = details.get("title") if isinstance(details, dict) else None
+            if (tested.get("status") != "passed" or tested.get("ok") is not True
+                    or not isinstance(title, str) or not title.strip()):
+                code = tested.get("code")
+                if not isinstance(code, str) or not re.fullmatch(r"[a-z_]{1,80}", code):
+                    code = "invalid_extraction_result"
+                raise CureError(code)
             return {"name": name, "status": "passed", "purpose": "metadata_only"}
         except CureError as exc:
             return {"name": name, "status": classify(str(exc)), "code": str(exc)}
@@ -706,9 +714,15 @@ class DeploymentChecks:
         checks = []
         try:
             health = self.http.json(base + "/api/health", headers=public_headers)
-            if health.get("ok") is not True or set(health.get("formats", [])) != {"mp3", "m4a", "wav", "flac", "ogg", "opus", "aac", "aiff"}:
+            if not isinstance(health, dict):
                 raise CureError("runtime_health_failed")
-            if set(health.get("videoFormats", [])) != {"mp4", "webm", "mkv", "mov"}:
+            audio_formats, video_formats = health.get("formats"), health.get("videoFormats")
+            if (health.get("ok") is not True or not isinstance(audio_formats, list)
+                    or any(not isinstance(item, str) for item in audio_formats)
+                    or set(audio_formats) != {"mp3", "m4a", "wav", "flac", "ogg", "opus", "aac", "aiff"}):
+                raise CureError("runtime_health_failed")
+            if (not isinstance(video_formats, list) or any(not isinstance(item, str) for item in video_formats)
+                    or set(video_formats) != {"mp4", "webm", "mkv", "mov"}):
                 raise CureError("video_runtime_health_failed")
             checks.append({"name": "runtime", "status": "passed"})
             auth_check = self.authentication_check(deployment, health, public_headers)
@@ -721,8 +735,11 @@ class DeploymentChecks:
             return self.report(checks)
         try:
             compatibility = self.http.json(base + "/api/compatibility", headers=headers)
-            actual = compatibility.get("versions", {})
-            if (actual.get("ffmpeg") in {None, "indisponível"} or actual.get("deno") in {None, "indisponível"}
+            actual = compatibility.get("versions") if isinstance(compatibility, dict) else None
+            if (not isinstance(actual, dict)
+                    or any(not isinstance(actual.get(key), str) or not actual[key].strip()
+                           for key in ("ytDlp", "deno", "ffmpeg"))
+                    or actual.get("ffmpeg") == "indisponível" or actual.get("deno") == "indisponível"
                     or (versions and (not same_version(actual.get("ytDlp"), versions["yt-dlp"])
                                       or not same_version(actual.get("deno"), versions["deno"])) )):
                 raise CureError("packaged_runtime_version_mismatch")
@@ -1092,6 +1109,10 @@ class AutoCura:
         self.checkpoint = checkpoint
         self.path = root / ".autocura" / "state.json"
         self.state = read_json(self.path, {"schema": 2, "status": "unconfigured", "quarantine": [], "history": []})
+        # Reading a journal from disk does not prove that its repository
+        # checkpoint succeeded. Only an acknowledged checkpoint in this
+        # process can authorize mutations without confirming it again.
+        self._durable_pending = None
 
     def save(self, *, durable=False, include_requirements=False):
         self.state["updated_at"] = now()
@@ -1115,6 +1136,7 @@ class AutoCura:
             if self.checkpoint is None:
                 raise CureError("durable_checkpoint_required_before_promotion")
             self.checkpoint(self.state, include_requirements=include_requirements)
+            self._durable_pending = deepcopy(self.state.get("pending"))
 
     def quarantine(self, versions, reason, deployment=None):
         self.state.setdefault("quarantine", []).append({"versions": versions, "reason": reason,
@@ -1124,6 +1146,8 @@ class AutoCura:
         pending = self.state.get("pending")
         if not pending:
             return False
+        if self.checkpoint is None:
+            raise CureError("durable_checkpoint_required_before_promotion")
         previous = pending.get("previous")
         if not previous:
             self.state["status"] = "recovery_requires_baseline"
@@ -1150,8 +1174,16 @@ class AutoCura:
             self.state["last_error"] = "production_changed_during_recovery"
             self.save(durable=True)
             raise CureError("production_changed_during_recovery")
+        if self._durable_pending != pending:
+            # The original save may have written only the local files before
+            # its remote checkpoint failed. Keep that journal recoverable,
+            # but acknowledge it durably before moving any production alias.
+            self.save(durable=True)
         if domains_need_recovery or not current or current["id"] != previous["id"]:
             self.provider.rollback(previous)
+        if pending.get("operation") == "manual_rollback":
+            self.complete_manual_rollback(pending)
+            return True
         self.quarantine(pending.get("versions", {}), "unconfirmed_interrupted_promotion", pending.get("candidate"))
         self.state.pop("pending", None)
         self.state["status"] = "rolled_back"
@@ -1159,6 +1191,27 @@ class AutoCura:
         self.state["versions"] = pending.get("previous_versions", {})
         self.save(durable=True)
         return True
+
+    def complete_manual_rollback(self, pending):
+        """Commit the requested baseline without condemning its former release."""
+        unfinished = deepcopy(self.state)
+        previous, current = pending["previous"], pending["candidate"]
+        self.state["active"], self.state["previous"] = previous, current
+        self.state["versions"] = pending.get("previous_versions", {})
+        self.state["previous_versions"] = pending.get("versions", {})
+        self.state["status"] = "rolled_back"
+        self.state.pop("pending", None)
+        self.state.pop("last_error", None)
+        self.state.setdefault("history", []).append({"event": "manual_rollback", "at": now(),
+                                                     "deployment_id": previous["id"]})
+        try:
+            self.save(durable=True)
+        except Exception:
+            # A failed final checkpoint must leave a recoverable local journal,
+            # matching the already committed remote one. Domains may have moved.
+            self.state = unfinished
+            self.save()
+            raise
 
     def release(self, *, force=False):
         with process_lock(self.root / ".autocura" / "update.lock"):
@@ -1287,17 +1340,36 @@ class AutoCura:
 
     def rollback(self):
         with process_lock(self.root / ".autocura" / "update.lock"):
-            self.recover()
+            pending = self.state.get("pending") or {}
+            if self.recover() and pending.get("operation") == "manual_rollback":
+                # Resume this command once; do not toggle back to its source.
+                return self.state
             previous = self.state.get("previous")
             if not previous:
                 raise CureError("missing_previous_deployment")
             current = self.provider.current()
-            current_versions = self.state.get("versions", {})
-            self.provider.rollback(previous)
-            self.state["active"], self.state["previous"] = previous, current
-            self.state["versions"], self.state["previous_versions"] = self.state.get("previous_versions", {}), current_versions
-            self.state["status"] = "rolled_back"
+            if current is None:
+                raise CureError("missing_known_good_baseline")
+            release_domains = getattr(self.provider, "release_domains", None)
+            domains = release_domains(current) if release_domains else None
+            recorded = previous.get("production_aliases")
+            configured = getattr(self.provider, "production_aliases", None)
+            if recorded is not None and configured is not None and recorded != configured:
+                raise CureError("production_alias_configuration_changed")
+            if domains:
+                current = {**current, "production_aliases": domains}
+                previous = {**previous, "production_aliases": domains}
+            self.state["pending"] = {"operation": "manual_rollback", "candidate": current,
+                                     "previous": previous, "versions": self.state.get("versions", {}),
+                                     "previous_versions": self.state.get("previous_versions", {}),
+                                     "created_at": now()}
+            if domains:
+                self.state["pending"]["production_aliases"] = domains
+            self.state["status"] = "rollback_pending"
+            # Manual rollback needs the same durable, multi-domain recovery
+            # contract as promotion before the first alias can be changed.
             self.save(durable=True)
+            self.recover()
             return self.state
 
 
