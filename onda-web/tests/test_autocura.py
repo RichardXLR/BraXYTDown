@@ -22,6 +22,13 @@ NEW = {"id": "dpl_candidate", "url": "https://candidate.vercel.app", "readyState
 PINS = "fastapi==0.141.1\nuvicorn==0.52.1\nyt-dlp[default]==2026.8.18\nimageio-ffmpeg==0.6.0\ndeno==2.9.6\npublicsuffixlist==1.0.2.20261003\nclerk-backend-api==7.0.0\n"
 
 
+@pytest.fixture(autouse=True)
+def isolated_production_domains(monkeypatch):
+    """Unit mocks choose their aliases, independently of the CI release config."""
+    monkeypatch.delenv('AUTOCURA_PRODUCTION_ALIASES', raising=False)
+    monkeypatch.delenv('AUTOCURA_PRODUCTION_URL', raising=False)
+
+
 def fake_resolution_run(monkeypatch, versions, calls=None):
     def resolve(command, **_options):
         if calls is not None:
