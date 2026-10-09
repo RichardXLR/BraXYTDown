@@ -2,7 +2,7 @@
   "automated": true,
   "automation_enabled": true,
   "baseline_platform_check": {
-    "checked_at": "2026-10-09T11:28:27.286622+00:00",
+    "checked_at": "2026-10-09T11:59:22.392830+00:00",
     "checks": [
       {
         "code": "platform_blocked",
@@ -15,7 +15,7 @@
         "status": "blocked"
       }
     ],
-    "deployment_id": "dpl_GGf8FkoZbJD4mHfFCTfr3LiLhbgh"
+    "deployment_id": "dpl_Aw2qpa4HNTW8NomyD5aAzstnYC6L"
   },
   "canaries": [
     {
@@ -33,7 +33,7 @@
   "components": "all_pinned_python_dependencies",
   "execution": {
     "repository": "RichardXLR/BraXYTDown",
-    "run_id": "37923825032",
+    "run_id": "37927012743",
     "workflow": "Onda AutoCura 3.0"
   },
   "history": [
@@ -506,7 +506,7 @@
     }
   ],
   "last_check": {
-    "checked_at": "2026-10-09T11:30:31.038502+00:00",
+    "checked_at": "2026-10-09T11:59:38.772084+00:00",
     "checks": [
       {
         "name": "runtime",
@@ -671,7 +671,7 @@
       "youtube_status": "blocked"
     },
     "platform_baseline": {
-      "checked_at": "2026-10-09T11:28:27.286622+00:00",
+      "checked_at": "2026-10-09T11:59:22.392830+00:00",
       "checks": [
         {
           "code": "platform_blocked",
@@ -684,14 +684,14 @@
           "status": "blocked"
         }
       ],
-      "deployment_id": "dpl_GGf8FkoZbJD4mHfFCTfr3LiLhbgh"
+      "deployment_id": "dpl_Aw2qpa4HNTW8NomyD5aAzstnYC6L"
     },
     "release_gate": {
       "accepted_existing_blocks": [
         "me_at_zoo_metadata",
         "big_buck_bunny_metadata"
       ],
-      "baseline_deployment_id": "dpl_GGf8FkoZbJD4mHfFCTfr3LiLhbgh",
+      "baseline_deployment_id": "dpl_Aw2qpa4HNTW8NomyD5aAzstnYC6L",
       "status": "passed",
       "youtube_policy": "baseline",
       "youtube_verified": false
@@ -718,7 +718,7 @@
   ],
   "schedule": "23 5 * * *",
   "schema": 3,
-  "snapshot_at": "2026-10-09T11:30:31.039947+00:00",
+  "snapshot_at": "2026-10-09T11:59:38.774360+00:00",
   "snapshot_only": true,
   "state": "passed",
   "status": "passed",
