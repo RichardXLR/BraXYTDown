@@ -60,6 +60,17 @@ def test_real_versions_counts_run_link_and_changes(monkeypatch):
     assert len(calls) == 4
 
 
+def test_progress_gate_is_identified_in_public_report(monkeypatch):
+    payload = report()
+    payload['last_check']['checks'].append({'name': 'download_progress', 'status': 'passed'})
+    evidence(monkeypatch, [run()], payload, {'versions': payload['versions']})
+    result = maintenance.inspect_maintenance()
+    assert result['checks'][-1] == {'name': 'download_progress',
+                                  'label': 'Progresso e integridade do download', 'status': 'passed',
+                                  'code': None, 'message': None}
+    assert result['check_summary']['passed'] == 3
+
+
 @pytest.mark.parametrize('latest', [run(43, 'failure'), run(43, None, 'in_progress')])
 def test_failed_new_job_preserves_verified_historical_components_without_activation(monkeypatch, latest):
     payload = report()

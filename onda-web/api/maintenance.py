@@ -81,6 +81,7 @@ def next_check():
 _COMPONENTS = {'yt-dlp': 'yt-dlp', 'deno': 'Deno', 'ffmpeg': 'FFmpeg',
                'imageio-ffmpeg': 'Distribuição FFmpeg'}
 _CHECK_LABELS = {'runtime': 'Funcionamento do serviço', 'runtime_authentication': 'Proteção das contas',
+                 'download_progress': 'Progresso e integridade do download',
                  'packaged_versions': 'Versões instaladas', 'me_at_zoo_metadata': 'YouTube · metadados 1',
                  'big_buck_bunny_metadata': 'YouTube · metadados 2',
                  'authorized_youtube_audio': 'YouTube · áudio autorizado'}
