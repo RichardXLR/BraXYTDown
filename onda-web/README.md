@@ -74,7 +74,7 @@ O AutoCura usa deploys imutáveis da Vercel, com `scripts/autocura.py` e o model
 2. Constrói uma versão candidata completa sem trocar o domínio ativo.
 3. Verifica ferramentas, canários YouTube e conversões de fontes próprias, cobrindo oito formatos de áudio, quatro de vídeo, corte, silêncio, normalização e remoção de metadados.
 4. Transfere somente o domínio público `onda-audio.vercel.app` para o candidato aprovado e verifica novamente através desse domínio; uma falha após a ativação restaura o domínio anterior.
-5. Persiste relatórios, estado, versões em quarentena e recuperação de uma promoção interrompida no repositório e nos artefatos do workflow. Se o domínio já foi restaurado, conclui a recuperação sem repetir o rollback.
+5. Persiste relatórios, estado, versões em quarentena e recuperação de uma promoção interrompida no repositório e nos artefatos do workflow. Se o domínio já foi restaurado, conclui a recuperação sem repetir o rollback. Se outra publicação já assumiu o domínio, preserva essa publicação e registra a necessidade de revisar o journal, em vez de restaurar uma versão antiga sobre ela.
 
 O workflow usa uma política de referência para o YouTube: um bloqueio de IP já existente e idêntico permanece registrado como bloqueado e pode permitir as demais atualizações verificadas. Um novo bloqueio, regressão de extração ou falha dos testes de conversão impede a promoção. O script isolado mantém a política estrita como padrão. A quarentena não confunde automaticamente todo erro de rede com uma versão incompatível.
 
@@ -117,6 +117,10 @@ A validação rejeita redes privadas, credenciais em URLs, portas não padrão e
 `media_type` aceita `audio` (padrão) ou `video`. Ferramentas também funcionam em áudio, exceto `mute` e resolução. Qualidades com perda: 128, 192, 256 ou 320 kbps; formatos sem perda aceitam `source`. Falhas de download usam `{ "error": "mensagem", "code": "categoria" }`. Testes manuais retornam `ok: false` e a categoria da falha quando o acesso não funciona.
 
 ## Desenvolvimento, validação e publicação
+
+O ciclo de uma operação pertence à requisição que o iniciou: cancelamento, logout ou uma resposta atrasada não podem reabrir o player, substituir a operação seguinte nem exibir um arquivo antigo como pronto. A transferência verifica o tamanho recebido e libera o leitor da conexão, inclusive em falhas. No servidor, o fechamento da resposta libera arquivos e workers também quando a conexão falha antes do primeiro bloco; cancelamentos repetidos aguardam a interrupção do processamento antes da limpeza.
+
+A sincronização da conta preserva revisões mais recentes e alterações pendentes quando respostas chegam fora de ordem. Documentos persistidos incompletos são tratados como falha de armazenamento, sem substituir dados por valores padrão. O cofre local reconecta após fechamento ou atualização do IndexedDB e libera filas encerradas. Metadados de origem usam um buffer limitado a 16 MiB, com crescimento linear e interrupção dos sockets ao exceder o limite. Os testes de regressão exercitam esses casos com o código real do cliente e do servidor.
 
 ```sh
 python3 -m venv .venv

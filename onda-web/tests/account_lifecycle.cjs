@@ -207,6 +207,30 @@ async function sdkOwnedLogoutAndDirectAccountSwitch() {
   assert.equal(switched.context.window.OndaAuth.signedIn, false);
 }
 
+async function sdkLogoutWhileCookiesAreStillSaving() {
+  const page = browser();
+  await until(() => page.body.dataset.account === 'signed-in', 'Account did not hydrate for the save barrier.');
+  const cookieWrite = deferred();
+  let flushes = 0;
+  page.context.window.OndaSession = {
+    flushCookieSave() { flushes += 1; return cookieWrite.promise; },
+  };
+  const button = page.element('account-sign-out');
+  const logout = button.click();
+  await until(() => flushes === 1, 'Logout did not reach the cookie save barrier.');
+  const secondClick = button.click();
+  await secondClick;
+  assert.equal(flushes, 1, 'An action remains exclusive during its cookie-save barrier.');
+  page.emit(null);
+  page.emit('user_local_B');
+  cookieWrite.resolve();
+  await until(() => page.signOutCalls > 0 || button.disabled === false, 'Logout did not leave its old save barrier.');
+  assert.equal(page.signOutCalls, 0, 'The old callback cannot sign out an identity which replaced it.');
+  await logout;
+  assert.equal(page.reloads.length, 1);
+  assert.equal(page.context.window.OndaAccount.ready, false);
+}
+
 async function identityChangesWhileStudioIsBooting() {
   const page = browser({ holdStudio: '/app.js' });
   await until(() => page.scripts.includes('/app.js'), 'Studio did not reach its held script.');
@@ -242,6 +266,7 @@ const watchdog = setTimeout(() => {
 (async () => {
   await logoutWhileSdkHandoffIsPending();
   await sdkOwnedLogoutAndDirectAccountSwitch();
+  await sdkLogoutWhileCookiesAreStillSaving();
   await identityChangesWhileStudioIsBooting();
   await nextIdentityAfterInterruptedStudioBoot();
   console.log('Account lifecycle: pending SDK logout, cookie save barrier, stream cancellation and account isolation passed.');

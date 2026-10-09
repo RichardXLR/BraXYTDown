@@ -22,6 +22,7 @@ from urllib.parse import urlsplit
 import httpx
 from fastapi import Request
 from fastapi.responses import JSONResponse
+from starlette.requests import ClientDisconnect
 
 
 CANONICAL_ORIGIN = "https://onda-audio.vercel.app"
@@ -283,19 +284,44 @@ async def _authorize_machine(request: Request, config: AuthConfiguration):
         return
     if request.method != "POST" or path not in MACHINE_MEDIA_PATHS:
         raise AuthFailure("auth_forbidden", 403)
-    length = request.headers.get("content-length")
-    if length and (not length.isascii() or not length.isdigit() or int(length) > MAX_MACHINE_BODY):
-        raise AuthFailure("auth_forbidden", 403)
     try:
-        raw = await request.body()
-        if len(raw) > MAX_MACHINE_BODY:
+        lengths = request.headers.getlist("content-length")
+        if (len(lengths) > 1 or lengths and (
+                not re.fullmatch(r"[0-9]{1,20}", lengths[0])
+                or int(lengths[0]) > MAX_MACHINE_BODY)):
             raise ValueError("large body")
-        body = json.loads(raw)
+        # Content-Length is optional and cannot establish the real size. Stop
+        # reading an oversized chunked request before buffering the rest.
+        chunks, size = [], 0
+        async for chunk in request.stream():
+            size += len(chunk)
+            if size > MAX_MACHINE_BODY:
+                raise ValueError("large body")
+            chunks.append(chunk)
+        raw = b"".join(chunks)
+        # Starlette's middleware request uses this same body cache to replay
+        # the verified body to the route. Reading stream() alone would make
+        # an otherwise valid canary arrive with an empty body downstream.
+        request._body = raw
+
+        def unique_object(pairs):
+            value = {}
+            for key, item in pairs:
+                if key in value:
+                    raise ValueError("duplicate JSON key")
+                value[key] = item
+            return value
+
+        def invalid_constant(_value):
+            raise ValueError("invalid JSON number")
+
+        body = json.loads(raw, object_pairs_hook=unique_object,
+                          parse_constant=invalid_constant)
         if (not isinstance(body, dict) or not isinstance(body.get("url"), str)
                 or any(body.get(field) not in {None, ""}
                        for field in ("cookies", "video_password", "user_agent"))):
             raise ValueError("invalid canary")
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, RecursionError, ClientDisconnect):
         raise AuthFailure("auth_forbidden", 403) from None
     owned, metadata = _machine_canaries(config)
     allowed = metadata if path == "/api/compatibility/test" else owned

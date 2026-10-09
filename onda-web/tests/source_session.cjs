@@ -115,6 +115,16 @@ const cases = `
   assert.equal(options.video_password, 'fixture-video-password');
   assert.equal(options.user_agent, 'Fixture Browser/1.0');
   assert.equal(options.cookies, youtubeCookies);
+
+  // Reject the same unsafe password characters as the server without rejecting
+  // valid Unicode characters represented by a paired UTF-16 surrogate.
+  for (const password of ['fixture\\u0085password', 'fixture\\ud800password', 'fixture\\udfffpassword']) {
+    $('video-password').value = password;
+    assert.equal(accessOptions(), null);
+    assert.equal(getCookies(), null);
+  }
+  $('video-password').value = 'senha-é-🌊';
+  assert.equal(accessOptions().video_password, 'senha-é-🌊');
   console.log('Source sessions: pasted-export privacy, original byte bounds, platform siblings, aliases and validation scope passed.');
 })()
 `;

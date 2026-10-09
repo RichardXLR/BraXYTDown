@@ -34,6 +34,7 @@
   let phase = 'idle';
   let tab = document.querySelector('[data-workspace-tab][aria-selected="true"]')?.dataset.workspaceTab || 'download';
   let pausedEmbed = false;
+  let signedOut = false;
 
   function publicLink(value, secure = false) {
     try {
@@ -99,7 +100,7 @@
   }
 
   function canPresent() {
-    return phase === 'idle' && tab === 'download' && !document.hidden && !document.body.classList.contains('intro-open');
+    return !signedOut && phase === 'idle' && tab === 'download' && !document.hidden && !document.body.classList.contains('intro-open');
   }
 
   function pause() {
@@ -158,7 +159,10 @@
       showState('unavailable', 'Cole um link HTTP ou HTTPS público válido para carregar o player.');
       return;
     }
-    if (phase !== 'idle') return;
+    if (!canPresent()) return;
+    // Input/change, source updates and tab events may arrive together. Reuse
+    // the request already in flight rather than aborting and extracting twice.
+    if (!force && controller && currentLink === link) return;
     if (!force && currentLink === link && descriptor && Date.now() - descriptorTime < 3 * 60 * 1000) {
       if (pausedEmbed && canPresent()) showDescriptor(descriptor);
       else if (region.dataset.state === 'paused' && canPresent()) showState('ready', descriptor.message || 'Toque em reproduzir para assistir com som.');
@@ -197,10 +201,13 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload), signal: requestController.signal,
       });
+      if (requestVersion !== version || input.value.trim() !== link) return;
+      if (requestController.signal.aborted) throw new DOMException('Prévia cancelada.', 'AbortError');
       const type = response.headers.get('Content-Type') || '';
       if (!type.toLowerCase().includes('application/json')) throw new Error('O serviço de prévia não respondeu. Tente novamente.');
       const data = await response.json();
       if (requestVersion !== version || input.value.trim() !== link) return;
+      if (requestController.signal.aborted) throw new DOMException('Prévia cancelada.', 'AbortError');
       if (!response.ok) throw new Error(data.error || 'Não foi possível preparar a prévia agora.');
       descriptor = data;
       descriptorTime = Date.now();
@@ -248,19 +255,21 @@
   });
   window.addEventListener('onda:tab', (event) => {
     tab = event.detail?.tab || 'download';
-    if (tab !== 'download') pause();
+    if (tab !== 'download') { cancelRequest(); pause(); }
     else refresh();
   });
   const observer = new MutationObserver(() => {
-    if (document.body.classList.contains('intro-open')) pause();
-    else if (pausedEmbed && canPresent() && descriptor) showDescriptor(descriptor);
+    if (document.body.classList.contains('intro-open')) { cancelRequest(); pause(); }
+    else if (canPresent()) refresh();
   });
   observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) pause();
-    else if (pausedEmbed && canPresent() && descriptor) showDescriptor(descriptor);
+    if (document.hidden) { cancelRequest(); pause(); }
+    else refresh();
   });
-  window.addEventListener('onda:auth', (event) => { if (!event.detail?.signedIn) { cancelRequest(); clearMedia(); } });
+  window.addEventListener('onda:auth', (event) => {
+    if (!event.detail?.signedIn) { signedOut = true; clear(); }
+  });
   window.addEventListener('pagehide', () => { cancelRequest(); clearMedia(); observer.disconnect(); });
   window.addEventListener('pageshow', (event) => {
     if (!event.persisted) return;

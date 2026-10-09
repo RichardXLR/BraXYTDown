@@ -212,6 +212,23 @@ def parse_json(raw: bytes):
     return json.loads(raw, object_pairs_hook=unique_object, parse_constant=invalid_constant)
 
 
+def stored_document(raw: bytes) -> AccountDocument:
+    """A persisted snapshot must include every field written by its schema.
+
+    Defaults are for an absent account or a newly validated client draft, not
+    a replacement for missing sections of an existing cloud document. Check
+    nested models too so truncated preferences/history cannot silently reset
+    themselves while retaining an otherwise valid revision and ETag.
+    """
+    document = AccountDocument.model_validate(parse_json(raw))
+    sections = [document, document.state, document.state.preferences, document.state.draft]
+    for entry in document.state.history:
+        sections.extend((entry, entry.options))
+    if any(section.model_fields_set != set(type(section).model_fields) for section in sections):
+        raise ValueError("incomplete account document")
+    return document
+
+
 @dataclass(frozen=True)
 class BlobCredentials:
     store_id: str
@@ -313,7 +330,7 @@ class BlobAccountStore:
         if not etag or etag.startswith("W/") or len(etag) > 256 or any(ord(character) < 32 for character in etag):
             raise unavailable()
         try:
-            document = AccountDocument.model_validate(parse_json(body))
+            document = stored_document(body)
             encode_document(document)
         except (ValidationError, ValueError, TypeError, UnicodeError, RecursionError, AudioError):
             raise unavailable("account_storage_invalid") from None

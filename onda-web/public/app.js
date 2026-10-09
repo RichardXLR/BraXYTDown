@@ -30,6 +30,7 @@
   const EXAMPLE_URL = new URL('/canary.wav', window.location.origin).href;
   const VIDEO_EXAMPLE_URL = new URL('/canary.mp4', window.location.origin).href;
   const MAX_COOKIE_BYTES = 65536;
+  const MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024;
   let cookieValidationController = null;
   let sessionImportGeneration = 0;
   let validatedCookieLink = '';
@@ -89,6 +90,7 @@
       const response = await window.OndaAuth.fetch('/api/compatibility/providers', { signal: controller.signal });
       if (!response.ok) throw new Error('catalog unavailable');
       const data = await response.json();
+      if (sessionLocked || providersController !== controller || controller.signal.aborted) return;
       if (!Array.isArray(data.providers)) throw new Error('catalog invalid');
       const selector = $('compatibility-platform');
       const selected = selector.value;
@@ -125,9 +127,12 @@
     try {
       const response = await window.OndaAuth.fetch('/api/maintenance', { signal: controller.signal, cache: 'no-store' });
       if (!response.ok) throw new Error('maintenance unavailable');
-      renderMaintenance(await response.json());
+      const data = await response.json();
+      if (sessionLocked || maintenanceController !== controller || controller.signal.aborted) return;
+      renderMaintenance(data);
       maintenanceLoadedAt = Date.now();
     } catch {
+      if (sessionLocked || maintenanceController !== controller) return;
       renderMaintenance({ state: 'verification_unavailable', message: 'Não foi possível confirmar a manutenção nesta consulta. Atualize o status para tentar novamente.' });
     } finally { window.clearTimeout(timer); maintenanceController = null; }
   }
@@ -312,7 +317,7 @@
   function accessOptions(report = false) {
     const password = $('video-password').value;
     const agent = $('session-user-agent').value.trim();
-    const invalidPassword = password.length > 256 || /[\u0000-\u001f\u007f]/.test(password);
+    const invalidPassword = password.length > 256 || /[\u0000-\u001f\u007f-\u009f\ud800-\udfff]/u.test(password);
     const invalidAgent = agent.length > 512 || /[^\x20-\x7e]/.test(agent);
     if (invalidPassword || invalidAgent) {
       if (report) {
@@ -321,7 +326,7 @@
         $('advanced-options').open = true;
         window.OndaUI?.activate('download');
         field.focus();
-        announce(invalidPassword ? 'A senha do vídeo deve ter até 256 caracteres, sem quebras de linha.' : 'A identificação deve ter até 512 caracteres de texto simples, sem quebras de linha.');
+        announce(invalidPassword ? 'A senha do vídeo deve ter até 256 caracteres, sem caracteres de controle.' : 'A identificação deve ter até 512 caracteres de texto simples, sem quebras de linha.');
       }
       return null;
     }
@@ -639,20 +644,33 @@
 
   function startOperation(kind) {
     timedOut = false;
-    activeController = new AbortController();
+    const controller = new AbortController();
+    activeController = controller;
     timeoutId = window.setTimeout(() => {
+      if (activeController !== controller || sessionLocked) return;
       timedOut = true;
-      activeController?.abort();
+      controller.abort();
     }, 280000);
     setBusy(kind);
-    return activeController;
+    return controller;
   }
 
-  function endOperation() {
+  function ownsOperation(controller) {
+    return activeController === controller && !sessionLocked;
+  }
+
+  function ensureOperation(controller) {
+    if (!ownsOperation(controller) || controller.signal.aborted) {
+      throw new DOMException('Operação cancelada.', 'AbortError');
+    }
+  }
+
+  function endOperation(controller) {
+    if (activeController !== controller) return;
     if (timeoutId) window.clearTimeout(timeoutId);
     timeoutId = null;
     activeController = null;
-    setBusy(null);
+    if (!sessionLocked) setBusy(null);
   }
 
   async function responseError(response) {
@@ -735,14 +753,16 @@
         body: JSON.stringify(withCookies({ url, media_type: selectedMediaType() }, cookies)),
         signal: controller.signal,
       });
+      ensureOperation(controller);
       if (!response.ok) throw await responseError(response);
       const data = await response.json();
+      ensureOperation(controller);
       renderMetadata(data, url);
       showStatus('info', 'Link analisado', `Escolha o formato e clique em “Baixar ${mediaLabel()}” para continuar.`);
     } catch (error) {
-      showOperationError(error);
+      if (ownsOperation(controller)) showOperationError(controller.signal.aborted ? new DOMException('Operação cancelada.', 'AbortError') : error);
     } finally {
-      endOperation();
+      endOperation(controller);
     }
   }
 
@@ -774,6 +794,57 @@
     try { return decodeURIComponent(header); } catch { return header; }
   }
 
+  async function receiveDownload(response, controller, contentType, onProgress) {
+    ensureOperation(controller);
+    const lengthHeader = response.headers.get('Content-Length');
+    const encoding = (response.headers.get('Content-Encoding') || 'identity').trim().toLowerCase();
+    // Fetch transparently decodes compressed responses. Their Content-Length
+    // describes the encoded wire bytes and cannot verify the decoded Blob.
+    const total = encoding === 'identity' && /^\d+$/.test(lengthHeader || '') ? Number(lengthHeader) : 0;
+    const knownLength = Number.isSafeInteger(total) && total > 0;
+    if (knownLength && total > MAX_DOWNLOAD_BYTES) {
+      try { await response.body?.cancel(); } catch { /* The rejection is already final. */ }
+      throw new Error('O arquivo ultrapassa 100 MB. Escolha uma resolução menor ou ajuste o trecho.');
+    }
+    let blob;
+    if (response.body && typeof response.body.getReader === 'function') {
+      const reader = response.body.getReader();
+      const chunks = [];
+      let received = 0;
+      let complete = false;
+      const cancelReader = () => {
+        try { Promise.resolve(reader.cancel()).catch(() => {}); } catch { /* Already released. */ }
+      };
+      controller.signal.addEventListener('abort', cancelReader, { once: true });
+      try {
+        while (true) {
+          ensureOperation(controller);
+          const { done, value } = await reader.read();
+          ensureOperation(controller);
+          if (done) break;
+          received += value.byteLength;
+          if (received > MAX_DOWNLOAD_BYTES) throw new Error('O arquivo ultrapassa 100 MB. Escolha uma resolução menor ou ajuste o trecho.');
+          if (knownLength && received > total) throw new Error('A transferência retornou um tamanho inesperado. Tente novamente.');
+          chunks.push(value);
+          onProgress?.(received, knownLength ? total : 0);
+        }
+        if (knownLength && received !== total) throw new Error('A transferência ficou incompleta. Tente novamente.');
+        blob = new Blob(chunks, { type: contentType });
+        complete = true;
+      } finally {
+        controller.signal.removeEventListener('abort', cancelReader);
+        if (!complete) cancelReader();
+        reader.releaseLock();
+      }
+    } else {
+      blob = await response.blob();
+      ensureOperation(controller);
+      if (blob.size > MAX_DOWNLOAD_BYTES) throw new Error('O arquivo ultrapassa 100 MB. Escolha uma resolução menor ou ajuste o trecho.');
+      if (knownLength && blob.size !== total) throw new Error('A transferência ficou incompleta. Tente novamente.');
+    }
+    return blob;
+  }
+
   async function download(event) {
     event.preventDefault();
     if (activeController) return;
@@ -799,6 +870,7 @@
         body: JSON.stringify(withCookies({ url, media_type: type, format, quality, ...options }, cookies)),
         signal: controller.signal,
       });
+      ensureOperation(controller);
       if (!response.ok) throw await responseError(response);
       const contentType = response.headers.get('Content-Type') || 'application/octet-stream';
       if (contentType.includes('application/json')) throw await responseError(response);
@@ -809,34 +881,21 @@
       if (!allowedType) {
         throw new Error(`O serviço retornou uma resposta inesperada em vez do ${mediaLabel(type)}. Tente novamente em alguns instantes.`);
       }
-      const lengthHeader = response.headers.get('Content-Length');
-      const total = lengthHeader ? Number(lengthHeader) : 0;
-      const knownLength = Number.isFinite(total) && total > 0;
-      let blob;
-      if (response.body && typeof response.body.getReader === 'function') {
-        const reader = response.body.getReader();
-        const chunks = [];
-        let received = 0;
-        let lastUpdate = 0;
-        statusTitle.textContent = `Recebendo seu ${mediaLabel(type)}`;
-        statusMessage.textContent = 'A conversão está pronta. Recebendo o arquivo…';
-        if (knownLength) progressTrack.classList.remove('indeterminate');
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          chunks.push(value);
-          received += value.byteLength;
-          const now = Date.now();
-          if (now - lastUpdate > 250 || (knownLength && received >= total)) {
-            statusMessage.textContent = knownLength ? `${formatBytes(received)} de ${formatBytes(total)} recebidos.` : `${formatBytes(received)} recebidos. O tamanho total não foi informado.`;
-            if (knownLength) progressFill.style.width = `${Math.min(100, received / total * 100)}%`;
-            lastUpdate = now;
+      let lastUpdate = 0;
+      statusTitle.textContent = `Recebendo seu ${mediaLabel(type)}`;
+      statusMessage.textContent = 'A conversão está pronta. Recebendo o arquivo…';
+      const blob = await receiveDownload(response, controller, contentType, (received, total) => {
+        const now = Date.now();
+        if (now - lastUpdate > 250 || (total && received >= total)) {
+          statusMessage.textContent = total ? `${formatBytes(received)} de ${formatBytes(total)} recebidos.` : `${formatBytes(received)} recebidos. O tamanho total não foi informado.`;
+          if (total) {
+            progressTrack.classList.remove('indeterminate');
+            progressFill.style.width = `${Math.min(100, received / total * 100)}%`;
           }
+          lastUpdate = now;
         }
-        blob = new Blob(chunks, { type: contentType });
-      } else {
-        blob = await response.blob();
-      }
+      });
+      ensureOperation(controller);
       if (blob.size === 0) throw new Error(`A fonte não retornou um arquivo de ${mediaLabel(type)}. Tente outro link.`);
       const filename = filenameFromHeader(response.headers.get('Content-Disposition'), format);
       const title = titleFromHeader(response.headers.get('X-Media-Title') || response.headers.get('X-Audio-Title')) || (metadataURL === url && metadata?.title) || filename.replace(/\.[^.]+$/, '');
@@ -857,10 +916,12 @@
       saveButton.focus({ preventScroll: true });
       addHistory({ url, media_type: type, format, quality, options, title: String(title), timestamp: Date.now() });
     } catch (error) {
-      releaseFile();
-      showOperationError(error);
+      if (ownsOperation(controller)) {
+        releaseFile();
+        showOperationError(controller.signal.aborted ? new DOMException('Operação cancelada.', 'AbortError') : error);
+      }
     } finally {
-      endOperation();
+      endOperation(controller);
     }
   }
 
@@ -1047,9 +1108,11 @@
     try {
       const response = await window.OndaAuth.fetch('/api/compatibility', { signal: controller.signal, cache: 'no-store' });
       if (!response.ok) throw await responseError(response);
-      renderCompatibility(await response.json());
+      const data = await response.json();
+      if (sessionLocked || compatibilityStatusController !== controller || controller.signal.aborted) return;
+      renderCompatibility(data);
     } catch (error) {
-      if (compatibilityStatusController !== controller) return;
+      if (sessionLocked || compatibilityStatusController !== controller) return;
       $('compatibility-state').textContent = 'Não foi possível consultar o serviço';
       $('compatibility-dot').classList.remove('available');
       $('compatibility-dot').classList.add('unavailable');
@@ -1098,8 +1161,10 @@
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(withCookies({ url, media_type: selectedMediaType(), ...(provider ? { provider } : {}) }, cookies)), signal: controller.signal,
       });
+      ensureOperation(controller);
       if (!response.ok) throw await responseError(response);
       const data = await response.json();
+      ensureOperation(controller);
       const success = data.ok === true;
       const elapsed = Number(data.elapsedMs);
       const elapsedText = Number.isFinite(elapsed) && elapsed >= 0 ? ` · ${(elapsed / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} s` : '';
@@ -1110,12 +1175,13 @@
       showCompatibilityResult(success ? 'success' : 'error', success ? 'Metadados acessíveis nesta verificação' : 'A fonte não passou no teste',
         `${success ? `${detailText ? `${detailText} · ` : ''}Teste de acesso concluído. A conversão e o download não foram testados.` : errorText}${elapsedText}`);
     } catch (error) {
-      const aborted = error.name === 'AbortError';
+      if (!ownsOperation(controller)) return;
+      const aborted = controller.signal.aborted || error.name === 'AbortError';
       const message = aborted ? timedOut ? 'O limite de espera foi atingido. Você pode tentar novamente manualmente.' : 'Você pode escolher outro link e iniciar um novo teste.'
         : error instanceof TypeError ? 'Não conseguimos conectar ao serviço. Verifique sua conexão.' : error.message || 'Não foi possível concluir a verificação.';
       showCompatibilityResult(aborted && !timedOut ? 'info' : 'error', aborted && !timedOut ? 'Teste cancelado' : 'Não foi possível concluir o teste', message);
     } finally {
-      endOperation();
+      endOperation(controller);
     }
   }
 

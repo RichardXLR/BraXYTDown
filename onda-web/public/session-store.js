@@ -10,6 +10,7 @@
   const encoder = new TextEncoder();
   const decoder = new TextDecoder('utf-8', { fatal: true });
   const scopes = new Map();
+  const connections = new WeakMap();
   let databasePromise = null;
   let persistenceRequested = false;
 
@@ -82,9 +83,14 @@
     return record;
   }
 
+  function invalidateConnection(database) {
+    // A delayed event from an old connection must not discard its replacement.
+    if (databasePromise === connections.get(database)) databasePromise = null;
+  }
+
   function connect() {
     if (databasePromise) return databasePromise;
-    databasePromise = new Promise((resolve, reject) => {
+    const pending = new Promise((resolve, reject) => {
       let request;
       let finished = false;
       const timer = setTimeout(() => finish(null, failure('storage')), 10000);
@@ -94,24 +100,36 @@
         clearTimeout(timer);
         if (error) reject(error); else resolve(database);
       }
-      try { request = indexedDB.open(DATABASE, VERSION); }
+      // Existing, compatible schema upgrades do not invalidate encrypted v1 records.
+      // Omitting the version avoids trying to downgrade another tab's database.
+      try { request = indexedDB.open(DATABASE); }
       catch { finish(null, failure('storage')); return; }
       request.onupgradeneeded = () => {
+        if (finished) { try { request.transaction.abort(); } catch {} return; }
         if (!request.result.objectStoreNames.contains(STORE)) {
           request.result.createObjectStore(STORE, { keyPath: 'id' });
         }
       };
       request.onsuccess = () => {
         const database = request.result;
-        database.onversionchange = () => { database.close(); databasePromise = null; };
-        database.onclose = () => { databasePromise = null; };
+        if (finished) { database.close(); return; }
+        try {
+          if (!database.objectStoreNames.contains(STORE)
+            || database.transaction(STORE, 'readonly').objectStore(STORE).keyPath !== 'id') {
+            database.close(); finish(null, failure('storage')); return;
+          }
+        } catch { database.close(); finish(null, failure('storage')); return; }
+        connections.set(database, pending);
+        database.onversionchange = () => { invalidateConnection(database); database.close(); };
+        database.onclose = () => invalidateConnection(database);
         finish(database);
       };
       request.onerror = () => finish(null, failure('storage'));
       request.onblocked = () => finish(null, failure('storage'));
     });
-    databasePromise.catch(() => { databasePromise = null; });
-    return databasePromise;
+    databasePromise = pending;
+    pending.catch(() => { if (databasePromise === pending) databasePromise = null; });
+    return pending;
   }
 
   // Mutators are synchronous: encryption finishes before opening a write transaction.
@@ -125,6 +143,12 @@
         tx = mode === 'readwrite'
           ? database.transaction(STORE, mode, { durability: 'strict' })
           : database.transaction(STORE, mode);
+      } catch (caught) {
+        // Retrying is safe only before a transaction (and therefore any mutation) starts.
+        reject(caught?.name === 'InvalidStateError' ? caught : sanitized(caught));
+        return;
+      }
+      try {
         timer = setTimeout(() => { error = failure('storage'); try { tx.abort(); } catch {} }, 10000);
         const objectStore = tx.objectStore(STORE);
         const request = objectStore.get(id);
@@ -145,11 +169,31 @@
     });
   }
 
-  function enqueue(state, operation) {
+  async function access(id, mode, mutate = null) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const database = await connect();
+      try { return await transaction(database, id, mode, mutate); }
+      catch (error) {
+        if (error?.name !== 'InvalidStateError' || attempt > 0) throw sanitized(error);
+        invalidateConnection(database);
+      }
+    }
+  }
+
+  function releaseScope(id, state) {
+    if (state.handles === 0 && state.pending === 0 && scopes.get(id) === state) scopes.delete(id);
+  }
+
+  function enqueue(id, state, operation) {
+    state.pending += 1;
     const pending = state.tail.then(operation, operation);
     // The shared queue must never retain load()'s decrypted return value.
     state.tail = pending.then(() => undefined, () => undefined);
-    return pending.catch(error => { throw sanitized(error); });
+    return pending.then(result => {
+      state.pending -= 1; releaseScope(id, state); return result;
+    }, error => {
+      state.pending -= 1; releaseScope(id, state); throw sanitized(error);
+    });
   }
 
   function aad(id, epoch) {
@@ -170,22 +214,24 @@
     if (typeof accountId !== 'string' || !accountId.trim() || accountId.length > 256
       || !wellFormed(accountId)) throw failure('invalid');
     let id;
-    let database;
+    let state;
     try {
       const hash = await crypto.subtle.digest('SHA-256', encoder.encode(`${DATABASE}:account:${accountId}`));
       id = [...new Uint8Array(hash)].map(value => value.toString(16).padStart(2, '0')).join('');
-      database = await connect();
-      await transaction(database, id, 'readwrite', (record, objectStore) => {
+      state = scopes.get(id);
+      if (!state) {
+        state = { tail: Promise.resolve(), removal: 0, handles: 0, pending: 0 };
+        scopes.set(id, state);
+      }
+      state.handles += 1;
+      await access(id, 'readwrite', (record, objectStore) => {
         if (record === undefined) { objectStore.put(emptyRecord(id)); return; }
         // Keep an unreadable record intact until the user explicitly removes it.
         // Opening still returns a handle so remove() can repair corrupted storage.
       });
-    } catch (error) { throw sanitized(error); }
-
-    let state = scopes.get(id);
-    if (!state) {
-      state = { tail: Promise.resolve(), removal: 0 };
-      scopes.set(id, state);
+    } catch (error) {
+      if (state) { state.handles -= 1; releaseScope(id, state); }
+      throw sanitized(error);
     }
     let closed = false;
     const assertOpen = () => { if (closed) throw failure('closed'); };
@@ -193,13 +239,13 @@
       assertOpen();
       if (state.removal !== generation) throw failure('removed');
     };
-    const read = async () => checkedRecord(await transaction(database, id, 'readonly'), id);
+    const read = async () => checkedRecord(await access(id, 'readonly'), id);
 
     return Object.freeze({
       load() {
         try { assertOpen(); } catch (error) { return Promise.reject(error); }
         const generation = state.removal;
-        return enqueue(state, async () => {
+        return enqueue(id, state, async () => {
           assertCurrent(generation);
           for (let attempt = 0; attempt < 3; attempt += 1) {
             const record = await read();
@@ -234,7 +280,7 @@
         // Capture the removal epoch immediately, even while an older operation is queued.
         const baseline = read();
         baseline.catch(() => {});
-        return enqueue(state, async () => {
+        return enqueue(id, state, async () => {
           const start = await baseline;
           assertCurrent(generation);
           const current = await read();
@@ -247,7 +293,7 @@
           const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv,
             additionalData: aad(id, start.epoch) }, key, encoder.encode(JSON.stringify(payload)));
           assertCurrent(generation);
-          await transaction(database, id, 'readwrite', (record, objectStore) => {
+          await access(id, 'readwrite', (record, objectStore) => {
             assertCurrent(generation);
             checkedRecord(record, id);
             if (record.epoch !== start.epoch) throw failure('removed');
@@ -261,15 +307,18 @@
       remove() {
         try { assertOpen(); } catch (error) { return Promise.reject(error); }
         state.removal += 1;
-        return enqueue(state, async () => {
-          await transaction(database, id, 'readwrite', (_record, objectStore) => {
+        return enqueue(id, state, async () => {
+          await access(id, 'readwrite', (_record, objectStore) => {
             // Removal also repairs an unreadable record; old ciphertext and its key disappear together.
             objectStore.put(emptyRecord(id));
           });
         });
       },
 
-      close() { closed = true; },
+      close() {
+        if (closed) return;
+        closed = true; state.handles -= 1; releaseScope(id, state);
+      },
     });
   }
 

@@ -13,12 +13,12 @@ import threading
 import urllib.parse
 from typing import Literal
 
+from anyio import CancelScope
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from starlette.background import BackgroundTask
 
 from .engine import FORMATS, VIDEO_FORMATS, MediaSettings, SessionOptions, VIDEO_DURATION, LOSSLESS, MAX_DURATION, LOSSLESS_DURATION, inspect_media, prepare_download, runtime_options, source_for
 from .security import AudioError, Guard, public_url
@@ -181,19 +181,60 @@ async def run_guarded(request: Request, guard: Guard, function, *args):
             if await request.is_disconnected():
                 guard.abort()
             if guard.remaining <= 0:
-                guard.error = AudioError("A origem demorou demais. Tente um vídeo menor ou outro link.", "timeout", 504)
+                guard.error = guard.error or AudioError("A origem demorou demais. Tente um vídeo menor ou outro link.", "timeout", 504)
                 guard.abort()
         return await asyncio.shield(task)
     except BaseException:
         guard.abort()
         # Network sockets have an 8 s timeout and FFmpeg is checked every 100 ms.
-        try:
-            await asyncio.shield(task)
-        except BaseException:
-            pass
+        await settle_worker(task)
         raise
     finally:
         guard.close_sockets()
+
+
+async def settle_worker(task: asyncio.Task):
+    """A second cancellation must never abandon a worker using local files.
+
+    AnyIO middleware can repeatedly cancel each await within its cancel scope.
+    Shield that scope and also absorb explicit asyncio Task.cancel() calls until
+    the already-aborted worker has exited. The caller then re-raises its original
+    exception; retrieving the worker result prevents unhandled-task warnings.
+    """
+    with CancelScope(shield=True):
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                continue
+            except BaseException:
+                break
+        try:
+            task.result()
+        except BaseException:
+            pass
+
+
+class DownloadResponse(StreamingResponse):
+    """Own the iterator and temporary files for the complete ASGI lifecycle."""
+
+    def __init__(self, content, *, cleanup, **kwargs):
+        super().__init__(content, **kwargs)
+        self.cleanup = cleanup
+
+    async def __call__(self, scope, receive, send):
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            # A failed header send happens before the generator ever starts.
+            # A failed body send can instead leave it suspended with an open
+            # file. Close it explicitly, then run the idempotent cleanup even
+            # when no background task or generator-finally was reached.
+            with CancelScope(shield=True):
+                try:
+                    await self.body_iterator.aclose()
+                finally:
+                    self.cleanup()
 
 
 def acquire_slot():
@@ -294,8 +335,8 @@ async def download_link(body: DownloadInput, request: Request):
                 cleanup()
 
         mime = VIDEO_FORMATS[body.format][2] if body.media_type == "video" else FORMATS[body.format][1]
-        return StreamingResponse(stream_file(), media_type=mime,
-                                 headers=headers, background=BackgroundTask(cleanup))
+        return DownloadResponse(stream_file(), cleanup=cleanup,
+                                media_type=mime, headers=headers)
     except BaseException:
         cleanup()
         raise

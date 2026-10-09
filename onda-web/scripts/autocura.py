@@ -1073,6 +1073,15 @@ class AutoCura:
         # A prior recovery may already have restored the known good domain.
         # Vercel can reject a redundant rollback, so check the actual alias first.
         current = self.provider.current()
+        candidate = pending.get("candidate") or {}
+        if current and current["id"] not in {previous["id"], candidate.get("id")}:
+            # An interrupted job may have been superseded by a later reviewed
+            # publication. Never roll that unrelated deployment back; keep the
+            # pending journal intact for an administrator to reconcile it.
+            self.state["status"] = "recovery_requires_review"
+            self.state["last_error"] = "production_changed_during_recovery"
+            self.save(durable=True)
+            raise CureError("production_changed_during_recovery")
         if not current or current["id"] != previous["id"]:
             self.provider.rollback(previous)
         self.quarantine(pending.get("versions", {}), "unconfirmed_interrupted_promotion", pending.get("candidate"))

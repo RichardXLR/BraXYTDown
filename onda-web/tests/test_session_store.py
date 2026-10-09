@@ -330,3 +330,138 @@ def test_browser_persistence_request_is_best_effort_and_not_a_save_failure(vault
       return {requested, saved: (await vault.load()).cookies};
     }""")
     assert result == {"requested": 1, "saved": "second-cookie"}
+
+
+def capture_vault_connections(page):
+    page.add_init_script("""(() => {
+      const original = indexedDB.open.bind(indexedDB);
+      window.vaultConnections = [];
+      window.vaultOpenRequests = 0;
+      indexedDB.open = (...args) => {
+        window.vaultOpenRequests += 1;
+        const request = original(...args);
+        request.addEventListener('success', () => window.vaultConnections.push(request.result));
+        return request;
+      };
+    })();""")
+    page.reload()
+
+
+def test_existing_handle_reconnects_after_actual_connection_close(vault_page):
+    page, _, _ = vault_page
+    capture_vault_connections(page)
+    result = page.evaluate("""async () => {
+      const vault = await OndaCookieStore.open('fixture-account-a');
+      await vault.save('saved-before-close');
+      vaultConnections.at(-1).close();
+      const restored = (await vault.load()).cookies;
+      vaultConnections.at(-1).close();
+      await vault.save('saved-after-reconnect');
+      const updated = (await vault.load()).cookies;
+      vaultConnections.at(-1).close();
+      await vault.remove();
+      return {restored, updated, removed: await vault.load() === null, connections: vaultOpenRequests};
+    }""")
+    assert result == {"restored": "saved-before-close", "updated": "saved-after-reconnect",
+                      "removed": True, "connections": 4}
+
+
+def test_existing_handle_reconnects_after_real_compatible_version_upgrade(vault_page):
+    page, _, _ = vault_page
+    capture_vault_connections(page)
+    result = page.evaluate("""async () => {
+      const vault = await OndaCookieStore.open('fixture-account-a');
+      await vault.save('saved-before-upgrade');
+      const previous = vaultConnections.at(-1);
+      const upgraded = await new Promise((resolve, reject) => {
+        const request = indexedDB.open('onda.session.v1', 2);
+        request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+      });
+      upgraded.close();
+      const restored = (await vault.load()).cookies;
+      await vault.save('saved-after-upgrade');
+      const updated = (await vault.load()).cookies;
+      await vault.remove();
+      return {restored, updated, removed: await vault.load() === null,
+        previousVersion: previous.version, currentVersion: vaultConnections.at(-1).version};
+    }""")
+    assert result == {"restored": "saved-before-upgrade", "updated": "saved-after-upgrade",
+                      "removed": True, "previousVersion": 1, "currentVersion": 2}
+
+
+def test_late_old_connection_event_does_not_discard_reconnected_database(vault_page):
+    page, _, _ = vault_page
+    capture_vault_connections(page)
+    result = page.evaluate("""async () => {
+      const vault = await OndaCookieStore.open('fixture-account-a');
+      await vault.save('saved-cookie');
+      const previous = vaultConnections.at(-1);
+      previous.close();
+      await vault.load();
+      const opens = vaultOpenRequests;
+      // Browsers may deliver an old connection's close notification after its replacement opens.
+      previous.dispatchEvent(new Event('close'));
+      await vault.save('replacement-cookie');
+      return {extraConnections: vaultOpenRequests - opens, restored: (await vault.load()).cookies};
+    }""")
+    assert result == {"extraConnections": 0, "restored": "replacement-cookie"}
+
+
+def test_reopening_while_removal_is_queued_keeps_cancellation_and_saved_data(vault_page):
+    page, _, _ = vault_page
+    result = page.evaluate("""async () => {
+      const first = await OndaCookieStore.open('fixture-account-a');
+      await first.save('previous-cookie');
+      let resume, reached;
+      const original = crypto.subtle.encrypt.bind(crypto.subtle);
+      const started = new Promise(resolve => { reached = resolve; });
+      crypto.subtle.encrypt = async (...args) => {
+        reached(); await new Promise(resolve => { resume = resolve; }); return original(...args);
+      };
+      const saving = first.save('unfinished-cookie').then(() => 'saved', error => error.code);
+      await started;
+      const removal = first.remove(); first.close(); first.close();
+      const reopened = await OndaCookieStore.open('fixture-account-a');
+      const obsolete = reopened.save('queued-before-removal-completes').then(() => 'saved', error => error.code);
+      resume();
+      const outcomes = await Promise.all([saving, obsolete]); await removal;
+      crypto.subtle.encrypt = original;
+      const absent = await reopened.load() === null;
+      await reopened.save('explicit-new-cookie'); reopened.close();
+      const fresh = await OndaCookieStore.open('fixture-account-a');
+      return {outcomes, absent, saved: (await fresh.load()).cookies};
+    }""")
+    assert result == {"outcomes": ["closed", "removed"], "absent": True, "saved": "explicit-new-cookie"}
+
+
+def test_idle_account_queues_are_released_but_pending_removals_remain_tracked(vault_page):
+    page, _, _ = vault_page
+    page.add_init_script("""(() => {
+      const original = Map.prototype.set;
+      Map.prototype.set = function (key, value) {
+        if (typeof key === 'string' && /^[a-f0-9]{64}$/.test(key)
+          && value?.tail instanceof Promise && Number.isInteger(value.removal)) window.accountQueues = this;
+        return original.call(this, key, value);
+      };
+    })();""")
+    page.reload()
+    result = page.evaluate("""async () => {
+      const first = await OndaCookieStore.open('fixture-account-a');
+      await first.save('preserved-cookie');
+      const second = await OndaCookieStore.open('fixture-account-a');
+      first.close(); first.close();
+      const shared = accountQueues.size;
+      second.close();
+      const idle = accountQueues.size;
+      const reopened = await OndaCookieStore.open('fixture-account-a');
+      const restored = (await reopened.load()).cookies;
+      const removal = reopened.remove(); reopened.close();
+      const pending = accountQueues.size;
+      await removal;
+      const released = accountQueues.size;
+      const fresh = await OndaCookieStore.open('fixture-account-a');
+      const removed = await fresh.load() === null; fresh.close();
+      return {shared, idle, restored, pending, released, removed, final: accountQueues.size};
+    }""")
+    assert result == {"shared": 1, "idle": 0, "restored": "preserved-cookie", "pending": 1,
+                      "released": 0, "removed": True, "final": 0}

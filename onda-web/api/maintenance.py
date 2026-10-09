@@ -6,6 +6,7 @@ No request performs updates or receives administrator credentials.
 """
 from __future__ import annotations
 import asyncio
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import json
 import threading
@@ -74,7 +75,8 @@ def inspect_maintenance():
                   message='O workflow está agendado. A ativação aguarda uma execução real bem-sucedida.')
     try:
         runs = read_json(api + '/runs?per_page=1').get('workflow_runs', [])
-        report = read_json(f'https://raw.githubusercontent.com/{REPOSITORY}/main/onda-web/public/autocura.json')
+        if not isinstance(runs, list):
+            raise ValueError('invalid_github_runs')
         latest = runs[0] if runs else None
         if not isinstance(latest, dict):
             return result
@@ -86,14 +88,21 @@ def inspect_maintenance():
         if latest.get('conclusion') != 'success':
             result.update(state='attention_required', message='A última execução de manutenção falhou. Consulte o workflow; a configuração ou compatibilidade precisa de revisão.')
             return result
-        execution = report.get('execution') or {}
+        # Pending/failed runs are already authoritative evidence. A missing
+        # report must not hide their status, and only a completed successful
+        # run needs its matching persisted release report.
+        report = read_json(f'https://raw.githubusercontent.com/{REPOSITORY}/main/onda-web/public/autocura.json')
+        execution = report.get('execution')
+        if not isinstance(execution, dict):
+            execution = {}
         last_report = report.get('last_check')
         gate = report.get('release_gate') or (last_report.get('release_gate') if isinstance(last_report, dict) else None)
-        result['release_gate'] = gate
+        result['release_gate'] = gate if isinstance(gate, dict) else None
         result['quarantined_versions'] = len(report.get('quarantine', [])) if isinstance(report.get('quarantine'), list) else 0
         result['components'] = report.get('components')
         # IDs must agree: an old successful report cannot validate a newer job.
-        if (report.get('automation_enabled') is True and execution.get('repository') == REPOSITORY
+        if (report.get('automation_enabled') is True and latest.get('id') is not None
+                and execution.get('repository') == REPOSITORY
                 and str(execution.get('run_id')) == str(latest.get('id'))):
             result.update(automated=True, state='active', message='AutoCura ativo no GitHub: verificação diária, testes de compatibilidade e publicação das versões aprovadas.')
         else:
@@ -107,10 +116,10 @@ def maintenance_status():
     global _CACHE, _CACHE_TIME
     with _LOCK:
         if _CACHE is not None and time.monotonic() - _CACHE_TIME < CACHE_SECONDS:
-            return dict(_CACHE)
+            return deepcopy(_CACHE)
         _CACHE = inspect_maintenance()
         _CACHE_TIME = time.monotonic()
-        return dict(_CACHE)
+        return deepcopy(_CACHE)
 
 
 def register(app):

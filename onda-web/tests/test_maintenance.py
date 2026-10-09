@@ -83,3 +83,69 @@ def test_outage_and_cache_are_honest_and_bounded(monkeypatch):
     assert first == second
     assert first['state'] == 'verification_unavailable' and first['automated'] is False
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize('run,expected', [
+    ({'id': 42, 'status': 'in_progress', 'conclusion': None}, 'checking'),
+    ({'id': 42, 'status': 'completed', 'conclusion': 'failure'}, 'attention_required'),
+])
+def test_missing_report_does_not_hide_pending_or_failed_workflow(monkeypatch, run, expected):
+    calls = []
+
+    def read(url):
+        calls.append(url)
+        if url.endswith('onda-autocura.yml'):
+            return {'state': 'active'}
+        if '/runs?' in url:
+            return {'workflow_runs': [run]}
+        raise urllib.error.HTTPError(url, 404, 'Not Found', {}, None)
+
+    monkeypatch.setattr(maintenance, 'read_json', read)
+    result = maintenance.inspect_maintenance()
+    assert result['state'] == expected and result['automated'] is False
+    assert result['run']['id'] == 42
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize('execution', [['unexpected'], 'invalid', 42, True, None])
+def test_invalid_execution_report_never_crashes_or_enables_automation(monkeypatch, execution):
+    remote_evidence(monkeypatch,
+        run={'id': 42, 'status': 'completed', 'conclusion': 'success'},
+        report={'automation_enabled': True, 'execution': execution})
+    result = maintenance.inspect_maintenance()
+    assert result['state'] == 'report_unconfirmed' and result['automated'] is False
+
+
+def test_missing_run_identifiers_cannot_confirm_a_report(monkeypatch):
+    remote_evidence(monkeypatch,
+        run={'status': 'completed', 'conclusion': 'success'},
+        report={'automation_enabled': True, 'execution': {'repository': maintenance.REPOSITORY}})
+    result = maintenance.inspect_maintenance()
+    assert result['state'] == 'report_unconfirmed' and result['automated'] is False
+
+
+@pytest.mark.parametrize('runs', [None, 'invalid', {'0': {'id': 42}}])
+def test_invalid_workflow_runs_fail_closed(monkeypatch, runs):
+    monkeypatch.setattr(maintenance, 'read_json', lambda url:
+        {'state': 'active'} if url.endswith('onda-autocura.yml') else {'workflow_runs': runs})
+    result = maintenance.inspect_maintenance()
+    assert result['state'] == 'verification_unavailable' and result['automated'] is False
+
+
+def test_cached_release_gate_and_run_cannot_be_mutated_by_a_caller(monkeypatch):
+    calls = []
+
+    def inspect():
+        calls.append(True)
+        return {'state': 'active', 'run': {'id': 42},
+                'release_gate': {'accepted_existing_blocks': ['youtube_canary']}}
+
+    monkeypatch.setattr(maintenance, 'inspect_maintenance', inspect)
+    monkeypatch.setattr(maintenance, '_CACHE', None)
+    first = maintenance.maintenance_status()
+    first['run']['id'] = 7
+    first['release_gate']['accepted_existing_blocks'].clear()
+    second = maintenance.maintenance_status()
+    assert second['run']['id'] == 42
+    assert second['release_gate']['accepted_existing_blocks'] == ['youtube_canary']
+    assert calls == [True]

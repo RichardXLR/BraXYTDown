@@ -52,6 +52,7 @@
   let maximumWaitTimer = null;
   let retryTimer = null;
   let inFlight = null;
+  let refreshInFlight = null;
   let failureCount = 0;
   let lastRemoteRead = 0;
   let syncState = 'loading';
@@ -295,6 +296,7 @@
             await response.body?.cancel();
             const remote = await readRemote();
             if (generation !== authGeneration) return false;
+            if (remote.revision < revision) continue;
             revision = remote.revision;
             state = mergePending(remote.state, state);
             saveCache(); announceState();
@@ -303,6 +305,10 @@
           if (!response.ok) { await response.body?.cancel(); throw new Error('A sincronização ficou pendente.'); }
           const saved = validatedSnapshot(await response.json());
           if (generation !== authGeneration) return false;
+          // A newer GET or another tab can arrive before this PUT's response.
+          // Its pending overlay is still local intent; keep those fields dirty
+          // and resend with the latest CAS revision before acknowledging them.
+          if (saved.revision < revision) continue;
           // An older in-flight write cannot acknowledge a more recent clear.
           if (historyReplacement !== null && sentChanges.get('history') >= historyReplacement) historyReplacement = null;
           for (const [path, version] of sentChanges) if (dirty.get(path) === version) dirty.delete(path);
@@ -328,17 +334,31 @@
     return inFlight;
   }
   async function refreshAccount() {
+    if (refreshInFlight) return refreshInFlight;
     if (!accountReady || !signedIn() || inFlight) return;
     if (dirty.size) { await flush(); return; }
     const generation = authGeneration;
-    try {
-      const remote = await readRemote();
-      if (generation !== authGeneration) return;
-      revision = remote.revision;
-      state = mergePending(remote.state, state);
-      saveCache(); announceState();
-      if (dirty.size) queueSave(); else status('saved');
-    } catch { if (generation === authGeneration) status(navigator.onLine === false ? 'offline' : 'error'); }
+    const readRevision = revision;
+    const operation = (async () => {
+      try {
+        const remote = await readRemote();
+        // A write or another tab may advance this account while its GET is
+        // travelling. An older snapshot must never undo that acknowledged state.
+        if (generation !== authGeneration || remote.revision < revision) return;
+        revision = remote.revision;
+        state = mergePending(remote.state, state);
+        saveCache(); announceState();
+        if (dirty.size) queueSave(); else status('saved');
+      } catch {
+        // A failed background read cannot change a newer successful write's status.
+        if (generation === authGeneration && revision === readRevision && !inFlight) {
+          status(navigator.onLine === false ? 'offline' : 'error');
+        }
+      }
+      finally { if (refreshInFlight === operation) refreshInFlight = null; }
+    })();
+    refreshInFlight = operation;
+    return operation;
   }
   function showLoading(message) {
     loadingText.textContent = message;
@@ -395,7 +415,7 @@
   function resetAccount() {
     cancelTimers(); abortRequests(); accountReady = false;
     try { if (cacheKey()) localStorage.removeItem(cacheKey()); } catch { /* Active state is still cleared from memory. */ }
-    state = defaults(); revision = 0; dirty.clear(); historyReplacement = null; inFlight = null;
+    state = defaults(); revision = 0; dirty.clear(); historyReplacement = null; inFlight = refreshInFlight = null;
     dispatchEvent(new CustomEvent('onda:auth', { detail: { signedIn: false } }));
     workspace.hidden = true; workspace.inert = true; gate.hidden = false;
     document.body.removeAttribute('data-theme'); document.body.removeAttribute('data-accent');
@@ -504,10 +524,15 @@
   document.getElementById('account-sign-out').addEventListener('click', async (event) => {
     if (!signedIn() || signingOut) return;
     const button = event.currentTarget; button.disabled = true;
+    const generation = authGeneration;
+    signingOut = true;
     try {
       if (dirty.size && !await flush()) { status(navigator.onLine === false ? 'offline' : 'error'); return; }
+      if (generation !== authGeneration || !signedIn()) return;
       await window.OndaSession?.flushCookieSave?.();
-      signingOut = true;
+      // The SDK user menu or another tab can end this identity while its local
+      // cookie write is settling. Its old handler cannot sign out a new session.
+      if (generation !== authGeneration || !signedIn()) return;
       await window.Clerk.signOut({ redirectUrl: '/' });
     } catch { status('error'); }
     finally { signingOut = false; button.disabled = false; }

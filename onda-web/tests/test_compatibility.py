@@ -37,6 +37,24 @@ def test_persisted_snapshot_never_confirms_live_automation(monkeypatch, tmp_path
     assert data['snapshot_automation_enabled'] is enabled
 
 
+@pytest.mark.parametrize('report', [[], ['invalid'], 'invalid', 42, None])
+def test_invalid_snapshot_does_not_break_compatibility(monkeypatch, tmp_path, report):
+    (tmp_path / 'public').mkdir()
+    (tmp_path / 'public' / 'autocura.json').write_text(json.dumps(report))
+    monkeypatch.setattr(compatibility, 'ROOT', tmp_path)
+    data = compatibility.release_status()
+    assert data['automated'] is False and data['snapshot_only'] is True
+    assert data['state'] == 'not_configured'
+
+
+def test_version_response_cannot_mutate_cached_toolchain(monkeypatch):
+    current = {'ytDlp': 'test', 'ffmpeg': '7.0', 'deno': '2.9'}
+    monkeypatch.setattr(compatibility, '_version_data', lambda: current)
+    first = compatibility.versions()
+    first['ffmpeg'] = 'indisponível'
+    assert compatibility.versions()['ffmpeg'] == '7.0'
+
+
 def test_manual_check_uses_worker_and_does_not_save_or_echo_cookies(client, monkeypatch):
     calls = []
     def inspect(url, guard, cookies=None):

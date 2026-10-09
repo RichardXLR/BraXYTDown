@@ -218,6 +218,44 @@ def test_recovery_of_already_restored_domain_clears_journal_without_redundant_ro
     assert events[-1] == "checkpoint:rolled_back"
 
 
+def test_interrupted_promotion_never_replaces_a_later_production_release(factory):
+    manager, provider, _, records = factory()
+    manager.state['pending'] = {'candidate': NEW, 'previous': OLD, 'versions': VERSIONS,
+                                'previous_versions': {'yt-dlp': 'older'}}
+    manager.state['status'] = 'promotion_pending'
+    manager.save()
+    later = {**NEW, 'id': 'dpl_later_reviewed_release', 'url': 'https://later.vercel.app'}
+    provider.active = later
+
+    with pytest.raises(CureError, match='production_changed_during_recovery'):
+        manager.recover()
+
+    assert provider.active == later and provider.rollbacks == []
+    persisted = json.loads(manager.path.read_text())
+    assert persisted['status'] == 'recovery_requires_review'
+    assert persisted['last_error'] == 'production_changed_during_recovery'
+    assert persisted['pending']['candidate'] == NEW
+    assert persisted['pending']['previous'] == OLD
+    assert persisted['quarantine'] == []
+    assert records[-1]['pending'] == persisted['pending']
+
+
+def test_interrupted_promotion_keeps_journal_when_current_mapping_is_unavailable(factory):
+    manager, provider, _, records = factory()
+    manager.state['pending'] = {'candidate': NEW, 'previous': OLD, 'versions': VERSIONS}
+    manager.state['status'] = 'promotion_pending'
+    manager.save()
+
+    def unavailable():
+        raise CureError('network_unavailable')
+
+    provider.current = unavailable
+    with pytest.raises(CureError, match='network_unavailable'):
+        manager.recover()
+    assert provider.rollbacks == [] and records == []
+    assert json.loads(manager.path.read_text())['pending']['candidate'] == NEW
+
+
 def test_after_promotion_checks_use_the_actual_public_domain(factory):
     manager, provider, _, _ = factory()
     provider.production_view = lambda deployment: {**deployment, "url": "https://onda-audio.vercel.app"}

@@ -314,6 +314,102 @@ def test_invalid_stored_state_is_not_silently_reset_or_overwritten(client, state
     assert [call[0] for call in client.blob.calls] == ["GET"]
 
 
+@pytest.mark.parametrize("missing", ["schema", "revision", "updated_at", "state", "all"])
+def test_truncated_stored_envelope_never_becomes_a_new_empty_account(client, state, missing):
+    document = account.AccountDocument(revision=1).model_dump(by_alias=True)
+    if missing == "all":
+        document = {}
+    else:
+        del document[missing]
+    path = account.account_path("user_Alice")
+    original = json.dumps(document).encode()
+    client.blob.files[path] = original, '"original-stored-version"'
+    loaded = client.get("/api/account/state", headers={"x-test-user": "user_Alice"})
+    assert loaded.status_code == 503
+    assert loaded.json()["code"] == "account_storage_invalid"
+    # Both the old and default revision are rejected before an overwrite,
+    # protecting data even if a client retries with an empty local snapshot.
+    for revision in (0, 1):
+        failed_save = put(client, state, revision=revision)
+        assert failed_save.status_code == 503
+        assert failed_save.json()["code"] == "account_storage_invalid"
+    assert all(call[0] == "GET" for call in client.blob.calls)
+    assert client.blob.files[path] == (original, '"original-stored-version"')
+
+
+@pytest.mark.parametrize("section", ["preferences", "sound", "intro_seen", "draft", "history"])
+@pytest.mark.parametrize("damage", ["missing", "empty"])
+def test_incomplete_stored_state_sections_never_reset_saved_account(client, state, section, damage):
+    document = account.AccountDocument(revision=1).model_dump(by_alias=True)
+    if damage == "missing":
+        del document["state"][section]
+    else:
+        # An empty JSON object is not a complete preference/draft model and
+        # cannot be substituted for bool/list sections either.
+        document["state"][section] = {}
+    path = account.account_path("user_Alice")
+    original = json.dumps(document).encode()
+    client.blob.files[path] = original, '"original-stored-version"'
+    loaded = client.get("/api/account/state", headers={"x-test-user": "user_Alice"})
+    assert loaded.status_code == 503
+    assert loaded.json()["code"] == "account_storage_invalid"
+    saved = put(client, state, revision=1)
+    assert saved.status_code == 503
+    assert saved.json()["code"] == "account_storage_invalid"
+    assert all(call[0] == "GET" for call in client.blob.calls)
+    assert client.blob.files[path] == (original, '"original-stored-version"')
+
+
+STORED_SECTION_FIELDS = (
+    [("preferences", field.alias or name) for name, field in account.Preferences.model_fields.items()]
+    + [("draft", field.alias or name) for name, field in account.Draft.model_fields.items()]
+    + [("history-entry", field.alias or name) for name, field in account.HistoryEntry.model_fields.items()]
+    + [("history-options", field.alias or name) for name, field in account.HistoryOptions.model_fields.items()]
+)
+
+
+@pytest.mark.parametrize("section,missing", STORED_SECTION_FIELDS)
+def test_partial_nested_stored_models_cannot_reintroduce_defaults(client, state, section, missing):
+    populated = account.AccountState(history=[account.HistoryEntry.model_validate(history_entry())])
+    document = account.AccountDocument(revision=1, state=populated).model_dump(by_alias=True)
+    nested = (document["state"][section] if section in {"preferences", "draft"}
+              else document["state"]["history"][0])
+    if section == "history-options":
+        nested = nested["options"]
+    del nested[missing]
+    path = account.account_path("user_Alice")
+    original = json.dumps(document).encode()
+    client.blob.files[path] = original, '"original-stored-version"'
+    response = put(client, state, revision=1)
+    assert response.status_code == 503
+    assert response.json()["code"] == "account_storage_invalid"
+    assert [call[0] for call in client.blob.calls] == ["GET"]
+    assert client.blob.files[path] == (original, '"original-stored-version"')
+
+
+def test_empty_stored_state_is_rejected_while_nonexistent_account_keeps_defaults(client):
+    missing = client.get("/api/account/state", headers={"x-test-user": "user_Alice"})
+    assert missing.status_code == 200
+    assert missing.json()["revision"] == 0
+    document = account.AccountDocument(revision=1).model_dump(by_alias=True)
+    document["state"] = {}
+    client.blob.files[account.account_path("user_Alice")] = json.dumps(document).encode(), '"etag"'
+    response = client.get("/api/account/state", headers={"x-test-user": "user_Alice"})
+    assert response.status_code == 503
+    assert response.json()["code"] == "account_storage_invalid"
+
+
+def test_complete_existing_schema_snapshot_with_empty_history_stays_compatible(client, state):
+    document = account.AccountDocument(revision=2).model_dump(by_alias=True)
+    document["state"]["preferences"]["accent"] = "cyan"
+    document["state"]["draft"]["url"] = "https://vimeo.com/12345"
+    client.blob.files[account.account_path("user_Alice")] = json.dumps(document).encode(), '"etag"'
+    response = client.get("/api/account/state", headers={"x-test-user": "user_Alice"})
+    assert response.status_code == 200
+    assert response.json() == document
+    assert response.json()["state"]["history"] == []
+
+
 def test_static_blob_credentials_are_derived_and_redacted(monkeypatch):
     monkeypatch.delenv("ONDA_ACCOUNT_BLOB_STORE_ID", raising=False)
     monkeypatch.delenv("BLOB_STORE_ID", raising=False)

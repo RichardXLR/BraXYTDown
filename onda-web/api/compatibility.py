@@ -48,7 +48,7 @@ def _version_data():
 
 def versions():
     with VERSION_LOCK:
-        return _version_data()
+        return dict(_version_data())
 
 
 @functools.lru_cache(maxsize=1)
@@ -91,6 +91,8 @@ def release_status():
         if not path.is_file():
             path = ROOT / "public" / "autocura.json"
         report = json.loads(path.read_text())
+        if not isinstance(report, dict):
+            return fallback
         # This is a build snapshot, not live deployment or quarantine history.
         config = report.get("selfHealing", report)
         if isinstance(config, dict):

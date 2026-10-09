@@ -15,6 +15,8 @@ from yt_dlp.networking import Response
 from yt_dlp.networking._urllib import RedirectHandler, UrllibRH
 from yt_dlp.networking.exceptions import HTTPError, RequestError, IncompleteRead
 
+MAX_METADATA_BYTES = 16 * 1024 * 1024
+
 
 class AudioError(Exception):
     def __init__(self, message: str, code: str = "invalid_source", status: int = 422):
@@ -131,12 +133,18 @@ class BoundedResponse(Response):
         self.guard.check()
         # Metadata callers read without a size. Bound every allocation as well as the total.
         if amt is None or amt < 0:
-            chunks = []
-            while chunk := self.read(64 * 1024):
-                chunks.append(chunk)
-                if sum(map(len, chunks)) > 16 * 1024 * 1024:
-                    raise AudioError("A resposta desse serviço é grande demais.", "metadata_too_large", 413)
-            return b"".join(chunks)
+            # A source may return thousands of tiny chunks. One growing buffer
+            # avoids retaining an object per chunk and recounting all previous
+            # chunks after every read. Probe only one byte beyond the limit.
+            data = bytearray()
+            while chunk := self.read(min(64 * 1024, MAX_METADATA_BYTES - len(data) + 1)):
+                if len(data) + len(chunk) > MAX_METADATA_BYTES:
+                    self.guard.error = self.guard.error or AudioError(
+                        "A resposta desse serviço é grande demais.", "metadata_too_large", 413)
+                    self.guard.abort()
+                    raise self.guard.error
+                data.extend(chunk)
+            return bytes(data)
         raw = getattr(self.fp, "fp", None)
         # read1 performs at most one socket read, so a slow sender cannot extend
         # the deadline indefinitely by trickling bytes into a sized read().

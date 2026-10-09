@@ -1,4 +1,5 @@
 """Authentication boundary tests; no live Clerk users or credentials required."""
+import asyncio
 import base64
 import json
 import time
@@ -256,6 +257,78 @@ def test_machine_requires_explicit_ids_and_blocks_large_payload(test_app, config
         assert response.status_code == 403
         monkeypatch.delenv("CLERK_AUTOCURA_SOURCE_MACHINE_ID")
         assert client.post("/api/download", json={"url": ORIGIN + "/canary.wav"}, headers=headers).status_code == 401
+
+
+def machine_request(chunks, headers=()):
+    """ASGI chunks with no assumed HTTP Content-Length or request buffering."""
+    messages = iter(chunks)
+    received = []
+
+    async def receive():
+        chunk = next(messages)
+        received.append(chunk)
+        return {"type": "http.request", "body": chunk,
+                "more_body": len(received) < len(chunks)}
+
+    request = Request({"type": "http", "method": "POST", "path": "/api/download",
+                       "query_string": b"", "scheme": "https", "headers": list(headers),
+                       "server": ("onda-audio.vercel.app", 443)}, receive=receive)
+    return request, received
+
+
+@pytest.mark.parametrize("headers", [[], [(b"content-length", b"2")]])
+def test_oversized_machine_stream_stops_before_buffering_the_remaining_body(configured, headers):
+    request, received = machine_request(
+        [b"x" * 8192, b"x" * 8192, b"x", b"must-not-be-consumed"], headers)
+    with pytest.raises(auth.AuthFailure) as failure:
+        asyncio.run(auth._authorize_machine(request, configured))
+    assert failure.value.status == 403
+    assert len(received) == 3
+
+
+def test_allowed_chunked_machine_body_is_replayed_unchanged_to_the_route(configured):
+    raw = json.dumps({"url": ORIGIN + "/canary.wav", "media_type": "audio"}).encode()
+    request, received = machine_request([raw[:8], raw[8:]])
+
+    async def authorize_and_read():
+        await auth._authorize_machine(request, configured)
+        assert await request.body() == raw
+        assert await request.json() == json.loads(raw)
+
+    asyncio.run(authorize_and_read())
+    assert len(received) == 2
+
+
+@pytest.mark.parametrize("body", [
+    b'{"url":"' + ORIGIN.encode() + b'/canary.wav","url":"' + ORIGIN.encode() + b'/canary.wav"}',
+    b'{"url":"' + ORIGIN.encode() + b'/canary.wav","cookies":null,"cookies":""}',
+    b'{"url":"' + ORIGIN.encode() + b'/canary.wav","padding":NaN}',
+    b'{"url":"' + ORIGIN.encode() + b'/canary.wav","padding":Infinity}',
+    b'{"url":"' + ORIGIN.encode() + b'/canary.wav","padding":-Infinity}',
+    b"[" * 2000 + b"0" + b"]" * 2000,
+    b"\xff",
+])
+def test_ambiguous_or_malformed_machine_json_is_forbidden_without_server_error(
+        test_app, configured, monkeypatch, body):
+    mock_machine_client(monkeypatch)
+    with TestClient(test_app) as client:
+        response = client.post("/api/download", content=body,
+                               headers={"Authorization": "Bearer mt_fixture"})
+    assert response.status_code == 403
+    assert response.json()["code"] == "auth_forbidden"
+
+
+@pytest.mark.parametrize("headers", [
+    [(b"content-length", b"1"), (b"content-length", b"1")],
+    [(b"content-length", b"9" * 5000)],
+    [(b"content-length", b"-1")],
+])
+def test_ambiguous_or_unbounded_machine_length_is_rejected_without_reading(configured, headers):
+    request, received = machine_request([b"must-not-be-consumed"], headers)
+    with pytest.raises(auth.AuthFailure) as failure:
+        asyncio.run(auth._authorize_machine(request, configured))
+    assert failure.value.status == 403
+    assert received == []
 
 
 def test_sdk_error_body_with_secret_is_not_returned(test_app, configured, monkeypatch):
