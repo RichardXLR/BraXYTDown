@@ -6,7 +6,7 @@
     "url": "https://onda-audio-hmv8e0dta-r79078339-3591s-projects.vercel.app"
   },
   "baseline_platform_check": {
-    "checked_at": "2026-10-09T11:59:22.392830+00:00",
+    "checked_at": "2026-10-09T13:09:07.883403+00:00",
     "checks": [
       {
         "code": "platform_blocked",
@@ -683,6 +683,7 @@
     },
     "status": "passed"
   },
+  "last_error": "candidate_application_tests_failed",
   "previous": {
     "id": "dpl_GGf8FkoZbJD4mHfFCTfr3LiLhbgh",
     "projectId": "prj_uFRebtKoS8lCrM9fqxXMJkgYDGfr",
@@ -738,11 +739,52 @@
         "uvicorn": "0.54.0",
         "yt-dlp": "2026.8.19"
       }
+    },
+    {
+      "created_at": "2026-10-09T13:10:01.470211+00:00",
+      "deployment_id": null,
+      "reason": "candidate_application_tests_failed",
+      "versions": {
+        "annotated-doc": "0.0.5",
+        "annotated-types": "0.8.0",
+        "anyio": "4.15.1",
+        "brotli": "1.2.0",
+        "certifi": "2026.7.22",
+        "cffi": "2.1.1",
+        "charset-normalizer": "3.5.2",
+        "clerk-backend-api": "7.0.0",
+        "click": "8.5.0",
+        "cryptography": "50.0.2",
+        "deno": "2.9.7",
+        "fastapi": "0.143.0",
+        "h11": "0.16.0",
+        "httpcore": "1.0.9",
+        "httpx": "0.28.1",
+        "idna": "3.20",
+        "imageio-ffmpeg": "0.6.0",
+        "mutagen": "1.48.1",
+        "opentelemetry-api": "1.45.1",
+        "publicsuffixlist": "1.0.2.20261007",
+        "pycparser": "3.11",
+        "pycryptodomex": "3.24.0",
+        "pydantic": "2.14.0",
+        "pydantic-core": "2.50.0",
+        "pyjwt": "2.15.1",
+        "requests": "2.34.2",
+        "starlette": "1.7.0",
+        "typing-extensions": "4.16.0",
+        "typing-inspection": "0.4.4",
+        "urllib3": "2.8.0",
+        "uvicorn": "0.54.0",
+        "websockets": "17.2",
+        "yt-dlp": "2026.8.19",
+        "yt-dlp-ejs": "0.8.0"
+      }
     }
   ],
   "schema": 2,
-  "status": "passed",
-  "updated_at": "2026-10-09T11:59:38.772139+00:00",
+  "status": "failed",
+  "updated_at": "2026-10-09T13:10:01.470234+00:00",
   "versions": {
     "annotated-doc": "0.0.5",
     "annotated-types": "0.8.0",
