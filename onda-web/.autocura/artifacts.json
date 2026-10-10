@@ -1,5 +1,5 @@
 {
-  "created_at": "2026-10-09T18:39:35.738255+00:00",
+  "created_at": "2026-10-10T11:17:03.062550+00:00",
   "wheels": [
     {
       "filename": "annotated_doc-0.0.5-py3-none-any.whl",
@@ -116,10 +116,10 @@
       "version": "1.45.1"
     },
     {
-      "filename": "publicsuffixlist-1.0.2.20261007-py2.py3-none-any.whl",
+      "filename": "publicsuffixlist-1.1.0.20261010-py3-none-any.whl",
       "name": "publicsuffixlist",
-      "sha256": "f004acc09befea70390ea67a15bc5848ea8aa90707337682502510e4151a9b30",
-      "version": "1.0.2.20261007"
+      "sha256": "c92763e6b3982c850e9047eb95aa864753ec533f761b18bae4d04226d5e12f1d",
+      "version": "1.1.0.20261010"
     },
     {
       "filename": "pycparser-3.11-py3-none-any.whl",
