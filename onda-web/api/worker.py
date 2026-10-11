@@ -44,7 +44,10 @@ class JobGuard(Guard):
     def check(self):
         super().check()
         if time.monotonic()-self.last_lease>.5:
-            row = self.store.get(self.job)
+            row = self.store.get(self.job,include_expired=True)
+            if row['expires']<=time.time():
+                self.abort()
+                raise AudioError('A tarefa expirou.', 'job_expired',410)
             if row['status']!='running' or row['fence']!=self.fence:
                 self.abort()
                 raise AudioError('Tarefa cancelada ou reassumida por outro worker.', 'cancelled',499)
@@ -143,7 +146,7 @@ def process_job(store, row):
                         item.unlink(missing_ok=True)
     except Exception as exc:
         code=exc.code if isinstance(exc,AudioError) else 'worker_failed'
-        current=store.get(row['id'])
+        current=store.get(row['id'],include_expired=True)
         if current['status']=='running' and current['fence']==row['fence']:
             if retry_kind(exc)=='transient' and row['attempts']<3:
                 # Keep acquired input checkpoint; bounded retries remain visible.

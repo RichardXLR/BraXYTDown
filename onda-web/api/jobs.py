@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import shutil
 import sqlite3
 import threading
 import time
@@ -74,6 +75,16 @@ class JobStore:
             pending = db.execute("SELECT count(*) FROM jobs WHERE owner=? AND status NOT IN ('ready','failed','cancelled')", (owner,)).fetchone()[0]
             if pending >= 4:
                 raise AudioError('Sua fila está cheia. Aguarde uma tarefa terminar.', 'user_busy', 429)
+            try:
+                capacity = max(2,min(10000,int(os.environ.get('ONDA_MAX_PENDING_JOBS','1000'))))
+            except ValueError:
+                capacity = 1000
+            total_pending = db.execute("SELECT count(*) FROM jobs WHERE status NOT IN ('ready','failed','cancelled')").fetchone()[0]
+            if total_pending >= capacity:
+                raise AudioError('A fila do serviço está cheia. Tente novamente mais tarde.', 'busy', 429)
+            payload_size = len(json.dumps(payload).encode())
+            if shutil.disk_usage(self.root).free < ResourcePolicy.from_environment().reserve_bytes + payload_size*2 + 128*1024:
+                raise AudioError('O armazenamento da fila está ocupado.', 'storage_busy', 503)
             job = secrets.token_hex(16)
             db.execute('INSERT INTO jobs(id,owner,idem,fingerprint,payload,status,priority,created,updated,expires) VALUES(?,?,?,?,?,?,?,?,?,?)', (job, owner, idem, fingerprint, self.seal(job, payload), 'queued', priority, now, now, now + 86400))
             row = db.execute('SELECT * FROM jobs WHERE id=?', (job,)).fetchone()
@@ -86,10 +97,10 @@ class JobStore:
             result['file'] = {k: v for k,v in json.loads(row['file']).items() if k != 'path'}
         return result
 
-    def get(self, job, owner=None):
+    def get(self, job, owner=None, *, include_expired=False):
         with self.connect() as db:
             row = db.execute('SELECT * FROM jobs WHERE id=?', (job,)).fetchone()
-        if not row or owner is not None and not hmac.compare_digest(owner, row['owner']) or row['expires'] < time.time():
+        if not row or owner is not None and not hmac.compare_digest(owner, row['owner']) or not include_expired and row['expires'] < time.time():
             raise AudioError('A tarefa não está disponível.', 'job_not_found', 404)
         return row
 

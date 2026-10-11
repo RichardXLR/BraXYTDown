@@ -213,3 +213,25 @@ def test_circuit_counts_exhausted_transient_failures_but_isolates_accounts():
             pytest.fail('open circuit contacted the origin')
     with provider_circuit('owned-provider','account-b'):
         pass
+
+
+def test_global_queue_capacity_protects_worker_disk_and_admission(store,monkeypatch):
+    monkeypatch.setenv('ONDA_MAX_PENDING_JOBS','2')
+    for user in ('user_a','user_b'):
+        store.create(store.owner(user),'request',{'url':'https://public.example/own.wav'})
+    with pytest.raises(security.AudioError) as error:
+        store.create(store.owner('user_c'),'request',{'url':'https://public.example/own.wav'})
+    assert error.value.code=='busy'
+
+
+def test_job_expiring_during_processing_does_not_crash_worker(store,monkeypatch):
+    monkeypatch.setenv('ONDA_WORKER_MODE','true')
+    payload=index.DownloadInput(url='https://public.example/own.wav',format='wav',quality='source').model_dump()
+    job,_=store.create(store.owner('user_fixture'),'request',payload)
+    row=store.claim()
+    with store.connect() as db:
+        db.execute('UPDATE jobs SET expires=0 WHERE id=?',(job['id'],))
+    process_job(store,row)
+    expired=store.get(job['id'],include_expired=True)
+    assert expired['status']=='failed' and expired['payload'] is None
+    assert json.loads(expired['progress'])['code']=='job_expired'
