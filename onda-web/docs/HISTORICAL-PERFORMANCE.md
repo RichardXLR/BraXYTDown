@@ -28,3 +28,15 @@ Medições são gravadas depois de liberar os recursos de mídia. Uma falha de a
 - `.github/workflows/onda-browser-quality.yml`: matriz Chromium/Firefox/WebKit.
 
 O Clerk permanece em desenvolvimento por decisão do usuário. Não houve alteração de chaves, domínio de autenticação, contas ou DNS. Não foram provisionados serviços pagos, worker externo ou armazenamento adicional de arquivos de mídia.
+
+## Publicação validada em 11/10/2026
+
+- Código publicado: `ca1a5f3823b1b37c85d6606ddea563a5427726de`.
+- Deploy de produção: `dpl_GnjEiAPyu5X3yfvEz89uj1YDTA19`.
+- [Matriz de navegadores aprovada no GitHub](https://github.com/RichardXLR/BraXYTDown/actions/runs/38185404349).
+- [Release AutoCura aprovado](https://github.com/RichardXLR/BraXYTDown/actions/runs/38185558621).
+- Domínios `ondaittoux.online`, `www.ondaittoux.online` e `onda-audio.vercel.app`: HTTP 200, mesmo deploy, painel presente no HTML e hashes dos quatro arquivos de interface/armazenamento conferidos. Histórico sem autenticação retorna HTTP 401; worker permanece desativado.
+- Suíte local inicial: 1.256 testes sem falhas/erros/skips; depois, novos casos e verificação final de histórico/worker aprovados. A matriz de widgets totaliza 102 casos e o fluxo completo HTTP totaliza seis casos (MP4 e MP3 em cada motor), todos aprovados. Estes grupos possuem sobreposição com a suíte inicial: não some os números como testes únicos adicionais.
+- Safari em macOS/iPhone e aparelhos Android físicos não foram testados. Veja a matriz manual em `BROWSER-VALIDATION.md`.
+
+Resultados numéricos e evidência de publicação estão em `HISTORICAL-VERIFICATION-2026-10-11.json`. As rotas protegidas foram validadas com identidade de teste local; o teste público de produção validou a proteção anônima, sem acessar os dados de qualquer usuário.

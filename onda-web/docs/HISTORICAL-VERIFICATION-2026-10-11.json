@@ -60,5 +60,56 @@
     "authentication": "explicit verified Clerk test fixture",
     "accountStorage": "private Blob transport fixture",
     "physicalDevices": false
+  },
+  "publication": {
+    "sourceCommit": "ca1a5f3823b1b37c85d6606ddea563a5427726de",
+    "deploymentId": "dpl_GnjEiAPyu5X3yfvEz89uj1YDTA19",
+    "releaseRun": "https://github.com/RichardXLR/BraXYTDown/actions/runs/38185558621",
+    "browserRun": "https://github.com/RichardXLR/BraXYTDown/actions/runs/38185404349",
+    "status": "passed",
+    "domains": [
+      {
+        "domain": "ondaittoux.online",
+        "htmlStatus": 200,
+        "deploymentId": "dpl_GnjEiAPyu5X3yfvEz89uj1YDTA19",
+        "workerEnabled": false,
+        "assetHashesMatch": {
+          "download-history.js": true,
+          "download-history.css": true,
+          "download-storage.js": true,
+          "account.js": true
+        },
+        "anonymousHistoryStatus": 401,
+        "authConfigured": true
+      },
+      {
+        "domain": "www.ondaittoux.online",
+        "htmlStatus": 200,
+        "deploymentId": "dpl_GnjEiAPyu5X3yfvEz89uj1YDTA19",
+        "workerEnabled": false,
+        "assetHashesMatch": {
+          "download-history.js": true,
+          "download-history.css": true,
+          "download-storage.js": true,
+          "account.js": true
+        },
+        "anonymousHistoryStatus": 401,
+        "authConfigured": true
+      },
+      {
+        "domain": "onda-audio.vercel.app",
+        "htmlStatus": 200,
+        "deploymentId": "dpl_GnjEiAPyu5X3yfvEz89uj1YDTA19",
+        "workerEnabled": false,
+        "assetHashesMatch": {
+          "download-history.js": true,
+          "download-history.css": true,
+          "download-storage.js": true,
+          "account.js": true
+        },
+        "anonymousHistoryStatus": 401,
+        "authConfigured": true
+      }
+    ]
   }
 }
