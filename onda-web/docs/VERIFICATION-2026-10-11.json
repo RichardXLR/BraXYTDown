@@ -3,7 +3,7 @@
   "sourceCommit": "ca654bf78d550480dff6329dd1cb1af764515ea4",
   "deployRun": "https://github.com/RichardXLR/BraXYTDown/actions/runs/38178954302",
   "componentWatchRun": "https://github.com/RichardXLR/BraXYTDown/actions/runs/38179290788",
-  "localTestsPassed": 1236,
+  "localTestsPassed": 1238,
   "hostingWorkerConfigured": false,
   "browser-storage": {
     "browser": "Chromium",
@@ -508,5 +508,111 @@
       "httpStatus": 200,
       "javascriptErrors": 0
     }
-  ]
+  ],
+  "finalRelease": {
+    "domains": [
+      {
+        "host": "ondaittoux.online",
+        "deploymentId": "dpl_BytkpVKGnC49wgovqG27VjaNgJvg",
+        "resourcePolicy": {
+          "mode": "inline",
+          "maxSourceBytes": 1073741824,
+          "maxOutputBytes": 1073741824,
+          "maxTransferBytes": 3221225472,
+          "maxWorkspaceBytes": 469762048,
+          "reserveBytes": 67108864,
+          "workTimeoutSeconds": 240,
+          "totalTimeoutSeconds": 290,
+          "scope": "instance",
+          "sizeDependsOnWorkspace": true
+        },
+        "jobs": {
+          "configured": false,
+          "enabled": false,
+          "healthy": false,
+          "mode": "disabled",
+          "maxSourceMB": null,
+          "maxOutputMB": null,
+          "operationTimeoutSeconds": null
+        },
+        "assetHashesMatch": {
+          "app.js": true,
+          "download-storage.js": true,
+          "download-stream.js": true,
+          "account.js": true
+        }
+      },
+      {
+        "host": "www.ondaittoux.online",
+        "deploymentId": "dpl_BytkpVKGnC49wgovqG27VjaNgJvg",
+        "resourcePolicy": {
+          "mode": "inline",
+          "maxSourceBytes": 1073741824,
+          "maxOutputBytes": 1073741824,
+          "maxTransferBytes": 3221225472,
+          "maxWorkspaceBytes": 469762048,
+          "reserveBytes": 67108864,
+          "workTimeoutSeconds": 240,
+          "totalTimeoutSeconds": 290,
+          "scope": "instance",
+          "sizeDependsOnWorkspace": true
+        },
+        "jobs": {
+          "configured": false,
+          "enabled": false,
+          "healthy": false,
+          "mode": "disabled",
+          "maxSourceMB": null,
+          "maxOutputMB": null,
+          "operationTimeoutSeconds": null
+        },
+        "assetHashesMatch": {
+          "app.js": true,
+          "download-storage.js": true,
+          "download-stream.js": true,
+          "account.js": true
+        }
+      },
+      {
+        "host": "onda-audio.vercel.app",
+        "deploymentId": "dpl_BytkpVKGnC49wgovqG27VjaNgJvg",
+        "resourcePolicy": {
+          "mode": "inline",
+          "maxSourceBytes": 1073741824,
+          "maxOutputBytes": 1073741824,
+          "maxTransferBytes": 3221225472,
+          "maxWorkspaceBytes": 469762048,
+          "reserveBytes": 67108864,
+          "workTimeoutSeconds": 240,
+          "totalTimeoutSeconds": 290,
+          "scope": "instance",
+          "sizeDependsOnWorkspace": true
+        },
+        "jobs": {
+          "configured": false,
+          "enabled": false,
+          "healthy": false,
+          "mode": "disabled",
+          "maxSourceMB": null,
+          "maxOutputMB": null,
+          "operationTimeoutSeconds": null
+        },
+        "assetHashesMatch": {
+          "app.js": true,
+          "download-storage.js": true,
+          "download-stream.js": true,
+          "account.js": true
+        }
+      }
+    ],
+    "releaseRun": "https://github.com/RichardXLR/BraXYTDown/actions/runs/38179854284",
+    "reportState": "passed",
+    "checks": {
+      "passed": 17,
+      "blocked": 2,
+      "failed": 0
+    },
+    "pending": null,
+    "lastError": null
+  }
 }

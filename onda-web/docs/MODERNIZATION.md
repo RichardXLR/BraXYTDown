@@ -71,3 +71,5 @@ As respostas HTTPS dos três hosts apontaram para o mesmo deployment. SHA-256 de
 Além do benchmark, uma tarefa persistente real local gerou **1.074.790.478 bytes em 11,87 segundos**, conferiu SHA-256, apagou payload e checkpoint criptografados, e entregou um intervalo de 1 MiB por link assinado com HTTP 206. A autenticação nesse teste usou uma fixture Clerk explícita; não foi provisionado um worker externo.
 
 [Resultados completos em JSON](VERIFICATION-2026-10-11.json).
+
+Publicação final com a proteção da fila e expiração de tarefas: deployment `dpl_BytkpVKGnC49wgovqG27VjaNgJvg`, [release aprovado](https://github.com/RichardXLR/BraXYTDown/actions/runs/38179854284). A suíte final passou com **1.238 testes**, e as três URLs novamente apresentaram o mesmo deployment e hashes corretos de frontend.
