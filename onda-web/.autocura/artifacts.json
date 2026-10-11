@@ -1,5 +1,5 @@
 {
-  "created_at": "2026-10-10T11:17:03.062550+00:00",
+  "created_at": "2026-10-11T22:07:09.642630+00:00",
   "wheels": [
     {
       "filename": "annotated_doc-0.0.5-py3-none-any.whl",
@@ -128,22 +128,22 @@
       "version": "3.11"
     },
     {
-      "filename": "pycryptodomex-3.24.0-cp37-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "filename": "pycryptodomex-3.24.1-cp37-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
       "name": "pycryptodomex",
-      "sha256": "556e063b52f338bd924fe5c40692cc1f50cb0453bd1d6580b7ffff2eade1a894",
-      "version": "3.24.0"
+      "sha256": "9b94a8c647c1f80b4c82c7ac9642dda94a71abbb4efa29ad652c410ad7a39879",
+      "version": "3.24.1"
     },
     {
-      "filename": "pydantic-2.14.0-py3-none-any.whl",
+      "filename": "pydantic-2.14.1-py3-none-any.whl",
       "name": "pydantic",
-      "sha256": "15fab1bea6f1dc5003b54fc2ecab230c1fd1dbade2acd4addc52d81e32416d4b",
-      "version": "2.14.0"
+      "sha256": "9195d967ec791692a04438115466764fb8b9a27b31f14a760437694f40d6b454",
+      "version": "2.14.1"
     },
     {
-      "filename": "pydantic_core-2.50.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+      "filename": "pydantic_core-2.50.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
       "name": "pydantic-core",
-      "sha256": "f187030fc3d62c668feb0f09e92852e0eb414d7fcefc4748f2e67d245aade37e",
-      "version": "2.50.0"
+      "sha256": "93ba4e9d8210d941c200431a56b2c0400b131865947903937ed3ec5404307d2e",
+      "version": "2.50.1"
     },
     {
       "filename": "pyjwt-2.15.1-py3-none-any.whl",
