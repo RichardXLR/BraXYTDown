@@ -1,0 +1,512 @@
+{
+  "date": "2026-10-11",
+  "sourceCommit": "ca654bf78d550480dff6329dd1cb1af764515ea4",
+  "deployRun": "https://github.com/RichardXLR/BraXYTDown/actions/runs/38178954302",
+  "componentWatchRun": "https://github.com/RichardXLR/BraXYTDown/actions/runs/38179290788",
+  "localTestsPassed": 1236,
+  "hostingWorkerConfigured": false,
+  "browser-storage": {
+    "browser": "Chromium",
+    "files": [
+      {
+        "nominalMiB": 100,
+        "receivedBytes": 104857600,
+        "storageKind": "disk",
+        "fileBacked": true,
+        "integrityVerified": true,
+        "receivedSeconds": 1.4170999999998604
+      },
+      {
+        "nominalMiB": 250,
+        "receivedBytes": 262144000,
+        "storageKind": "disk",
+        "fileBacked": true,
+        "integrityVerified": true,
+        "receivedSeconds": 4.115600000000093
+      },
+      {
+        "nominalMiB": 500,
+        "receivedBytes": 524288000,
+        "storageKind": "disk",
+        "fileBacked": true,
+        "integrityVerified": true,
+        "receivedSeconds": 5.413099999999861
+      }
+    ],
+    "failureChecks": {
+      "incompleteRejected": true,
+      "accountChangeRejected": true,
+      "temporaryFilesRemaining": 0
+    }
+  },
+  "local-flow": [
+    {
+      "viewport": 1440,
+      "media": "video",
+      "savedBytes": 61542,
+      "modalCentered": true,
+      "overflow": false,
+      "javascriptErrors": 0,
+      "auth": "explicit Clerk and Blob test fixtures",
+      "processing": "real FFmpeg",
+      "storage": "actual Chromium OPFS"
+    },
+    {
+      "viewport": 390,
+      "media": "audio",
+      "savedBytes": 42884,
+      "modalCentered": true,
+      "overflow": false,
+      "javascriptErrors": 0,
+      "auth": "explicit Clerk and Blob test fixtures",
+      "processing": "real FFmpeg",
+      "storage": "actual Chromium OPFS"
+    }
+  ],
+  "large-worker": {
+    "fixture": "owned PCM WAV",
+    "sourceBytes": 1074790444,
+    "outputBytes": 1074790478,
+    "jobStatus": "ready",
+    "elapsedSeconds": 11.865867017000255,
+    "sha256Verified": true,
+    "encryptedPayloadRemoved": true,
+    "checkpointRemoved": true,
+    "signedDeliveryRangeStatus": 206,
+    "rangeBytesVerified": 1048576,
+    "headLengthVerified": true,
+    "auth": "explicit Clerk test fixture",
+    "hosting": "local persistent worker"
+  },
+  "published-verification": [
+    {
+      "host": "ondaittoux.online",
+      "deploymentId": "dpl_C33ty8UX8v3EhBCYLMSeV3c6hKFc",
+      "resourcePolicy": {
+        "mode": "inline",
+        "maxSourceBytes": 1073741824,
+        "maxOutputBytes": 1073741824,
+        "maxTransferBytes": 3221225472,
+        "maxWorkspaceBytes": 469762048,
+        "reserveBytes": 67108864,
+        "workTimeoutSeconds": 240,
+        "totalTimeoutSeconds": 290,
+        "scope": "instance",
+        "sizeDependsOnWorkspace": true
+      },
+      "jobs": {
+        "configured": false,
+        "enabled": false,
+        "healthy": false,
+        "mode": "disabled",
+        "maxSourceMB": null,
+        "maxOutputMB": null,
+        "operationTimeoutSeconds": null
+      },
+      "assetHashesMatch": {
+        "app.js": true,
+        "download-storage.js": true,
+        "download-stream.js": true,
+        "account.js": true
+      },
+      "anonymousDownload": {
+        "status": 401,
+        "code": "auth_required"
+      }
+    },
+    {
+      "host": "www.ondaittoux.online",
+      "deploymentId": "dpl_C33ty8UX8v3EhBCYLMSeV3c6hKFc",
+      "resourcePolicy": {
+        "mode": "inline",
+        "maxSourceBytes": 1073741824,
+        "maxOutputBytes": 1073741824,
+        "maxTransferBytes": 3221225472,
+        "maxWorkspaceBytes": 469762048,
+        "reserveBytes": 67108864,
+        "workTimeoutSeconds": 240,
+        "totalTimeoutSeconds": 290,
+        "scope": "instance",
+        "sizeDependsOnWorkspace": true
+      },
+      "jobs": {
+        "configured": false,
+        "enabled": false,
+        "healthy": false,
+        "mode": "disabled",
+        "maxSourceMB": null,
+        "maxOutputMB": null,
+        "operationTimeoutSeconds": null
+      },
+      "assetHashesMatch": {
+        "app.js": true,
+        "download-storage.js": true,
+        "download-stream.js": true,
+        "account.js": true
+      },
+      "anonymousDownload": {
+        "status": 401,
+        "code": "auth_required"
+      }
+    },
+    {
+      "host": "onda-audio.vercel.app",
+      "deploymentId": "dpl_C33ty8UX8v3EhBCYLMSeV3c6hKFc",
+      "resourcePolicy": {
+        "mode": "inline",
+        "maxSourceBytes": 1073741824,
+        "maxOutputBytes": 1073741824,
+        "maxTransferBytes": 3221225472,
+        "maxWorkspaceBytes": 469762048,
+        "reserveBytes": 67108864,
+        "workTimeoutSeconds": 240,
+        "totalTimeoutSeconds": 290,
+        "scope": "instance",
+        "sizeDependsOnWorkspace": true
+      },
+      "jobs": {
+        "configured": false,
+        "enabled": false,
+        "healthy": false,
+        "mode": "disabled",
+        "maxSourceMB": null,
+        "maxOutputMB": null,
+        "operationTimeoutSeconds": null
+      },
+      "assetHashesMatch": {
+        "app.js": true,
+        "download-storage.js": true,
+        "download-stream.js": true,
+        "account.js": true
+      },
+      "anonymousDownload": {
+        "status": 401,
+        "code": "auth_required"
+      }
+    }
+  ],
+  "published-maintenance": {
+    "reportState": "passed",
+    "workflow": null,
+    "lastCheckStatus": "passed",
+    "checks": {
+      "passed": 17,
+      "blocked": 2,
+      "failed": 0
+    },
+    "pending": null,
+    "lastError": null,
+    "quarantineCount": 1,
+    "versions": {
+      "yt-dlp": "2026.8.19",
+      "imageio-ffmpeg": "0.6.0",
+      "deno": "2.9.7",
+      "pydantic": "2.14.1",
+      "pydantic-core": "2.50.1",
+      "pycryptodomex": "3.24.1"
+    },
+    "activeDeploymentId": "dpl_C33ty8UX8v3EhBCYLMSeV3c6hKFc",
+    "github": null
+  },
+  "audioPipelineBenchmarks": [
+    {
+      "baseline": {
+        "nominalMiB": 16,
+        "sourceBytes": 16777088,
+        "fixture": "owned PCM WAV, no network socket",
+        "profile": "published baseline",
+        "completed": true,
+        "outputBytes": 16777122,
+        "integrityVerified": true,
+        "sha256": "3480f8b0485d2bd7645911dc51cd0d0e5f822f321ed407ebc15c2ac0afede528",
+        "elapsedSeconds": 0.42203788599999825,
+        "localPipelineMiBPerSecond": 37.91099913169304,
+        "pythonPeakRSSMiB": 49.1171875,
+        "childPeakRSSMiB": 48.9921875,
+        "cpuSeconds": 0.412166,
+        "transferredBytes": 16777088
+      },
+      "modernized": {
+        "nominalMiB": 16,
+        "sourceBytes": 16777088,
+        "fixture": "owned PCM WAV, no network socket",
+        "profile": "persistent worker resource budget",
+        "completed": true,
+        "outputBytes": 16777122,
+        "integrityVerified": true,
+        "sha256": "3480f8b0485d2bd7645911dc51cd0d0e5f822f321ed407ebc15c2ac0afede528",
+        "elapsedSeconds": 0.5124748789999103,
+        "localPipelineMiBPerSecond": 31.220804346373242,
+        "pythonPeakRSSMiB": 49.20703125,
+        "childPeakRSSMiB": 48.95703125,
+        "cpuSeconds": 0.466123,
+        "transferredBytes": 16777088
+      }
+    },
+    {
+      "baseline": {
+        "nominalMiB": 100,
+        "sourceBytes": 104857472,
+        "fixture": "owned PCM WAV, no network socket",
+        "profile": "published baseline",
+        "completed": true,
+        "outputBytes": 104857506,
+        "integrityVerified": true,
+        "sha256": "2ef95fad9029faaf95108e287115cbe50dfa6bf96c58b4a18982a481b5a056b3",
+        "elapsedSeconds": 0.4670530500000041,
+        "localPipelineMiBPerSecond": 214.1081787811612,
+        "pythonPeakRSSMiB": 48.42578125,
+        "childPeakRSSMiB": 48.30078125,
+        "cpuSeconds": 0.745319,
+        "transferredBytes": 104857472
+      },
+      "modernized": {
+        "nominalMiB": 100,
+        "sourceBytes": 104857472,
+        "fixture": "owned PCM WAV, no network socket",
+        "profile": "persistent worker resource budget",
+        "completed": true,
+        "outputBytes": 104857506,
+        "integrityVerified": true,
+        "sha256": "2ef95fad9029faaf95108e287115cbe50dfa6bf96c58b4a18982a481b5a056b3",
+        "elapsedSeconds": 1.1188708810000207,
+        "localPipelineMiBPerSecond": 89.37570869688729,
+        "pythonPeakRSSMiB": 49.08984375,
+        "childPeakRSSMiB": 49.08984375,
+        "cpuSeconds": 1.2627329999999999,
+        "transferredBytes": 104857472
+      }
+    },
+    {
+      "baseline": {
+        "nominalMiB": 250,
+        "sourceBytes": 262143872,
+        "fixture": "owned PCM WAV, no network socket",
+        "profile": "published baseline",
+        "completed": false,
+        "errorCode": "source_too_large",
+        "elapsedSeconds": 0.3455207449999307,
+        "pythonPeakRSSMiB": 48.83984375,
+        "childPeakRSSMiB": 27.26171875,
+        "cpuSeconds": 0.345533,
+        "transferredBytes": 0
+      },
+      "modernized": {
+        "nominalMiB": 250,
+        "sourceBytes": 262143872,
+        "fixture": "owned PCM WAV, no network socket",
+        "profile": "persistent worker resource budget",
+        "completed": true,
+        "outputBytes": 262143906,
+        "integrityVerified": true,
+        "sha256": "ed2c3cd25ee68aab3990e70b444e8da5605a09220a981a469860f2b48e9a71b4",
+        "elapsedSeconds": 4.51294288400004,
+        "localPipelineMiBPerSecond": 55.39619808086303,
+        "pythonPeakRSSMiB": 49.17578125,
+        "childPeakRSSMiB": 49.05078125,
+        "cpuSeconds": 5.307516000000001,
+        "transferredBytes": 262143872
+      }
+    },
+    {
+      "baseline": {
+        "nominalMiB": 500,
+        "sourceBytes": 524287872,
+        "fixture": "owned PCM WAV, no network socket",
+        "profile": "published baseline",
+        "completed": false,
+        "errorCode": "source_too_large",
+        "elapsedSeconds": 0.30008740700009184,
+        "pythonPeakRSSMiB": 48.8125,
+        "childPeakRSSMiB": 27.23046875,
+        "cpuSeconds": 0.30010099999999995,
+        "transferredBytes": 0
+      },
+      "modernized": {
+        "nominalMiB": 500,
+        "sourceBytes": 524287872,
+        "fixture": "owned PCM WAV, no network socket",
+        "profile": "persistent worker resource budget",
+        "completed": true,
+        "outputBytes": 524287906,
+        "integrityVerified": true,
+        "sha256": "9ee5565259adf39e1546cd1337a06c1bc7d4e5c4f9dcd2195934c7cfd7e63a7d",
+        "elapsedSeconds": 6.937102965999884,
+        "localPipelineMiBPerSecond": 72.0761794051906,
+        "pythonPeakRSSMiB": 49.19140625,
+        "childPeakRSSMiB": 49.06640625,
+        "cpuSeconds": 8.561060000000001,
+        "transferredBytes": 524287872
+      }
+    },
+    {
+      "baseline": {
+        "nominalMiB": 1025,
+        "sourceBytes": 1074790272,
+        "fixture": "owned PCM WAV, no network socket",
+        "profile": "published baseline",
+        "completed": false,
+        "errorCode": "source_too_large",
+        "elapsedSeconds": 0.25960485800010247,
+        "pythonPeakRSSMiB": 48.81640625,
+        "childPeakRSSMiB": 27.234375,
+        "cpuSeconds": 0.2593570000000001,
+        "transferredBytes": 0
+      },
+      "modernized": {
+        "nominalMiB": 1025,
+        "sourceBytes": 1074790272,
+        "fixture": "owned PCM WAV, no network socket",
+        "profile": "persistent worker resource budget",
+        "completed": true,
+        "outputBytes": 1074790306,
+        "integrityVerified": true,
+        "sha256": "4771d995ab9245522678bdf4585d7493d9fca6a455d596fc8fee4f21584c3caa",
+        "elapsedSeconds": 7.306928588000119,
+        "localPipelineMiBPerSecond": 140.27780148460798,
+        "pythonPeakRSSMiB": 49.0625,
+        "childPeakRSSMiB": 49.0625,
+        "cpuSeconds": 11.597912,
+        "transferredBytes": 1074790272
+      }
+    }
+  ],
+  "videoBenchmark": {
+    "before": {
+      "sourceBytes": 114002039,
+      "fixture": "own generated 3840x2160 H.264 at 24fps with CBR filler, 2 seconds",
+      "completed": true,
+      "elapsedSeconds": 2.3837654689998544,
+      "ffmpegCPUSeconds": 4.075382,
+      "outputBytes": 26725,
+      "copiedVideo": false,
+      "encodedVideoPacketsPreserved": false,
+      "peakChildRSSMiB": 471.6328125
+    },
+    "after": {
+      "sourceBytes": 114002039,
+      "fixture": "own generated 3840x2160 H.264 at 24fps with CBR filler, 2 seconds",
+      "completed": true,
+      "elapsedSeconds": 0.2695666239999355,
+      "ffmpegCPUSeconds": 0.2356790000000002,
+      "outputBytes": 114002039,
+      "copiedVideo": true,
+      "encodedVideoPacketsPreserved": true,
+      "peakChildRSSMiB": 471.6328125
+    }
+  },
+  "decoderBenchmark": [
+    {
+      "nominalMiB": 100,
+      "mode": "disk",
+      "receivedBytes": 104857600,
+      "elapsedSeconds": 0.510850173,
+      "peakRSSDeltaMiB": 63.140625,
+      "peakArrayBuffersDeltaMiB": 49.50261306762695,
+      "sha256": "20492a4d0d84f8beb1767f6616229f85d44c2827b64bdbfb260ee12fa1109e0e"
+    },
+    {
+      "nominalMiB": 1025,
+      "mode": "disk",
+      "receivedBytes": 1074790400,
+      "elapsedSeconds": 1.835053462,
+      "peakRSSDeltaMiB": 74.0625,
+      "peakArrayBuffersDeltaMiB": 56.75261306762695,
+      "sha256": "0e5784b2441347f7c1cbfe2ee03dd421ff87c3086fdf0ce280cf26cbcf114462"
+    },
+    {
+      "nominalMiB": 16,
+      "mode": "disk",
+      "receivedBytes": 16777216,
+      "elapsedSeconds": 0.317762511,
+      "peakRSSDeltaMiB": 25.953125,
+      "peakArrayBuffersDeltaMiB": 17.96964454650879,
+      "sha256": "080acf35a507ac9849cfcba47dc2ad83e01b75663a516279c8b9d243b719643e"
+    },
+    {
+      "nominalMiB": 250,
+      "mode": "disk",
+      "receivedBytes": 262144000,
+      "elapsedSeconds": 1.725344666,
+      "peakRSSDeltaMiB": 70.953125,
+      "peakArrayBuffersDeltaMiB": 54.50261306762695,
+      "sha256": "e9474e4cc673c0c227a6e807e04aa4ab1f88d3744243950a290869c53daa65df"
+    },
+    {
+      "nominalMiB": 500,
+      "mode": "disk",
+      "receivedBytes": 524288000,
+      "elapsedSeconds": 2.099511375,
+      "peakRSSDeltaMiB": 68.109375,
+      "peakArrayBuffersDeltaMiB": 50.69011306762695,
+      "sha256": "a08a92258f621b55d08ad1e84c90c2ea6286fc6b6c9a4dfa7156afb16c190170"
+    },
+    {
+      "nominalMiB": 64,
+      "mode": "disk",
+      "receivedBytes": 67108864,
+      "elapsedSeconds": 0.8742953000000001,
+      "peakRSSDeltaMiB": 46.94140625,
+      "peakArrayBuffersDeltaMiB": 35.1221981048584,
+      "sha256": "3b6a07d0d404fab4e23b6d34bc6696a6a312dd92821332385e5af7c01c421351"
+    },
+    {
+      "nominalMiB": 96,
+      "mode": "disk",
+      "receivedBytes": 100663296,
+      "elapsedSeconds": 0.395087863,
+      "peakRSSDeltaMiB": 56.9140625,
+      "peakArrayBuffersDeltaMiB": 43.75261306762695,
+      "sha256": "425382d5857f04fc49585cabbdef6fc647472ee26f52c54caaaeaad17320b3f8"
+    },
+    {
+      "nominalMiB": 16,
+      "mode": "memory",
+      "receivedBytes": 16777216,
+      "elapsedSeconds": 0.083807238,
+      "peakRSSDeltaMiB": 57.078125,
+      "peakArrayBuffersDeltaMiB": 48.00281620025635,
+      "sha256": "080acf35a507ac9849cfcba47dc2ad83e01b75663a516279c8b9d243b719643e"
+    },
+    {
+      "nominalMiB": 64,
+      "mode": "memory",
+      "receivedBytes": 67108864,
+      "elapsedSeconds": 0.154556047,
+      "peakRSSDeltaMiB": 175.8828125,
+      "peakArrayBuffersDeltaMiB": 162.37781143188477,
+      "sha256": "3b6a07d0d404fab4e23b6d34bc6696a6a312dd92821332385e5af7c01c421351"
+    },
+    {
+      "nominalMiB": 96,
+      "mode": "memory",
+      "receivedBytes": 100663296,
+      "elapsedSeconds": 1.2257079590000002,
+      "peakRSSDeltaMiB": 245.1015625,
+      "peakArrayBuffersDeltaMiB": 231.69031143188477,
+      "sha256": "425382d5857f04fc49585cabbdef6fc647472ee26f52c54caaaeaad17320b3f8"
+    }
+  ],
+  "liveUnauthenticatedLogin": [
+    {
+      "signedIn": false,
+      "clerkLoaded": true,
+      "formVisible": true,
+      "studioHidden": true,
+      "overflow": false,
+      "viewport": 1440,
+      "httpStatus": 200,
+      "javascriptErrors": 0
+    },
+    {
+      "signedIn": false,
+      "clerkLoaded": true,
+      "formVisible": true,
+      "studioHidden": true,
+      "overflow": false,
+      "viewport": 390,
+      "httpStatus": 200,
+      "javascriptErrors": 0
+    }
+  ]
+}

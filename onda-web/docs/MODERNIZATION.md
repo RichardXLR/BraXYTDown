@@ -59,3 +59,15 @@ Checkpoints de fontes já adquiridas são reutilizados quando SHA-256 confere. A
 Login, permissões, DRM, conteúdo removido, restrições regionais, bloqueios de IP e limites da origem continuam sendo respeitados. O bloqueio conhecido do YouTube é apresentado como bloqueado, não como teste de extração aprovado. Redis e armazenamento de objetos não foram adicionados porque a instalação de um servidor não precisa deles; para múltiplos servidores será necessário armazenamento compartilhado/filas distribuídas, mantendo as mesmas garantias de idempotência e isolamento.
 
 Validação final local: **1.236 testes aprovados**, incluindo as verificações Chromium, antes da publicação. O pipeline também executa a suíte contra as dependências candidatas e testes reais na Vercel; o resultado da execução publicada deve ser consultado no GitHub Actions.
+
+## Publicação verificada
+
+A versão foi publicada nos três domínios em **11/10/2026**, no deployment `dpl_C33ty8UX8v3EhBCYLMSeV3c6hKFc`, em ambiente de produção. O [workflow de release](https://github.com/RichardXLR/BraXYTDown/actions/runs/38178954302) concluiu com sucesso: **17 verificações aprovadas, 2 canários YouTube bloqueados pela origem, 0 falhas**, sem promoção pendente ou último erro. A quarentena histórica permaneceu preservada.
+
+Pydantic passou a 2.14.1, pydantic-core a 2.50.1 e pycryptodomex a 3.24.1. A [execução posterior do monitor](https://github.com/RichardXLR/BraXYTDown/actions/runs/38179290788) confirmou `unchanged`, sem publicação duplicada. yt-dlp 2026.8.19, Deno 2.9.7 e a distribuição imageio-ffmpeg 0.6.0 permanecem como versões estáveis verificadas pelo resolvedor.
+
+As respostas HTTPS dos três hosts apontaram para o mesmo deployment. SHA-256 de `app.js`, `account.js`, `download-stream.js` e `download-storage.js` coincidiu com o repositório. Um download sem login foi recusado com 401 antes do processamento.
+
+Além do benchmark, uma tarefa persistente real local gerou **1.074.790.478 bytes em 11,87 segundos**, conferiu SHA-256, apagou payload e checkpoint criptografados, e entregou um intervalo de 1 MiB por link assinado com HTTP 206. A autenticação nesse teste usou uma fixture Clerk explícita; não foi provisionado um worker externo.
+
+[Resultados completos em JSON](VERIFICATION-2026-10-11.json).
