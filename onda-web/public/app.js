@@ -30,7 +30,9 @@
   const EXAMPLE_URL = new URL('/canary.wav', window.location.origin).href;
   const VIDEO_EXAMPLE_URL = new URL('/canary.mp4', window.location.origin).href;
   const MAX_COOKIE_BYTES = 65536;
-  const MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024;
+  let MAX_DOWNLOAD_BYTES = 448 * 1024 * 1024;
+  let pendingFile = null, fileCleanup = null, savingController = null;
+  let jobsEnabled = false;
   let cookieValidationController = null;
   let sessionImportGeneration = 0;
   let validatedCookieLink = '';
@@ -622,7 +624,7 @@
     $('studio-format-count').textContent = video ? '4 formatos de vídeo' : '8 formatos de áudio';
     $('card-mode-title').textContent = video ? 'VÍDEO POR LINK' : 'ÁUDIO POR LINK';
     $('hero-media-word').textContent = video ? 'seu vídeo.' : 'seu som.';
-    $('download-limits').textContent = video ? 'Sem limite por duração · 4K / 30 fps · até 100 MB por arquivo' : 'Sem limite por duração · até 100 MB por arquivo';
+    $('download-limits').textContent = video ? 'Sem limite por duração · 4K / 30 fps · capacidade conforme recursos disponíveis' : 'Sem limite por duração · capacidade conforme recursos disponíveis';
     document.body.dataset.mediaType = type;
     updateTools();
     if (currentMediaType !== type) {
@@ -654,6 +656,11 @@
   }
 
   function releaseFile() {
+    savingController?.abort();
+    pendingFile = null;
+    sourceValidation = null;
+    const cleanup = fileCleanup; fileCleanup = null;
+    Promise.resolve(cleanup?.()).catch(() => {});
     if (saveDialog.open) saveDialog.close();
     saveOpen.hidden = true;
     if (objectURL) URL.revokeObjectURL(objectURL);
@@ -710,7 +717,7 @@
       if (activeController !== controller || sessionLocked) return;
       timedOut = true;
       controller.abort();
-    }, 280000);
+    }, 315000);
     setBusy(kind);
     return controller;
   }
@@ -900,6 +907,7 @@
       if (finite(event.durationSeconds) && event.durationSeconds > 0 && finite(event.processedSeconds)) percent = event.processedSeconds / event.durationSeconds * 100;
       if (finite(event.outputBytes) && event.outputBytes > 0) detail += ` · ${formatBytes(event.outputBytes)}`;
     }
+    if (received !== null && total && finite(event.speedBytesPerSecond) && event.speedBytesPerSecond > 0 && total > received) detail += ` · ~${formatDuration(Math.ceil((total - received) / event.speedBytesPerSecond))} restantes`;
     if (finite(event.attempt) && event.attempt > 1) detail += ` · tentativa ${event.attempt}`;
     $('download-stage-detail').textContent = detail;
     progressTrack.hidden = false;
@@ -912,6 +920,7 @@
   }
 
   async function receiveDownload(response, controller, contentType, onProgress) {
+    const memoryLimit = Math.min(MAX_DOWNLOAD_BYTES, 100 * 1024 * 1024);
     ensureOperation(controller);
     const lengthHeader = response.headers.get('Content-Length');
     const encoding = (response.headers.get('Content-Encoding') || 'identity').trim().toLowerCase();
@@ -919,9 +928,9 @@
     // describes the encoded wire bytes and cannot verify the decoded Blob.
     const total = encoding === 'identity' && /^\d+$/.test(lengthHeader || '') ? Number(lengthHeader) : 0;
     const knownLength = Number.isSafeInteger(total) && total > 0;
-    if (knownLength && total > MAX_DOWNLOAD_BYTES) {
+    if (knownLength && total > memoryLimit) {
       try { await response.body?.cancel(); } catch { /* The rejection is already final. */ }
-      throw new Error('O arquivo ultrapassa 100 MB. Escolha uma resolução menor ou ajuste o trecho.');
+      throw new Error('O arquivo ultrapassa a capacidade disponível nesta transferência.');
     }
     let blob;
     if (response.body && typeof response.body.getReader === 'function') {
@@ -940,7 +949,7 @@
           ensureOperation(controller);
           if (done) break;
           received += value.byteLength;
-          if (received > MAX_DOWNLOAD_BYTES) throw new Error('O arquivo ultrapassa 100 MB. Escolha uma resolução menor ou ajuste o trecho.');
+          if (received > memoryLimit) throw new Error('O arquivo ultrapassa a capacidade disponível nesta transferência.');
           if (knownLength && received > total) throw new Error('A transferência retornou um tamanho inesperado. Tente novamente.');
           chunks.push(value);
           onProgress?.(received, knownLength ? total : 0);
@@ -956,10 +965,76 @@
     } else {
       blob = await response.blob();
       ensureOperation(controller);
-      if (blob.size > MAX_DOWNLOAD_BYTES) throw new Error('O arquivo ultrapassa 100 MB. Escolha uma resolução menor ou ajuste o trecho.');
+      if (blob.size > memoryLimit) throw new Error('O arquivo ultrapassa a capacidade disponível nesta transferência.');
       if (knownLength && blob.size !== total) throw new Error('A transferência ficou incompleta. Tente novamente.');
     }
     return blob;
+  }
+
+  async function waitForJob(id, controller) {
+    let completed = false;
+    try {
+      while (true) {
+        ensureOperation(controller);
+        const response = await window.OndaAuth.fetch(`/api/jobs/${id}`, { signal: controller.signal, cache: 'no-store' });
+        if (!response.ok) throw await responseError(response);
+        const { job } = await response.json();
+        ensureOperation(controller);
+        if (job.status === 'failed' || job.status === 'cancelled') {
+          const error = new Error(job.status === 'cancelled' ? 'Tarefa cancelada.' : 'Não foi possível concluir esta tarefa. Revise o acesso à fonte e tente novamente.');
+          error.code = job.progress?.code || 'download_failed'; throw error;
+        }
+        if (job.status === 'ready') {
+          const delivery = await window.OndaAuth.fetch(`/api/jobs/${id}/delivery`, { method: 'POST', signal: controller.signal });
+          if (!delivery.ok) throw await responseError(delivery);
+          const data = await delivery.json();
+          ensureOperation(controller);
+          const target = new URL(data.url, location.origin);
+          if (target.protocol !== 'https:' && target.origin !== location.origin) throw new Error('O worker retornou um endereço de entrega inseguro.');
+          objectURL = target.href;
+          saveButton.href = objectURL;
+          saveButton.download = safeFilename(data.file.filename, selectedFormat());
+          saveButton.hidden = false; saveOpen.hidden = false;
+          $('save-file-detail').textContent = `${formatBytes(data.file.size)} · link temporário`;
+          showStatus('success', 'Seu arquivo está pronto', 'O processamento foi concluído e verificado pelo worker. Salve o arquivo para transferir ao dispositivo.');
+          progressTrack.hidden = true;
+          saveDialog.showModal(); saveButton.focus({ preventScroll: true });
+          completed = true; return;
+        }
+        if (job.status === 'queued') {
+          showStatus('loading', 'Aguardando processamento', 'Sua tarefa está salva na fila e continuará após uma interrupção do worker.');
+          progressTrack.classList.add('indeterminate');
+        } else if (['extracting', 'downloading', 'converting'].includes(job.progress?.stage)) renderDownloadProgress({ type: 'progress', ...job.progress });
+        else if (job.progress?.stage === 'verifying') {
+          showStatus('loading', 'Verificando o arquivo', 'Conferindo a integridade da mídia antes da entrega.');
+          progressTrack.classList.add('indeterminate');
+        }
+        await new Promise((resolve, reject) => {
+          const stop = () => { clearTimeout(timer); reject(new DOMException('Download cancelado.', 'AbortError')); };
+          const timer = setTimeout(() => { controller.signal.removeEventListener('abort', stop); resolve(); }, 1500);
+          controller.signal.addEventListener('abort', stop, { once: true });
+          if (controller.signal.aborted) stop();
+        });
+      }
+    } finally {
+      if (!completed && controller.signal.aborted && window.OndaAuth.signedIn) window.OndaAuth.fetch(`/api/jobs/${id}`, { method: 'DELETE' }).catch(() => {});
+    }
+  }
+
+  let sourceValidation = null;
+  async function preflightSource(url, cookies, controller) {
+    if (!cookies) return;
+    const identity = `${url}|${cookies}`;
+    if (sourceValidation?.identity === identity && Date.now() - sourceValidation.time < 300000) return;
+    const response = await window.OndaAuth.fetch('/api/session/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, cookies }), signal: controller.signal });
+    ensureOperation(controller);
+    if (!response.ok) throw await responseError(response);
+    const result = await response.json();
+    ensureOperation(controller);
+    // This validates scope and expiry, not whether an origin accepts a session.
+    if (cookieContent($('cookies-input').value.trim()) !== cookies || input.value.trim() !== url) throw new DOMException('A sessão da fonte mudou.', 'AbortError');
+    sourceValidation = { identity, time: Date.now() };
+    if (result.expired === true || result.valid === false) throw new Error('Renove os cookies da origem antes de continuar.');
   }
 
   async function download(event) {
@@ -982,9 +1057,19 @@
     progressFill.style.width = '0%';
     renderDownloadProgress({ type: 'progress', stage: 'extracting' });
     try {
+      await preflightSource(url, cookies, controller);
+      if (jobsEnabled) {
+        clearTimeout(timeoutId); timeoutId = null;
+        const response = await window.OndaAuth.fetch('/api/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ download: withCookies({ url, media_type: type, format, quality, ...options }, cookies), idempotencyKey: crypto.randomUUID(), priority: 1 }), signal: controller.signal });
+        if (!response.ok) throw await responseError(response);
+        const { job } = await response.json();
+        await waitForJob(job.id, controller);
+        addHistory({ url, media_type: type, format, quality, options, title: 'Mídia processada', timestamp: Date.now() });
+        return;
+      }
       const response = await window.OndaAuth.fetch('/api/download', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: window.OndaDownloadStream?.CONTENT_TYPE || 'application/octet-stream' },
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID(), Accept: window.OndaDownloadStream?.CONTENT_TYPE || 'application/octet-stream' },
         body: JSON.stringify(withCookies({ url, media_type: type, format, quality, ...options }, cookies)),
         signal: controller.signal,
       });
@@ -1005,6 +1090,7 @@
       let fileDetails = null;
       const result = streamed ? await window.OndaDownloadStream.receive(response, {
         signal: controller.signal, ensureOperation: () => ensureOperation(controller), maxBytes: MAX_DOWNLOAD_BYTES,
+        sinkFactory: details => window.OndaDownloadStorage.create(details, { userId: window.Clerk.user.id, ensureOperation: () => ensureOperation(controller) }),
         onEvent(event) {
           ensureOperation(controller);
           if (event.type === 'progress') renderDownloadProgress(event);
@@ -1015,6 +1101,7 @@
         },
       }) : null;
       if (!streamed) renderDownloadProgress({ type: 'progress', stage: 'delivering' });
+      fileCleanup = result?.cleanup || null;
       const blob = result?.blob || await receiveDownload(response, controller, contentType, (received, total) => {
         const now = Date.now();
         if (now - lastUpdate > 250 || (total && received >= total)) {
@@ -1031,6 +1118,7 @@
       if (fileDetails && !(type === 'video' ? fileDetails.mime.startsWith('video/') : fileDetails.mime.startsWith('audio/'))) throw new Error('O arquivo recebido não corresponde ao tipo de mídia escolhido.');
       const filename = fileDetails ? safeFilename(fileDetails.name, format) : filenameFromHeader(response.headers.get('Content-Disposition'), format);
       const title = fileDetails?.title || titleFromHeader(response.headers.get('X-Media-Title') || response.headers.get('X-Audio-Title')) || (metadataURL === url && metadata?.title) || filename.replace(/\.[^.]+$/, '');
+      pendingFile = blob;
       objectURL = URL.createObjectURL(blob);
       saveButton.href = objectURL;
       saveButton.download = filename;
@@ -1052,6 +1140,12 @@
       saveButton.focus({ preventScroll: true });
       addHistory({ url, media_type: type, format, quality, options, title: String(title), timestamp: Date.now() });
     } catch (error) {
+      if (ownsOperation(controller) && cookies && ['source_session_invalid', 'source_login_required', 'source_private_access', 'cookies_expired'].includes(error.code)) {
+        const updated = await window.OndaCookieCenter.createValidationFailure(cookies, url, error.code, cookieMetadata).catch(() => null);
+        if (updated && ownsOperation(controller) && !sessionLocked && cookieContent($('cookies-input').value.trim()) === cookies && input.value.trim() === url) {
+          cookieMetadata = updated; await persistCookies(); updateCookieStatus('A origem rejeitou a sessão. Renove os cookies; eles continuam guardados até você removê-los.', true);
+        }
+      }
       if (ownsOperation(controller)) {
         const cancelled = controller.signal.aborted;
         controller.abort();
@@ -1172,6 +1266,28 @@
       const response = await window.OndaAuth.fetch('/api/health', { signal: controller.signal, cache: 'no-store' });
       if (!response.ok) throw new Error('Unavailable');
       const data = await response.json();
+      if (Number.isSafeInteger(data.resourcePolicy?.maxOutputBytes)) MAX_DOWNLOAD_BYTES = Math.min(data.resourcePolicy.maxOutputBytes, data.resourcePolicy.maxWorkspaceBytes || Infinity, 4 * 1024 ** 3);
+      if (data.jobs?.configured) {
+        const workerResponse = await window.OndaAuth.fetch('/api/jobs/capabilities', { signal: controller.signal, cache: 'no-store' });
+        if (workerResponse.ok) {
+          const worker = await workerResponse.json();
+          jobsEnabled = worker.enabled === true && worker.healthy === true;
+          if (jobsEnabled && Number.isFinite(worker.maxOutputMB)) MAX_DOWNLOAD_BYTES = Math.min(worker.maxOutputMB * 1024 ** 2, 4 * 1024 ** 3);
+        }
+      }
+      if (jobsEnabled && !activeController) {
+        const pendingResponse = await window.OndaAuth.fetch('/api/jobs', { signal: controller.signal, cache: 'no-store' });
+        if (pendingResponse.ok) {
+          const pendingData = await pendingResponse.json();
+          const candidate = pendingData.jobs?.find(job => ['queued', 'running', 'ready'].includes(job.status));
+          if (candidate && /^[a-f0-9]{32}$/.test(candidate.id)) {
+            $('resume-job').dataset.job = candidate.id;
+            $('resume-job').textContent = candidate.status === 'ready' ? 'Abrir arquivo disponível' : 'Acompanhar tarefa salva';
+            $('persistent-task').hidden = false;
+          }
+        }
+      }
+      window.OndaDownloadEstimate?.setLimit?.(MAX_DOWNLOAD_BYTES);
       const available = data.ok !== false && data.ready !== false && data.available !== false && data.status !== 'unavailable' && data.status !== 'error' && data.status !== 'degraded';
       $('service-dot').classList.toggle('available', available);
       $('service-dot').classList.toggle('unavailable', !available);
@@ -1472,15 +1588,45 @@
     renderHistory();
     announce('Histórico da conta removido.');
   });
-  saveButton.addEventListener('click', () => {
-    announce('Download enviado ao navegador. Verifique sua pasta de downloads.');
-    // The browser owns file saving and does not expose a completion event.
-    // Keep the Blob URL alive until the download has been handed off.
-    setTimeout(() => { if (saveDialog.open) saveDialog.close(); saveButton.hidden = true; saveOpen.hidden = true; }, 0);
-    const savedURL = objectURL;
-    setTimeout(() => { if (objectURL === savedURL) releaseFile(); }, 60000);
+  saveButton.addEventListener('click', async event => {
+    if (savingController) { event.preventDefault(); return; }
+    if (window.showSaveFilePicker && pendingFile) {
+      event.preventDefault();
+      const file = pendingFile, filename = saveButton.download;
+      const saving = new AbortController(); savingController = saving;
+      try {
+        // Open during the user gesture, before any asynchronous work.
+        const picker = window.showSaveFilePicker({ suggestedName: filename });
+        const handle = await picker;
+        if (pendingFile !== file || !window.OndaAuth.signedIn) return;
+        const destination = await handle.createWritable();
+        try { await file.stream().pipeTo(destination, { signal: saving.signal }); }
+        catch (error) { await destination.abort().catch(() => {}); throw error; }
+        if (pendingFile !== file) return;
+        announce('Arquivo salvo no dispositivo.');
+        if (saveDialog.open) saveDialog.close();
+        releaseFile();
+      } catch (error) {
+        if (error.name !== 'AbortError') announce('Não foi possível salvar o arquivo. Tente novamente.');
+      } finally { if (savingController === saving) savingController = null; }
+    } else {
+      announce('Arquivo enviado ao navegador. Verifique a pasta de downloads.');
+      // Anchor downloads expose no completion event. Keep the disk-backed URL
+      // alive until the next operation, logout or page close.
+      setTimeout(() => { if (saveDialog.open) saveDialog.close(); saveButton.hidden = true; saveOpen.hidden = true; }, 0);
+    }
   });
-  saveOpen.addEventListener('click', () => { if (objectURL) { saveButton.hidden = false; saveDialog.showModal(); saveButton.focus({ preventScroll: true }); } });
+  $('resume-job').addEventListener('click', async () => {
+    const id = $('resume-job').dataset.job;
+    if (activeController || !/^[a-f0-9]{32}$/.test(id || '')) return;
+    releaseFile(); const controller = startOperation('download');
+    clearTimeout(timeoutId); timeoutId = null;
+    $('persistent-task').hidden = true;
+    try { await waitForJob(id, controller); }
+    catch (error) { if (ownsOperation(controller)) showOperationError(error); }
+    finally { endOperation(controller); }
+  });
+  saveOpen.addEventListener('click' , () => { if (objectURL) { saveButton.hidden = false; saveDialog.showModal(); saveButton.focus({ preventScroll: true }); } });
   window.addEventListener('onda:account-state', () => {
     history = readHistory();
     renderHistory();

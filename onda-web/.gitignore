@@ -11,3 +11,5 @@ toolchain.json
 toolchain.json.pending
 autocura-report.json
 *.pyc
+
+node_modules

@@ -68,7 +68,7 @@ jobs:
           VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID || 'prj_uFRebtKoS8lCrM9fqxXMJkgYDGfr' }}
         run: |
           python -c "import os, sys; sys.exit(0 if os.environ.get('CLERK_AUTOCURA_MACHINE_SECRET_KEY', '').strip() else 'AutoCura requires the CLERK_AUTOCURA_MACHINE_SECRET_KEY repository secret.')"
-          vercel pull --yes --environment=preview
+          vercel pull --yes --environment=production
       - name: Build an immutable candidate, verify it, and promote or recover
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}

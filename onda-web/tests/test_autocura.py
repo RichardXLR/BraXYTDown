@@ -127,7 +127,7 @@ def test_promotion_is_after_all_checks_and_durable_pending_journal(factory, tmp_
     assert (tmp_path / "requirements.txt").read_text() == "new verified pins\n"
 
 
-def test_vercel_candidate_uses_separate_remote_preview_without_assigning_production(monkeypatch, tmp_path):
+def test_vercel_candidate_uses_production_environment_without_assigning_domains(monkeypatch, tmp_path):
     from scripts import autocura
     monkeypatch.setenv('VERCEL_TOKEN', 'fake-ci-token')
     monkeypatch.setenv('VERCEL_PROJECT_ID', 'prj_test')
@@ -142,8 +142,8 @@ def test_vercel_candidate_uses_separate_remote_preview_without_assigning_product
     assert provider.stage() == NEW
     assert [command[1] for command, _ in calls] == ['pull', 'deploy']
     command, options = calls[-1]
-    assert '--prod' not in command and '--skip-domain' not in command and '--prebuilt' not in command
-    assert '--environment=preview' in calls[0][0]
+    assert '--prod' in command and '--skip-domain' in command and '--prebuilt' not in command
+    assert '--environment=production' in calls[0][0]
     assert options['credentials'] is True and options['error_code'] == 'vercel_deploy_failed'
 
 
@@ -1877,3 +1877,23 @@ def test_machine_credential_flow_uses_the_installed_official_sdk_surface_without
     monkeypatch.setattr(M2m, "create_token", mint)
     assert ClerkMachineCredentials("machine-fixture-secret").token() == "mt_fixture"
     assert len(calls) == 1
+
+
+def test_component_watch_detects_updates_without_vercel_credentials(tmp_path):
+    from scripts.autocura import check_updates
+    class Latest:
+        def latest(self): return {'yt-dlp':'2026.10.1','deno':'2.9.7'}
+    atomic_json(tmp_path/'.autocura/state.json',{'versions':{'yt-dlp':'2026.8.19','deno':'2.9.7'},'quarantine':[]})
+    report=check_updates(tmp_path,Latest())
+    assert report['required'] is True and report['componentsChanged']==['yt-dlp']
+
+
+def test_component_watch_preserves_quarantine_and_recovers_pending_promotion(tmp_path):
+    from scripts.autocura import check_updates
+    versions={'yt-dlp':'2026.10.1'}
+    class Latest:
+        def latest(self):return versions
+    atomic_json(tmp_path/'.autocura/state.json',{'versions':{},'quarantine':[{'versions':versions}]})
+    assert check_updates(tmp_path,Latest())['required'] is False
+    atomic_json(tmp_path/'.autocura/state.json',{'versions':versions,'pending':{'candidate':{}},'quarantine':[]})
+    assert check_updates(tmp_path,Latest())['status']=='recovery_required'

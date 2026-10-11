@@ -34,7 +34,7 @@
     ...Object.keys(draftDefault).map((key) => `draft.${key}`)]);
   const dirty = new Map();
   const requests = new Set();
-  const studioScripts = ['/ui.js', '/session-store.js', '/cookie-center.js', '/maintenance-center.js', '/download-estimate.js', '/download-stream.js', '/app.js', '/player.js', '/intro.js'];
+  const studioScripts = ['/ui.js', '/session-store.js', '/cookie-center.js', '/maintenance-center.js', '/download-estimate.js', '/download-storage.js', '/download-stream.js', '/app.js', '/player.js', '/intro.js'];
   let state = defaults();
   let revision = 0;
   let userId = null;
@@ -246,7 +246,17 @@
     new Headers(options.headers).forEach((value, key) => headers.set(key, value));
     headers.set('Authorization', `Bearer ${token}`);
     try {
-      const response = await fetch(resource, { ...options, headers, credentials: 'same-origin', signal: controller.signal });
+      let response = await fetch(resource, { ...options, headers, credentials: 'same-origin', signal: controller.signal });
+      if (response.status === 401 && typeof options.body !== 'object' && !(resource instanceof Request && resource.body)) {
+        const failure = await response.clone().json().catch(() => null);
+        if (failure?.code === 'auth_required' && generation === authGeneration && signedIn() && !controller.signal.aborted) {
+          const refreshed = await window.Clerk.session.getToken({ skipCache: true });
+          if (!refreshed || generation !== authGeneration || !signedIn()) throw new Error('Sua sessão terminou. Entre novamente.');
+          await response.body?.cancel();
+          headers.set('Authorization', `Bearer ${refreshed}`);
+          response = await fetch(resource, { ...options, headers, credentials: 'same-origin', signal: controller.signal });
+        }
+      }
       if (generation !== authGeneration || !signedIn()) { controller.abort(); throw new Error('Sua sessão terminou.'); }
       // Keep logout cancellation active while a converted file is streaming.
       if (!response.body) { finish(); return response; }

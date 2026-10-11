@@ -10,6 +10,7 @@ from __future__ import annotations
 import errno
 import http.client
 import math
+import random
 import re
 import socket
 import threading
@@ -42,6 +43,20 @@ class AttemptGuard:
         self.sockets = set()
         self.socket_lock = threading.Lock()
         self.byte_lock = threading.Lock()
+
+    @property
+    def resource_policy(self):
+        return self.parent.resource_policy
+
+    @property
+    def workspace(self):
+        return self.parent.workspace
+
+    def check_workspace(self, extra_bytes=0):
+        return self.parent.check_workspace(extra_bytes)
+
+    def check_output(self, size):
+        return self.parent.check_output(size)
 
     @property
     def remaining(self):
@@ -135,6 +150,7 @@ def _causes(exc):
 
 _NEVER_CODES = frozenset({
     "cancelled", "timeout", "deadline", "deadline_exceeded",
+    "unsafe_redirect", "workspace_exhausted", "source_session_invalid", "source_login_required", "source_private_access",
     "source_too_large", "output_too_large", "metadata_too_large",
     "unsafe_url", "invalid_url", "invalid_source", "invalid_trim",
     "invalid_cookies", "cookie_domain", "cookie_https_required",
@@ -241,7 +257,7 @@ def _retry_after(exc):
                 except (TypeError, ValueError, OverflowError):
                     continue
             if math.isfinite(delay):
-                return min(MAX_RETRY_AFTER, max(0.0, delay))
+                return max(0.0, delay)
     return None
 
 
@@ -250,7 +266,7 @@ def wait_for_retry(guard, attempt: int, exc=None) -> bool:
     guard.check()
     delay = _retry_after(exc) if exc is not None else None
     if delay is None:
-        delay = 0.3 if attempt <= 1 else 0.7
+        delay = min(8, .3 * 2 ** max(0, attempt - 1)) + random.uniform(0, .15)
     if guard.remaining < delay + MIN_RETRY_REMAINING:
         return False
     end = time.monotonic() + delay

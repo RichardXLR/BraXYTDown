@@ -86,8 +86,7 @@ def test_progressive_selection_requires_browser_codecs_and_mixed_video_audio():
     audio = format_item(ext="m4a", vcodec="none", height=None)
     rejected = [format_item(protocol="m3u8_native"), format_item(acodec="none"),
                 format_item(vcodec="av01.0.05M.08"), format_item(has_drm=True),
-                format_item(url="http://cdn.example.com/v.mp4"), format_item(height=4320),
-                format_item(filesize=engine.MAX_SOURCE + 1)]
+                format_item(url="http://cdn.example.com/v.mp4"), format_item(height=4320)]
     candidates = player._candidate_formats({"formats": rejected + [audio, accepted]})
     assert candidates == [(accepted, "video"), (audio, "audio")]
 
@@ -157,7 +156,7 @@ def range_probe_transport(monkeypatch, *, total, content_range=None, length="1")
     monkeypatch.setattr(engine, "direct_handler", Transport)
 
 
-@pytest.mark.parametrize("total, accepted", [(engine.MAX_SOURCE, True), (engine.MAX_SOURCE + 1, False)])
+@pytest.mark.parametrize("total, accepted", [(engine.MAX_SOURCE, True), (engine.MAX_SOURCE + 1, True)])
 def test_range_probe_bounds_the_complete_media_instead_of_the_one_byte_body(monkeypatch, total, accepted):
     range_probe_transport(monkeypatch, total=total)
     result = player.resolve_player("https://example.com/video.mp4", "onda-audio.vercel.app", Guard())

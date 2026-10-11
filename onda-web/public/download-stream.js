@@ -24,12 +24,12 @@
     }
     return result;
   }
-  async function receive(response, { signal, ensureOperation = () => {}, onEvent = () => {}, maxBytes = MAX_OUTPUT } = {}) {
+  async function receive(response, { signal, ensureOperation = () => {}, onEvent = () => {}, maxBytes = MAX_OUTPUT, sinkFactory = null } = {}) {
     const beforeReaderFailure = async error => {
       try { await response.body?.cancel(); } catch (_) { /* Preserve the original failure. */ }
       throw error;
     };
-    if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0 || maxBytes > MAX_OUTPUT) return beforeReaderFailure(invalid());
+    if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0 || maxBytes > (sinkFactory ? 4 * 1024 ** 3 : MAX_OUTPUT)) return beforeReaderFailure(invalid());
     const check = () => {
       if (signal?.aborted) throw new DOMException('Download cancelado.', 'AbortError');
       ensureOperation();
@@ -40,6 +40,7 @@
     if (!response.body?.getReader) return beforeReaderFailure(invalid('Seu navegador não oferece suporte à transferência com progresso. Atualize o navegador.'));
     const reader = response.body.getReader();
     const chunks = [];
+    let sink = null;
     const header = new Uint8Array(5);
     let headerUsed = 0, payload = null, payloadUsed = 0, kind = 0;
     let metadata = null, received = 0, complete = false, succeeded = false, events = 0;
@@ -64,13 +65,13 @@
       lastDeliveryBytes = received;
       notify(event);
     }
-    function consume() {
+    async function consume() {
       check();
       if (complete) throw invalid();
       if (kind === 2) {
         if (!metadata || received + payload.length > metadata.size || received + payload.length > maxBytes) throw invalid();
         received += payload.length;
-        chunks.push(payload);
+        if (sink) await sink.write(payload); else chunks.push(payload);
         reportDelivery();
         return;
       }
@@ -103,6 +104,11 @@
         if (metadata || !Number.isSafeInteger(event.size) || event.size <= 0 || event.size > maxBytes
             || !validText(event.name, 240) || /[\\/]/.test(event.name) || !validText(event.title, 160) || !MIMES.has(event.mime)) throw invalid();
         metadata = { type: 'file', name: event.name, title: event.title, mime: event.mime, size: event.size, recovery: recovery(event.recovery) };
+        if (sinkFactory) {
+          sink = await sinkFactory(metadata);
+          if (!sink || !["write", "commit", "abort"].every(key => typeof sink[key] === "function")) throw invalid();
+          check();
+        }
         deliveryStarted = now();
         if (event.resolution !== undefined) {
           if (!Number.isInteger(event.resolution) || event.resolution <= 0 || event.resolution > 2160) throw invalid();
@@ -146,7 +152,7 @@
           payloadUsed += amount;
           offset += amount;
           if (payloadUsed === payload.length) {
-            consume();
+            await consume();
             payload = null;
             payloadUsed = 0;
             headerUsed = 0;
@@ -155,17 +161,18 @@
       }
       check();
       if (!complete || headerUsed || payload || !metadata || received !== metadata.size) throw invalid();
-      const blob = new Blob(chunks, { type: metadata.mime });
+      const blob = sink ? await sink.commit() : new Blob(chunks, { type: metadata.mime });
       check();
       if (blob.size !== metadata.size) throw invalid();
       reportDelivery(true);
       notify({ type: 'progress', stage: 'ready', downloadedBytes: received, totalBytes: metadata.size, measurement: 'browser' });
       succeeded = true;
-      return { blob, metadata };
+      return { blob, metadata, storageKind: sink?.kind || "memory", cleanup: sink ? () => sink.abort() : async () => {} };
     } finally {
       signal?.removeEventListener('abort', abort);
       if (!succeeded) {
         chunks.length = 0;
+        try { await sink?.abort(); } catch (_) { /* Preserve original failure. */ }
         try { await reader.cancel(); } catch (_) { /* Preserve the original failure. */ }
       }
       reader.releaseLock();

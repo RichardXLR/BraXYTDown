@@ -197,8 +197,6 @@ def _candidate_formats(info):
         else:
             continue
         size = item.get("filesize") or item.get("filesize_approx")
-        if isinstance(size, (int, float)) and size > engine.MAX_SOURCE:
-            continue
         width, height = (int(value) if type(value) in (int, float) and math.isfinite(value) and value > 0 else 0
                          for value in (item.get("width"), item.get("height")))
         if not engine.video_dimensions_supported(width, height):
@@ -257,8 +255,6 @@ def _readable_media(url, guard, media_type=None):
                 length = None if matched[1] == "*" else int(matched[1])
                 if length == 0:
                     raise AudioError("A origem retornou uma prévia parcial inválida.", "preview_unsupported", 422)
-            if length is not None and length > engine.MAX_SOURCE:
-                raise AudioError("A prévia de arquivo direto aceita até 128 MB.", "source_too_large", 413)
             return response.url, inferred
 
 

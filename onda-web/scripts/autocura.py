@@ -1141,11 +1141,11 @@ class Vercel:
         self.wait_current(ready["id"])
 
     def stage(self):
-        # Build a separate preview from the reviewed hash-locked sources.
+        # Build production with its final environment, without assigning domains.
         # Only explicit promotion can move the production domain after tests.
-        run(["vercel", "pull", "--yes", "--environment=preview"], directory=self.root, credentials=True,
+        run(["vercel", "pull", "--yes", "--environment=production"], directory=self.root, credentials=True,
             error_code="vercel_pull_failed")
-        output = run(["vercel", "deploy", "--yes"],
+        output = run(["vercel", "deploy", "--yes", "--prod", "--skip-domain"],
                      directory=self.root, timeout=900, credentials=True, error_code="vercel_deploy_failed")
         url = deployment_url(output.splitlines()[-1])
         # Look up the deployment URL; IDs and ownership are validated before any mutation.
@@ -1551,14 +1551,31 @@ class AutoCura:
             return self.state
 
 
+def check_updates(root, dependencies=None):
+    """Read official release metadata without deployment or account credentials."""
+    state = read_json(Path(root) / ".autocura" / "state.json", {})
+    latest = (dependencies or DependencyCandidate(Path(root))).latest()
+    blocked = any(item.get("versions") == latest for item in state.get("quarantine", []))
+    pending = bool(state.get("pending"))
+    changed = sorted(name for name, version in latest.items()
+                     if state.get("versions", {}).get(name) != version)
+    required = pending or bool(changed) and not blocked
+    return {"status": "recovery_required" if pending else "quarantined" if blocked else "update_available" if changed else "unchanged",
+            "required": required, "componentsChanged": changed, "checkedAt": now()}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("release", "rollback", "test"))
+    parser.add_argument("command", choices=("release", "rollback", "test", "check-updates"))
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--force", action="store_true", help="Manually retest quarantined versions.")
     arguments = parser.parse_args()
     try:
         root = arguments.root.resolve()
+        if arguments.command == "check-updates":
+            result = check_updates(root)
+            print(json.dumps(result, ensure_ascii=False))
+            return 0
         provider = Vercel(root)
         checkpoint = RepositoryCheckpoint(root) if arguments.command != "test" or os.environ.get("GITHUB_TOKEN") else None
         manager = AutoCura(root, provider, checkpoint=checkpoint)

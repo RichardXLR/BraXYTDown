@@ -71,7 +71,7 @@
           || !(value.earliestExpiry === null || (Number.isInteger(value.earliestExpiry)
             && value.earliestExpiry >= 0 && value.earliestExpiry <= 999999999999))) throw failure('invalid');
       } else if (value.status !== 'invalid' || !['invalid_cookies', 'cookie_domain', 'cookies_expired',
-        'cookie_https_required', 'cookies_not_supported', 'timeout', 'validation_failed'].includes(value.code)) throw failure('invalid');
+        'cookie_https_required', 'cookies_not_supported', 'source_session_invalid', 'source_login_required', 'source_private_access', 'timeout', 'validation_failed'].includes(value.code)) throw failure('invalid');
       validation = Object.fromEntries(keys.map(key => [key, value[key]]));
     }
     const clean = { version: 1, contentHash: metadata.contentHash, savedAt: metadata.savedAt, validation };

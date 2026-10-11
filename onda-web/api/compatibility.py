@@ -17,6 +17,7 @@ import urllib.parse
 
 import imageio_ffmpeg
 from pydantic import Field
+from .resources import ResourcePolicy
 from yt_dlp.extractor import gen_extractor_classes
 from yt_dlp.version import __version__ as ytdlp_version
 
@@ -138,9 +139,9 @@ def register(app):
             "limits": {"maxDuration": engine.MAX_DURATION,
                        "maxLosslessDuration": engine.LOSSLESS_DURATION,
                        "maxVideoDuration": engine.VIDEO_DURATION,
-                       "maxSourceMB": engine.MAX_SOURCE // 1024 // 1024,
+                       "maxSourceMB": min(ResourcePolicy.from_environment().max_source_bytes, ResourcePolicy.from_environment().max_workspace_bytes) // 1024**2,
                        "operationTimeoutSeconds": 240,
-                       "maxOutputMB": engine.MAX_OUTPUT // 1024 // 1024},
+                       "maxOutputMB": min(ResourcePolicy.from_environment().max_output_bytes, ResourcePolicy.from_environment().max_workspace_bytes) // 1024**2},
             "formats": {"audio": list(engine.FORMATS), "video": list(engine.VIDEO_FORMATS)},
             "testScope": "metadata",
         }

@@ -32,8 +32,8 @@ from .recovery import AttemptGuard, MAX_ATTEMPTS, retry_kind, wait_for_retry
 from .security import AudioError, Guard, PublicRH, public_url
 
 LOGGER = logging.getLogger("onda")
-MAX_OUTPUT = 100 * 1024 * 1024
-MAX_SOURCE = 128 * 1024 * 1024
+MAX_OUTPUT = 1024 ** 3
+MAX_SOURCE = 1024 ** 3
 VIDEO_RESOLUTIONS = ("source", "360", "480", "720", "1080", "1440", "2160")
 MAX_VIDEO_SHORT_EDGE = 2160
 MAX_VIDEO_LONG_EDGE = 3840
@@ -253,8 +253,9 @@ def runtime_options():
 def options(guard: Guard, directory: Path | None = None):
     def progress(info):
         guard.check()
-        if info.get("downloaded_bytes", 0) > guard.maximum_bytes:
-            raise AudioError("O arquivo de origem ultrapassa o limite de 128 MB.", "source_too_large", 413)
+        guard.check_workspace()
+        if info.get("downloaded_bytes", 0) > (guard.resource_policy.max_source_bytes if guard.resource_policy else guard.maximum_bytes):
+            raise AudioError("A origem ultrapassa a capacidade configurada.", "source_too_large", 413)
         reporter = getattr(guard, "progress", None)
         if reporter is not None and info.get("status") in ("downloading", "finished"):
             reporter.transfer(info.get("filename") or "track", info.get("downloaded_bytes", 0),
@@ -269,8 +270,8 @@ def options(guard: Guard, directory: Path | None = None):
         # also cover HLS/DASH fragments. Fragment-level retries start afresh.
         "retries": 0, "fragment_retries": 2, "extractor_retries": 1,
         "continuedl": False, "skip_unavailable_fragments": False,
-        "concurrent_fragment_downloads": 4, "http_chunk_size": 0,
-        "max_filesize": guard.maximum_bytes,
+        "concurrent_fragment_downloads": guard.resource_policy.fragment_workers if guard.resource_policy else 4, "http_chunk_size": 0,
+        "max_filesize": guard.resource_policy.max_source_bytes if guard.resource_policy else guard.maximum_bytes,
         "progress_hooks": [progress], "hls_prefer_native": True,
         "fixup": "never", "writethumbnail": False, "writeinfojson": False,
         # Native HLS must fail closed instead of delegating an URL to FFmpeg.
@@ -290,6 +291,12 @@ def translate_error(exc: Exception, guard: Guard) -> AudioError:
     if isinstance(exc, AudioError):
         return exc
     text = str(exc).lower()
+    if any(token in text for token in ("cookies are no longer valid", "cookies have expired", "expired cookies", "invalid cookie", "session expired", "session has expired")):
+        return AudioError("A sessão da origem expirou ou foi rejeitada. Renove os cookies em Acesso à fonte.", "source_session_invalid", 422)
+    if any(token in text for token in ("login required", "requires authentication", "please log in", "sign in to access")):
+        return AudioError("Entre na plataforma de origem e importe uma sessão válida.", "source_login_required", 422)
+    if any(token in text for token in ("private video", "members-only", "members only")):
+        return AudioError("A origem exige uma conta com permissão para este conteúdo.", "source_private_access", 403)
     if any(token in text for token in ("wrong password", "incorrect password", "invalid password", "password verification failed")):
         return AudioError("A plataforma não aceitou a senha desse vídeo. Confira a senha fornecida pelo criador.",
                           "video_password_invalid", 422)
@@ -419,7 +426,7 @@ def inspect_media(url: str, guard: Guard, cookies: str | None = None, media_type
         source = source_for(url)
         session = (session or SessionOptions()).for_source(source, url)
         cookiejar = parse_netscape(cookies, url, direct_media=source == "Arquivo direto")
-        public_url(url)
+        public_url(url, guard=guard)
         guard.check()
         if source == "Arquivo direto":
             factory = functools.partial(direct_handler, user_agent=session.user_agent) if session.user_agent else direct_handler
@@ -443,8 +450,6 @@ def inspect_media(url: str, guard: Guard, cookies: str | None = None, media_type
                         if start != 0 or length not in (None, end - start + 1):
                             raise AudioError("A origem retornou um tamanho de arquivo inconsistente.", "invalid_media_response", 502)
                         length = total
-                    if length is not None and length > MAX_SOURCE:
-                        raise AudioError("O arquivo de origem ultrapassa o limite de 128 MB.", "source_too_large", 413)
             result = {"title": direct_title(url), "duration": None, "thumbnail": None,
                       "source": source, "webpage_url": url, "formats": []}
             if length is not None:
@@ -483,7 +488,7 @@ def acquire_media(url: str, directory: Path, guard: Guard, audio_format: str, co
             # direct media inside its bounded transfer attempts, so an initial
             # temporary DNS failure can recover before any TCP connection.
             return direct_download(url, directory, guard, **({"session": session} if session.user_agent else {}))
-        public_url(url)
+        public_url(url, guard=guard)
         with SafeYoutubeDL(session.extraction_options(options(guard, directory)), guard, cookiejar=cookiejar) as downloader:
             info = downloader.extract_info(url, download=False)
             if not info:
@@ -503,8 +508,8 @@ def acquire_media(url: str, directory: Path, guard: Guard, audio_format: str, co
         files = [path for path in directory.glob("source.*") if path.is_file() and not path.name.endswith((".part", ".ytdl"))]
         if len(files) != 1 or not files[0].stat().st_size:
             raise AudioError("A plataforma não entregou o áudio completo. Tente outra origem.", "download_failed", 422)
-        if files[0].stat().st_size > guard.maximum_bytes:
-            raise AudioError("O arquivo de origem ultrapassa o limite de 128 MB.", "source_too_large", 413)
+        if files[0].stat().st_size > (guard.resource_policy.max_source_bytes if guard.resource_policy else guard.maximum_bytes):
+            raise AudioError("A origem ultrapassa a capacidade configurada.", "source_too_large", 413)
         return files[0], details
     finally:
         if cookiejar is not None:
@@ -607,7 +612,7 @@ def select_video_formats(info: dict, resolution: str, available_bytes: int, mute
         if all(value is not None for value in sizes) and sum(sizes) > available_bytes * .96:
             continue
         return video, separate_audio
-    raise AudioError("A origem do vídeo ultrapassa 128 MB, mesmo em uma resolução menor. Use um vídeo menor.", "source_too_large", 413)
+    raise AudioError("As faixas da origem ultrapassam a capacidade disponível.", "source_too_large", 413)
 
 
 def clone_download_cookies(cookiejar):
@@ -629,7 +634,7 @@ def acquire_video_media(url: str, directory: Path, guard: Guard, video_resolutio
         if source_name == "Arquivo direto":
             path, details = direct_download(url, directory, guard, **({"session": session} if session.user_agent else {}))
             return VideoSources(path), details
-        public_url(url)
+        public_url(url, guard=guard)
         opts = session.extraction_options(options(guard, directory))
         # Extraction lists every format. Downloads below receive individual
         # streams, not the bestvideo+bestaudio merger path.
@@ -643,7 +648,7 @@ def acquire_video_media(url: str, directory: Path, guard: Guard, video_resolutio
             if excluded:
                 info = {**info, "formats": [item for item in info.get("formats", [info])
                                             if str(item.get("format_id") or "") not in excluded]}
-            video, audio = select_video_formats(info, str(video_resolution), guard.maximum_bytes - guard.received, mute,
+            video, audio = select_video_formats(info, str(video_resolution), min(guard.maximum_bytes - guard.received, guard.resource_policy.max_source_bytes if guard.resource_policy else guard.maximum_bytes), mute,
                                                 video_format=video_format)
             video_path = directory / "source-video.media"
             audio_path = directory / "source-audio.media" if audio else None
@@ -660,7 +665,7 @@ def acquire_video_media(url: str, directory: Path, guard: Guard, video_resolutio
                 # Resolve both stream destinations before opening either one.
                 # Parallel work still shares Guard's aggregate byte/deadline
                 # accounting and uses the same pinned public network handler.
-                public_url(stream_info["url"])
+                public_url(stream_info["url"], guard=guard)
                 streams.append((stream_info, path))
             streams = [(stream_info, path, clone_download_cookies(downloader.cookiejar))
                        for stream_info, path in streams]
@@ -697,8 +702,8 @@ def acquire_video_media(url: str, directory: Path, guard: Guard, video_resolutio
                 for _, _, stream_cookies in streams:
                     stream_cookies.clear()
             paths = [video_path] + ([audio_path] if audio_path else [])
-            if sum(path.stat().st_size for path in paths) > guard.maximum_bytes:
-                raise AudioError("As faixas de origem do vídeo ultrapassam 128 MB.", "source_too_large", 413)
+            if sum(path.stat().st_size for path in paths) > (guard.resource_policy.max_source_bytes if guard.resource_policy else guard.maximum_bytes):
+                raise AudioError("As faixas da origem ultrapassam a capacidade disponível.", "source_too_large", 413)
             details["resolution"] = video.get("height")
             return VideoSources(video_path, audio_path), details
     finally:
@@ -747,6 +752,18 @@ def sanitize_transport_metadata(source: Path, guard: Guard):
         if not shape:
             return
         stride, offset, prefix = shape
+        # Scan first: ordinary transport streams require no second full-size file.
+        original.seek(prefix)
+        found = False
+        while block := original.read(stride * 4096):
+            guard.check()
+            if any(((block[i + offset + 1] & 0x1f) << 8) | block[i + offset + 2] == 0x11
+                   for i in range(0, len(block) - stride + 1, stride)):
+                found = True
+                break
+        if not found:
+            return
+        guard.check_workspace(size)
         temporary = source.with_name(source.name + ".transport-safe")
         descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         removed = 0
@@ -775,6 +792,12 @@ def sanitize_transport_metadata(source: Path, guard: Guard):
 def probe_media(source: Path, guard: Guard):
     """Read local container information without adding an ffprobe dependency."""
     guard.check()
+    identity = (str(source.resolve()), source.stat().st_size, source.stat().st_mtime_ns)
+    cache = getattr(guard, "probe_cache", None)
+    if cache is None:
+        cache = guard.probe_cache = {}
+    if identity in cache:
+        return dict(cache[identity])
     sanitize_transport_metadata(source, guard)
     command = [imageio_ffmpeg.get_ffmpeg_exe(), "-hide_banner", "-nostdin"] + input_command(source)
     log = source.parent / f"probe-{source.name}.log"
@@ -812,7 +835,7 @@ def probe_media(source: Path, guard: Guard):
     fps = re.search(r"(\d+(?:\.\d+)?) fps", video or "")
     aspect = re.search(r"\[SAR (\d+):(\d+)", video or "")
     rotation = re.search(r"^ {4,6}displaymatrix: rotation of (-?\d+(?:\.\d+)?) degrees", text, re.M)
-    return {"duration": duration, "video": bool(video), "audio": any(item[2] == "Audio" for item in streams),
+    result = {"duration": duration, "video": bool(video), "audio": any(item[2] == "Audio" for item in streams),
             "width": int(dimensions[1]) if dimensions else None,
             "height": int(dimensions[2]) if dimensions else None,
             "fps": float(fps[1]) if fps else None, "video_index": int(video_stream[1]) if video_stream else 0,
@@ -821,6 +844,9 @@ def probe_media(source: Path, guard: Guard):
             "pixel_format": (match[1] if (match := re.search(r",\s*(yuv420p(?:10le)?)(?:[,(\s]|$)", video or "")) else None),
             "sample_aspect_ratio": (int(aspect[1]), int(aspect[2])) if aspect else None,
             "rotation": float(rotation[1]) if rotation else 0}
+    if len(cache) < 16:
+        cache[(str(source.resolve()), source.stat().st_size, source.stat().st_mtime_ns)] = dict(result)
+    return result
 
 
 def validate_trim(settings: MediaSettings, duration: float | None):
@@ -874,8 +900,9 @@ def run_conversion(command, target, directory, guard):
             while process.poll() is None:
                 guard.check()
                 report_conversion()
-                if target.exists() and target.stat().st_size > MAX_OUTPUT:
-                    raise AudioError("A mídia convertida ultrapassa 100 MB. Escolha uma resolução menor ou uma mídia mais curta.", "output_too_large", 413)
+                guard.check_workspace()
+                if target.exists() and target.stat().st_size:
+                    guard.check_output(target.stat().st_size)
                 if log.stat().st_size > 1024 * 1024:
                     raise AudioError("Essa mídia contém erros e não pode ser convertida.", "conversion_failed", 422)
                 time.sleep(.1)
@@ -890,8 +917,7 @@ def run_conversion(command, target, directory, guard):
         times = re.findall(r"^out_time_us=(-?\d+)$", progress, re.M)
         if not any(int(value) > 0 for value in frames + times):
             raise AudioError("O trecho escolhido não contém áudio ou vídeo. Confira o início e o fim do corte.", "conversion_failed", 422)
-        if target.stat().st_size > MAX_OUTPUT:
-            raise AudioError("A mídia convertida ultrapassa 100 MB. Escolha uma resolução menor ou uma mídia mais curta.", "output_too_large", 413)
+        guard.check_output(target.stat().st_size)
         guard.check()
         return target
     finally:
@@ -988,17 +1014,6 @@ def convert_video(source: VideoSources | Path, directory: Path, video_format: st
     copy_audio = (not getattr(guard, "force_encode", False) and quality == "source" and not start and output_duration is None
                   and not settings.normalize_audio
                   and audio_inspected.get("audio_codec") == compatible_audio_codec)
-    # Reserve a small container overhead before copying, without forcing a
-    # full UHD encode for a 95–99 MB source that fits the 100 MB output budget.
-    # Count all source bytes conservatively, plus newly encoded audio; the
-    # running conversion still enforces the exact hard output-size limit.
-    estimated_output = sources.video.stat().st_size
-    if sources.audio and not settings.mute:
-        estimated_output += sources.audio.stat().st_size
-    if not settings.mute and not copy_audio and inspected["duration"]:
-        estimated_output += inspected["duration"] * (192 if quality == "source" else int(quality)) * 1000 / 8
-    if estimated_output > MAX_OUTPUT * .99:
-        copy_video = False
     guard.copy_attempted = copy_video or (copy_audio and not settings.mute)
     target = directory / f"video.{video_format}"
     threads = video_worker_threads()
@@ -1038,7 +1053,7 @@ def convert_video(source: VideoSources | Path, directory: Path, video_format: st
                     long_edge / max(inspected["width"], inspected["height"]))
         output_pixels = inspected["width"] * inspected["height"] * scale * scale
         bitrate_ceiling = max(3500, round(3500 * output_pixels / (1920 * 1080)))
-        video_bitrate = (max(64, min(bitrate_ceiling, int(MAX_OUTPUT * .8 * 8 / effective_duration / 1000)
+        video_bitrate = (max(64, min(bitrate_ceiling, int((guard.resource_policy.max_output_bytes if guard.resource_policy else MAX_OUTPUT) * .8 * 8 / effective_duration / 1000)
                                                     - (0 if settings.mute else 320)))
                          if effective_duration else bitrate_ceiling)
         command += ["-vf", filters, "-r", f"{fps:g}", "-c:v", video_codec, "-pix_fmt", "yuv420p",
@@ -1095,6 +1110,9 @@ def acquire_with_recovery(url, directory, audio_format, guard, settings, cookies
             return sources, details
         except Exception as exc:
             kind = retry_kind(exc)
+            session_error = translate_error(exc, attempt_guard)
+            if session_error.code in {"source_session_invalid", "source_login_required", "source_private_access"}:
+                kind = None
             already_exhausted = bool(getattr(exc, "recovery_exhausted", False))
             error = translate_error(exc, attempt_guard)
             error.recovery_attempts = number
@@ -1128,7 +1146,17 @@ def prepare_download(url, directory, audio_format, quality, guard, cookies: str 
     settings = settings or MediaSettings()
     try:
         session_args = {"session": session} if session and (session.video_password or session.user_agent) else {}
-        sources, details = acquire_with_recovery(url, directory, audio_format, guard, settings, cookies, **session_args)
+        checkpoint = getattr(guard, "acquired_checkpoint", None)
+        if checkpoint:
+            paths = [directory / item["path"] for item in checkpoint["inputs"]]
+            sources = VideoSources(paths[0], paths[1] if len(paths) > 1 else None) if checkpoint["video"] else paths[0]
+            details = checkpoint["details"]
+        else:
+            from .operations import provider_circuit
+            with provider_circuit(source_for(url), getattr(guard, "partition", "public")):
+                sources, details = acquire_with_recovery(url, directory, audio_format, guard, settings, cookies, **session_args)
+            if getattr(guard, "save_acquired", None):
+                guard.save_acquired(sources, details)
         if settings.media_type == "video":
             try:
                 target = convert_video(sources, directory, audio_format, quality, guard, settings)
@@ -1146,7 +1174,7 @@ def prepare_download(url, directory, audio_format, quality, guard, cookies: str 
                 details["output_resolution"] = min(output["width"], output["height"])
             inputs = ([sources.video, sources.audio] if isinstance(sources, VideoSources) else [sources])
             for path in inputs:
-                if path:
+                if path and not getattr(guard, "save_acquired", None):
                     path.unlink(missing_ok=True)
             return target, details
         source = sources
@@ -1154,7 +1182,10 @@ def prepare_download(url, directory, audio_format, quality, guard, cookies: str 
             target = convert_audio(source, directory, audio_format, quality, guard)
         else:
             target = convert_audio(source, directory, audio_format, quality, guard, settings=settings)
-        source.unlink(missing_ok=True)
+        if not probe_media(target, guard)["audio"]:
+            raise AudioError("A saída não contém uma faixa de áudio válida.", "conversion_failed", 422)
+        if not getattr(guard, "save_acquired", None):
+            source.unlink(missing_ok=True)
         return target, details
     except Exception as exc:
         error = translate_error(exc, guard)

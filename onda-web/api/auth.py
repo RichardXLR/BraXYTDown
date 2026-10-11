@@ -218,6 +218,9 @@ async def _verify_session(request: Request, token: str, config: AuthConfiguratio
         # them in a response or log them through an unhandled exception.
         raise AuthFailure("auth_required", 401) from None
     if not state.is_signed_in:
+        reason = str(getattr(state, "reason", "")).lower()
+        if any(value in reason for value in ("jwk_failed_to_load", "jwk_remote_invalid", "server_error")):
+            raise AuthFailure("auth_unavailable", 503)
         raise AuthFailure()
     return _validate_session(state.payload, config)
 

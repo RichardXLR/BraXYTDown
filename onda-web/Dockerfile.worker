@@ -1,0 +1,12 @@
+FROM python:3.12-slim
+WORKDIR /app
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+COPY api ./api
+COPY app.py ./
+COPY scripts/run_worker.py ./scripts/run_worker.py
+RUN useradd --uid 10001 --create-home onda && mkdir -p /data/onda && chown -R onda:onda /data/onda /app
+USER onda
+ENV ONDA_WORKER_MODE=true ONDA_JOB_DIR=/data/onda
+EXPOSE 8000
+CMD ["python", "scripts/run_worker.py"]

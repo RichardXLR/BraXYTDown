@@ -21,7 +21,7 @@
     ['Pinterest', 'pinterest.com', ['pinterest.com']],
     ['Bilibili', 'bilibili.com', ['bilibili.com']],
   ];
-  const failureCodes = new Set(['invalid_cookies', 'cookie_domain', 'cookies_expired', 'cookie_https_required', 'cookies_not_supported', 'timeout', 'validation_failed']);
+  const failureCodes = new Set(['invalid_cookies', 'cookie_domain', 'cookies_expired', 'cookie_https_required', 'cookies_not_supported', 'source_session_invalid', 'source_login_required', 'source_private_access', 'timeout', 'validation_failed']);
   let timer = null;
   let lastArguments = null;
 

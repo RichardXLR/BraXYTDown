@@ -24,6 +24,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from .engine import FORMATS, VIDEO_FORMATS, MediaSettings, SessionOptions, VIDEO_DURATION, LOSSLESS, MAX_DURATION, LOSSLESS_DURATION, inspect_media, prepare_download, runtime_options, source_for
 from .security import AudioError, Guard, public_url
+from .resources import ResourcePolicy, register_workspace, release_workspace
+from .operations import admit, cached_metadata, metadata_key, diagnostics
 from .cookies import MAX_COOKIE_BYTES, validate_session
 from .auth import register_auth, auth_capabilities
 from .account import register_account
@@ -31,6 +33,7 @@ from .progress import CONTENT_TYPE as PROGRESS_CONTENT_TYPE, ProgressReporter, a
 
 app = FastAPI(title="Onda API", version="1.0.0", docs_url=None, redoc_url=None, openapi_url=None)
 SLOTS = threading.BoundedSemaphore(2)
+METADATA_SLOTS = threading.BoundedSemaphore(4)
 LOGGER = logging.getLogger("onda")
 
 
@@ -161,11 +164,13 @@ async def health():
     deployment_id = os.environ.get("VERCEL_DEPLOYMENT_ID", "")
     if not re.fullmatch(r"dpl_[A-Za-z0-9]{1,100}", deployment_id):
         deployment_id = None
-    return {"ok": True, "formats": list(FORMATS), "maxDuration": MAX_DURATION,
+    policy = ResourcePolicy.from_environment()
+    from .jobs import capabilities as jobs_capabilities
+    return {"ok": True, "resourcePolicy": policy.capabilities(), "jobs": jobs_capabilities(), "diagnostics": diagnostics(), "formats": list(FORMATS), "maxDuration": MAX_DURATION,
             "videoFormats": list(VIDEO_FORMATS), "maxVideoDuration": VIDEO_DURATION,
             "videoResolutions": ["source", "2160", "1440", "1080", "720", "480", "360"],
-            "maxLosslessDuration": LOSSLESS_DURATION, "maxSourceMB": 128, "maxOutputMB": 100,
-            "durationLimited": False, "operationTimeoutSeconds": 240,
+            "maxLosslessDuration": LOSSLESS_DURATION, "maxSourceMB": min(policy.max_source_bytes, policy.max_workspace_bytes) // 1024 ** 2, "maxOutputMB": min(policy.max_output_bytes, policy.max_workspace_bytes) // 1024 ** 2,
+            "durationLimited": False, "operationTimeoutSeconds": policy.process_seconds,
             "downloadRecovery": {"enabled": True, "maxAttempts": 3, "resume": True,
                                  "nativeAlternatives": True, "requiresCompleteFile": True},
             "downloadProgress": {"enabled": True, "protocol": PROGRESS_CONTENT_TYPE},
@@ -222,13 +227,17 @@ async def settle_worker(task: asyncio.Task):
 class DownloadResponse(StreamingResponse):
     """Own the iterator and temporary files for the complete ASGI lifecycle."""
 
-    def __init__(self, content, *, cleanup, **kwargs):
+    def __init__(self, content, *, cleanup, deadline=None, **kwargs):
         super().__init__(content, **kwargs)
         self.cleanup = cleanup
+        self.deadline = deadline
 
     async def __call__(self, scope, receive, send):
         try:
-            await super().__call__(scope, receive, send)
+            if self.deadline is None:
+                await super().__call__(scope, receive, send)
+            else:
+                await asyncio.wait_for(super().__call__(scope, receive, send), max(.001, self.deadline - time.monotonic()))
         finally:
             # A failed header send happens before the generator ever starts.
             # A failed body send can instead leave it suspended with an open
@@ -261,7 +270,12 @@ async def acquire_download_slot(request: Request):
 
 @app.post("/api/inspect")
 async def inspect_link(body: LinkInput, request: Request):
-    acquire_slot()
+    key = metadata_key(body)
+    cached = cached_metadata(key)
+    if cached is not None:
+        return cached
+    if not METADATA_SLOTS.acquire(blocking=False):
+        raise AudioError("Há outras consultas em andamento. Aguarde um instante.", "busy", 429)
     guard = Guard(seconds=40, maximum_bytes=16 * 1024 * 1024)
     try:
         # Adapt the shared runner's final guard argument to metadata extraction.
@@ -269,9 +283,11 @@ async def inspect_link(body: LinkInput, request: Request):
         options = {"cookies": body.cookies, "media_type": body.media_type}
         if session is not None:
             options["session"] = session
-        return await run_guarded(request, guard, functools.partial(inspect_media, **options), body.url)
+        result = await run_guarded(request, guard, functools.partial(inspect_media, **options), body.url)
+        cached_metadata(key, result)
+        return result
     finally:
-        SLOTS.release()
+        METADATA_SLOTS.release()
 
 
 @app.post("/api/session/validate")
@@ -322,8 +338,8 @@ def progress_download(body, request, directory, guard, cleanup, queued):
                 await asyncio.wait({worker}, timeout=.25)
             target, details = await worker
             size = target.stat().st_size
-            if not 0 < size <= 100 * 1024 * 1024:
-                raise AudioError("O arquivo preparado ultrapassa 100 MB ou está vazio.", "output_too_large", 413)
+            guard.check_output(size)
+            guard.seconds = guard.resource_policy.total_seconds if guard.resource_policy else 290
             title = re.sub(r"[\x00-\x1f\x7f/\\]", "", str(details.get("title") or "Mídia")).strip()[:160] or "Mídia"
             mime = VIDEO_FORMATS[body.format][2] if body.media_type == "video" else FORMATS[body.format][1]
             recovery = details.get("recovery") or {}
@@ -375,20 +391,31 @@ def progress_download(body, request, directory, guard, cleanup, queued):
                 await settle_worker(worker)
             cleanup()
 
-    return DownloadResponse(stream(), cleanup=cleanup, media_type=PROGRESS_CONTENT_TYPE,
+    return DownloadResponse(stream(), cleanup=cleanup, deadline=guard.started + (guard.resource_policy.total_seconds if guard.resource_policy else 290), media_type=PROGRESS_CONTENT_TYPE,
                             headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
                                      "X-Accel-Buffering": "no"})
 
 
 @app.post("/api/download")
 async def download_link(body: DownloadInput, request: Request):
-    queued = await acquire_download_slot(request)
+    started = getattr(getattr(request, "state", None), "onda_started", time.monotonic())
+    partition, release_admission = admit(request, body)
+    try:
+        queued = await acquire_download_slot(request)
+    except BaseException:
+        release_admission()
+        raise
     try:
         directory = Path(tempfile.mkdtemp(prefix="onda-", dir="/tmp"))
     except OSError as exc:
+        release_admission()
         SLOTS.release()
         raise AudioError("O servidor está sem espaço temporário. Aguarde e tente novamente.", "storage_busy", 503) from exc
-    guard = Guard(seconds=240)
+    policy = ResourcePolicy.from_environment()
+    register_workspace(directory)
+    guard = Guard(seconds=policy.process_seconds, maximum_bytes=policy.max_transfer_bytes,
+                  started=started, resource_policy=policy, workspace=directory)
+    guard.partition = partition
     cleanup_lock = threading.Lock()
     cleaned = False
 
@@ -396,8 +423,14 @@ async def download_link(body: DownloadInput, request: Request):
         nonlocal cleaned
         with cleanup_lock:
             if not cleaned:
-                shutil.rmtree(directory, ignore_errors=True)
+                try:
+                    shutil.rmtree(directory)
+                except OSError:
+                    LOGGER.warning("temporary_cleanup_failed code=storage_cleanup")
+                release_workspace(directory)
+                release_admission()
                 SLOTS.release()
+                LOGGER.info("download_released mode=%s elapsed_ms=%.1f transferred_bytes=%d", policy.mode, (time.monotonic()-started)*1000, guard.received)
                 cleaned = True
 
     try:
@@ -409,6 +442,8 @@ async def download_link(body: DownloadInput, request: Request):
             options["session"] = session
         target, details = await run_guarded(request, guard, functools.partial(prepare_download, **options),
                                            body.url, directory, body.format, body.quality)
+        guard.check_output(target.stat().st_size)
+        guard.seconds = policy.total_seconds
         headers = download_headers(details["title"], body.format, target.stat().st_size)
         recovery = details.get("recovery", {})
         attempts = recovery.get("attempts", 1)
@@ -425,13 +460,14 @@ async def download_link(body: DownloadInput, request: Request):
             try:
                 with target.open("rb") as file:
                     while chunk := file.read(64 * 1024):
+                        guard.check()
                         yield chunk
                         await asyncio.sleep(0)
             finally:
                 cleanup()
 
         mime = VIDEO_FORMATS[body.format][2] if body.media_type == "video" else FORMATS[body.format][1]
-        return DownloadResponse(stream_file(), cleanup=cleanup,
+        return DownloadResponse(stream_file(), cleanup=cleanup, deadline=started + policy.total_seconds,
                                 media_type=mime, headers=headers)
     except BaseException:
         cleanup()
@@ -447,6 +483,14 @@ register_player(app)
 register_maintenance(app)
 register_account(app)
 register_auth(app)
+from .jobs import register_jobs
+register_jobs(app, DownloadInput)
+
+@app.middleware("http")
+async def operation_clock(request, call_next):
+    # The absolute invocation budget includes authentication and queue admission.
+    request.state.onda_started = time.monotonic()
+    return await call_next(request)
 
 # Vercel serves public/ from its CDN. This fallback is only for local uvicorn.
 public = Path(__file__).resolve().parents[1] / "public"

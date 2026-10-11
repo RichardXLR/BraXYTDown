@@ -105,9 +105,10 @@ def test_inspection_accepts_unknown_or_long_finite_duration(duration):
 
 
 def test_output_size_budget_still_applies_after_removing_duration_cap(tagged_video, tmp_path, monkeypatch):
-    monkeypatch.setattr(engine, "MAX_OUTPUT", 1000)
+    from api.resources import ResourcePolicy
+    policy = ResourcePolicy(max_output_bytes=1000)
     with pytest.raises(security.AudioError) as raised:
-        engine.convert_video(tagged_video, tmp_path, "mp4", "source", security.Guard(),
+        engine.convert_video(tagged_video, tmp_path, "mp4", "source", security.Guard(resource_policy=policy),
                              engine.MediaSettings(media_type="video"))
     assert raised.value.code == "output_too_large"
 

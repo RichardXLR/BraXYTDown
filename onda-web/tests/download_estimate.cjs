@@ -118,9 +118,9 @@ const cases = {
   },
   limit_warnings_are_about_estimates() {
     const near = estimate({ duration: OUTPUT_LIMIT * .85 * 8 / 320000 }, { ...audio, quality: 320 });
-    assert.match(near.warning, /aproximar ou ultrapassar/);
+    assert.match(near.warning, /aproximar/);
     const large = estimate({ duration: OUTPUT_LIMIT * 2 * 8 / 320000 }, { ...audio, quality: 320 });
-    assert.match(large.warning, /ultrapassa 100 MB/);
+    assert.match(large.warning, /ultrapassa a capacidade/);
     assert.ok(large.expectedBytes > OUTPUT_LIMIT, 'Never silently clamp an estimate to the service limit');
     assert.equal(estimate({ duration: 1 }, audio).warning, '');
   },

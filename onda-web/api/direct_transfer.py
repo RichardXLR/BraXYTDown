@@ -5,6 +5,8 @@ original Guard: neither elapsed time nor bytes already received are reset.
 """
 from __future__ import annotations
 
+import hashlib
+import os
 from contextlib import suppress
 from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
@@ -100,7 +102,23 @@ def download_direct(url, directory, guard, *, handler_factory, verify_response, 
     source = Path(directory) / "source.media"
     representation = None
     resumed = False
-    _discard(source)
+    checkpoint = getattr(guard, "partial_checkpoint", None)
+    retained = False
+    if checkpoint and checkpoint.get("requestHash") == hashlib.sha256(url.encode()).hexdigest() and source.is_file():
+        if type(checkpoint.get("size")) is int and 0 < checkpoint["size"] <= source.stat().st_size:
+            with source.open("r+b") as partial:
+                partial.truncate(checkpoint["size"])
+        checksum = hashlib.sha256()
+        with source.open("rb") as partial:
+            while block := partial.read(1024 * 1024):
+                guard.check()
+                checksum.update(block)
+        if source.stat().st_size == checkpoint.get("size") and checksum.hexdigest() == checkpoint.get("sha256"):
+            validator = checkpoint.get("validator")
+            representation = _Representation(checkpoint["responseUrl"], tuple(validator) if validator else None, checkpoint.get("total"))
+            retained = True
+    if not retained:
+        _discard(source)
     try:
         for attempt in range(1, MAX_ATTEMPTS + 1):
             guard.check()
@@ -147,13 +165,23 @@ def download_direct(url, directory, guard, *, handler_factory, verify_response, 
                         _discard(source)
                     remaining_bytes = guard.maximum_bytes - guard.received
                     if total is not None and total - prefix > remaining_bytes:
-                        raise AudioError("O arquivo de origem ultrapassa o limite de 128 MB.", "source_too_large", 413)
+                        raise AudioError("A transferência ultrapassa a capacidade configurada.", "source_too_large", 413)
+                    if guard.resource_policy and total is not None and total > guard.resource_policy.max_source_bytes:
+                        raise AudioError("A origem excede a capacidade configurada.", "source_too_large", 413)
+                    guard.check_workspace(max(0, (total or 0) - prefix))
                     representation = _Representation(response.url, current_validator, total)
                     written = 0
                     reporter = getattr(guard, "progress", None)
                     if reporter is not None:
                         reporter.begin_download({"direct": total}, offsets={"direct": prefix}, attempt=attempt)
                         reporter.transfer("direct", prefix, total, attempt=attempt)
+                    checksum = hashlib.sha256()
+                    if append:
+                        with source.open("rb") as previous:
+                            while block := previous.read(1024 * 1024):
+                                guard.check()
+                                checksum.update(block)
+                    saved_at = prefix
                     with source.open("ab" if append else "wb") as output:
                         while body_length is None or written < body_length:
                             guard.check()
@@ -167,8 +195,17 @@ def download_direct(url, directory, guard, *, handler_factory, verify_response, 
                                 representation = None
                                 resumed = False
                                 raise _transfer_error("A origem retornou um tamanho de arquivo inconsistente.")
+                            if guard.resource_policy and prefix + written + len(chunk) > guard.resource_policy.max_source_bytes:
+                                raise AudioError("A origem excede a capacidade configurada.", "source_too_large", 413)
+                            guard.check_workspace(len(chunk))
                             output.write(chunk)
                             written += len(chunk)
+                            checksum.update(chunk)
+                            if getattr(guard, "save_partial", None) and representation.validator and prefix + written - saved_at >= 8 * 1024 * 1024:
+                                output.flush()
+                                os.fsync(output.fileno())
+                                guard.save_partial({"kind":"direct", "requestHash":hashlib.sha256(url.encode()).hexdigest(), "responseUrl":response.url, "validator":representation.validator, "total":total, "size":prefix+written, "sha256":checksum.hexdigest()})
+                                saved_at = prefix+written
                             resumed = resumed or append
                             if reporter is not None:
                                 reporter.transfer("direct", prefix + written, total, attempt=attempt)
@@ -197,6 +234,7 @@ def download_direct(url, directory, guard, *, handler_factory, verify_response, 
                 if retry_kind(exc) != "transient" or not wait_for_retry(guard, attempt, exc):
                     raise
         raise AssertionError("bounded transfer loop did not finish")
-    except BaseException:
-        _discard(source)
+    except BaseException as exc:
+        if not getattr(guard, "save_partial", None) or retry_kind(exc) != "transient":
+            _discard(source)
         raise

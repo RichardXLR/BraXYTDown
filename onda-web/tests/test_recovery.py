@@ -245,8 +245,9 @@ class ClockGuard:
         return False
 
 
-@pytest.mark.parametrize("attempt, expected", [(1, .3), (2, .7), (3, .7)])
-def test_backoff_is_short_and_checks_every_tenth_of_a_second(monkeypatch, attempt, expected):
+@pytest.mark.parametrize("attempt, expected", [(1, .3), (2, .6), (3, 1.2)])
+def test_backoff_is_exponential_and_checks_every_tenth_of_a_second(monkeypatch, attempt, expected):
+    monkeypatch.setattr(recovery.random, "uniform", lambda *_: 0)
     guard = ClockGuard()
     monkeypatch.setattr(recovery, "time", SimpleNamespace(monotonic=lambda: guard.now))
     assert wait_for_retry(guard, attempt)
@@ -254,26 +255,31 @@ def test_backoff_is_short_and_checks_every_tenth_of_a_second(monkeypatch, attemp
     assert guard.waits and max(guard.waits) <= .1
 
 
-@pytest.mark.parametrize("value, expected", [("2", 2), ("3600", 3), ("-1", 0), ("nan", .3), ("invalid", .3)])
-def test_retry_after_is_respected_but_capped_and_validated(monkeypatch, value, expected):
+@pytest.mark.parametrize("value, expected", [("2", 2), ("3600", None), ("-1", 0), ("nan", .3), ("invalid", .3)])
+def test_retry_after_is_respected_without_early_retry(monkeypatch, value, expected):
+    monkeypatch.setattr(recovery.random, "uniform", lambda *_: 0)
     guard = ClockGuard()
     monkeypatch.setattr(recovery, "time", SimpleNamespace(monotonic=lambda: guard.now))
     error = urllib.error.HTTPError("https://public.example/media", 429, "busy",
                                    {"Retry-After": value}, None)
     translated = AudioError("Origin busy", "upstream_error")
     translated.__cause__ = error
+    if expected is None:
+        assert not wait_for_retry(guard, 1, translated)
+        assert not guard.waits
+        return
     assert wait_for_retry(guard, 1, translated)
     assert guard.now == pytest.approx(expected)
     assert not guard.waits or max(guard.waits) <= .1
 
 
-def test_retry_after_http_date_is_capped(monkeypatch):
+def test_retry_after_http_date_outside_deadline_is_not_retried(monkeypatch):
     guard = ClockGuard()
     monkeypatch.setattr(recovery, "time", SimpleNamespace(monotonic=lambda: guard.now))
     error = urllib.error.HTTPError("https://public.example/media", 429, "busy",
                                    {"Retry-After": formatdate(time.time() + 60, usegmt=True)}, None)
-    assert wait_for_retry(guard, 1, error)
-    assert guard.now == pytest.approx(3)
+    assert not wait_for_retry(guard, 1, error)
+    assert not guard.waits
 
 
 def test_retry_stops_if_not_enough_time_to_wait_and_perform_another_attempt(monkeypatch):

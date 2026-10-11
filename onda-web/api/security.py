@@ -1,6 +1,7 @@
 """Public, pinned HTTP transport shared by extraction and direct media downloads."""
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 import http.client
 import ipaddress
 import socket
@@ -10,10 +11,37 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from yt_dlp.networking import Response
 from yt_dlp.networking._urllib import RedirectHandler, UrllibRH
 from yt_dlp.networking.exceptions import HTTPError, RequestError, IncompleteRead
+
+_DNS_POOL = ThreadPoolExecutor(max_workers=8, thread_name_prefix="onda-dns")
+_DNS_SLOTS = threading.BoundedSemaphore(8)
+
+
+def _resolve(host, port, guard=None):
+    if not _DNS_SLOTS.acquire(blocking=False):
+        raise AudioError("O resolvedor está ocupado. Tente novamente.", "dns_busy", 503)
+    try:
+        future = _DNS_POOL.submit(socket.getaddrinfo, host, port, type=socket.SOCK_STREAM)
+    except BaseException:
+        _DNS_SLOTS.release()
+        raise
+    future.add_done_callback(lambda _: _DNS_SLOTS.release())
+    deadline = time.monotonic() + min(8, guard.remaining if guard else 8)
+    while True:
+        if guard:
+            guard.check()
+        left = deadline - time.monotonic()
+        if left <= 0:
+            raise AudioError("O resolvedor demorou demais.", "dns_failed", 503)
+        try:
+            return future.result(timeout=min(.1, left))
+        except FutureTimeout:
+            continue
+
 
 MAX_METADATA_BYTES = 16 * 1024 * 1024
 
@@ -24,7 +52,7 @@ class AudioError(Exception):
         self.message, self.code, self.status = message, code, status
 
 
-def public_url(url: str, *, resolve: bool = True) -> tuple[str, list[str]]:
+def public_url(url: str, *, resolve: bool = True, guard=None) -> tuple[str, list[str]]:
     """Reject ambiguous authorities and every non-public DNS answer, not just the first."""
     if len(url) > 4096 or any(ord(c) < 33 for c in url) or "\\" in url:
         raise AudioError("Cole um link HTTP ou HTTPS público válido.", "invalid_url", 400)
@@ -49,7 +77,7 @@ def public_url(url: str, *, resolve: bool = True) -> tuple[str, list[str]]:
             raise ValueError("private address")
         if not resolve:
             return host, [str(literal)] if literal is not None else []
-        answers = socket.getaddrinfo(host, port or (443 if parsed.scheme == "https" else 80), type=socket.SOCK_STREAM)
+        answers = _resolve(host, port or (443 if parsed.scheme == "https" else 80), guard)
         addresses = list(dict.fromkeys(answer[4][0] for answer in answers))
         if not addresses or any(not ipaddress.ip_address(address).is_global for address in addresses):
             raise ValueError("private DNS answer")
@@ -63,7 +91,7 @@ def public_url(url: str, *, resolve: bool = True) -> tuple[str, list[str]]:
 @dataclass
 class Guard:
     seconds: float = 240
-    maximum_bytes: int = 128 * 1024 * 1024
+    maximum_bytes: int = 3 * 1024 ** 3
     started: float = field(default_factory=time.monotonic)
     cancelled: threading.Event = field(default_factory=threading.Event)
     received: int = 0
@@ -72,6 +100,19 @@ class Guard:
     socket_lock: threading.Lock = field(default_factory=threading.Lock)
     byte_lock: threading.Lock = field(default_factory=threading.Lock)
     progress: object | None = field(default=None, repr=False, compare=False)
+
+    resource_policy: object | None = field(default=None, repr=False)
+    workspace: Path | None = field(default=None, repr=False)
+
+    def check_workspace(self, extra_bytes=0):
+        if self.resource_policy is not None and self.workspace is not None:
+            return self.resource_policy.check_workspace(self.workspace, extra_bytes)
+
+    def check_output(self, size):
+        if self.resource_policy is not None:
+            self.resource_policy.check_output(size)
+        elif not 0 < size <= 1024 ** 3:
+            raise AudioError("O arquivo excede a capacidade configurada.", "output_too_large", 413)
 
     def report(self, stage, **values):
         if self.progress is not None:
@@ -88,6 +129,7 @@ class Guard:
             raise AudioError("Download cancelado.", "cancelled", 499)
         if self.remaining <= 0:
             raise AudioError("A origem demorou demais. Tente um vídeo menor ou outro link.", "timeout", 504)
+        self.check_workspace()
 
     def count(self, size: int):
         # Native HLS/DASH fragments share one budget across their worker threads.
@@ -96,7 +138,7 @@ class Guard:
             self.received += size
             if self.received <= self.maximum_bytes:
                 return
-            self.error = self.error or AudioError("O arquivo de origem ultrapassa o limite de 128 MB.", "source_too_large", 413)
+            self.error = self.error or AudioError("A transferência ultrapassa a capacidade configurada.", "source_too_large", 413)
         # Interrupt peers already blocked in a read, without holding the budget
         # lock. check() preserves the original error ahead of cancellation.
         self.abort()
@@ -194,7 +236,7 @@ def pinned_connection(base, guard: Guard):
             scheme = "https" if isinstance(self, http.client.HTTPSConnection) else "http"
             hostname = f"[{self.host}]" if ":" in self.host else self.host
             try:
-                _, addresses = public_url(f"{scheme}://{hostname}:{self.port}/")
+                _, addresses = public_url(f"{scheme}://{hostname}:{self.port}/", guard=guard)
             except AudioError as exc:
                 # A failed DNS lookup is a recoverable transport failure, not
                 # proof of an unsafe address. The next bounded attempt must
@@ -246,15 +288,17 @@ class PublicRedirectHandler(RedirectHandler):
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         try:
-            public_url(newurl)
+            public_url(newurl, guard=self.guard)
         except AudioError as exc:
             if exc.code != "dns_failed":
                 self.guard.error = exc
             raise
-        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
         previous, following = (urllib.parse.urlsplit(url) for url in (req.full_url, newurl))
         previous_origin = (previous.scheme, previous.hostname, previous.port or (443 if previous.scheme == "https" else 80))
         following_origin = (following.scheme, following.hostname, following.port or (443 if following.scheme == "https" else 80))
+        if previous_origin != following_origin and req.data is not None:
+            raise AudioError("A origem tentou redirecionar uma sessão de forma insegura.", "unsafe_redirect", 400)
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
         # Scheme is part of the origin: an HTTPS-to-HTTP redirect on the same
         # hostname must not send Authorization through a plaintext connection.
         if previous_origin != following_origin:

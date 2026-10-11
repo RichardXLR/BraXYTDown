@@ -2,7 +2,7 @@
 (() => {
   'use strict';
 
-  const OUTPUT_LIMIT = 100 * 1024 * 1024;
+  let OUTPUT_LIMIT = 448 * 1024 * 1024;
   const MAX_DURATION = 10 * 365.25 * 24 * 60 * 60;
   const AUDIO_FORMATS = new Set(['mp3', 'm4a', 'aac', 'ogg', 'opus', 'wav', 'aiff', 'flac']);
   const VIDEO_FORMATS = new Set(['mp4', 'mov', 'mkv', 'webm']);
@@ -38,9 +38,9 @@
     const maxBytes = Math.max(minBytes, Math.round(base * upper));
     if (!Number.isSafeInteger(maxBytes)) return unknown('Não foi possível estimar esse tamanho com segurança.');
     const warning = minBytes > OUTPUT_LIMIT
-      ? 'A estimativa ultrapassa 100 MB. Uma qualidade menor ou um trecho pode ajudar.'
+      ? 'A estimativa ultrapassa a capacidade temporária da rota atual. Uma qualidade menor ou um trecho pode ajudar.'
       : maxBytes >= OUTPUT_LIMIT * .8
-        ? 'O arquivo pode se aproximar ou ultrapassar 100 MB. O tamanho será confirmado no preparo.' : '';
+        ? 'O arquivo pode se aproximar da capacidade temporária da rota atual. O tamanho será confirmado no preparo.' : '';
     return { state: 'ready', approximate: true, minBytes, maxBytes, expectedBytes: Math.round(base),
       message: 'Tamanho estimado', note: '', warning, referenceBytes: null, ...details };
   }

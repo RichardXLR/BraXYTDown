@@ -93,11 +93,11 @@ const controller = () => startOperation('download');
   assert.equal(overDeclared.counts().cancelled, 1);
 
   const advertisedHuge = response([[1]], { 'Content-Length': '9' });
-  await assert.rejects(receiveDownload(advertisedHuge, controller(), 'audio/mpeg'), /100 MB/);
+  await assert.rejects(receiveDownload(advertisedHuge, controller(), 'audio/mpeg'), /capacidade disponível/);
   assert.equal(advertisedHuge.counts().reads, 0, 'Oversized responses stop before allocating output.');
   assert.equal(advertisedHuge.counts().cancelled, 1);
   const unadvertisedHuge = response([[1, 2, 3, 4, 5], [6, 7, 8, 9]]);
-  await assert.rejects(receiveDownload(unadvertisedHuge, controller(), 'audio/mpeg'), /100 MB/);
+  await assert.rejects(receiveDownload(unadvertisedHuge, controller(), 'audio/mpeg'), /capacidade disponível/);
   assert.equal(unadvertisedHuge.counts().released, 1);
 
   const encoded = response([[1, 2, 3, 4]], { 'Content-Length': '2', 'Content-Encoding': 'gzip' });

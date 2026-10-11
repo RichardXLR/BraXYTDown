@@ -262,7 +262,7 @@ def test_large_format_catalog_keeps_uhd_and_audio_while_remaining_bounded():
     ({"Content-Length": "1", "Content-Range": "bytes 1-1/123456"}, None, 206),
     ({"Content-Length": "2", "Content-Range": "bytes 0-0/123456"}, None, 206),
     ({"Content-Length": "9" * 5000}, None, 200),
-    ({"Content-Length": "1", "Content-Range": "bytes 0-0/999999999"}, None, 206),
+    ({"Content-Length": "1", "Content-Range": "bytes 0-0/999999999"}, 999999999, 206),
 ])
 def test_head_fallback_inspection_uses_full_range_size_and_rejects_invalid_sizes(monkeypatch, headers, expected, status):
     calls, closed = [], []
