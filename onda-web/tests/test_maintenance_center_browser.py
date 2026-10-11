@@ -2,13 +2,14 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import threading
+import os
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.fixture(scope='module')
-def maintenance_browser():
+@pytest.fixture(scope='module',params=os.environ.get('ONDA_TEST_BROWSERS','chromium').split(','))
+def maintenance_browser(request):
     playwright = pytest.importorskip('playwright.sync_api')
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -26,8 +27,9 @@ def maintenance_browser():
     try:
         with playwright.sync_playwright() as instance:
             try:
-                browser = instance.chromium.launch(headless=True)
+                browser = getattr(instance,request.param).launch(headless=True)
             except playwright.Error:
+                if os.environ.get('ONDA_TEST_BROWSERS'):raise
                 pytest.skip('Playwright Chromium is not installed in this API-only environment')
             yield browser, f'http://127.0.0.1:{server.server_port}'
             browser.close()

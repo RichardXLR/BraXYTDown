@@ -6,6 +6,7 @@ The release's API-only environment can skip these when Playwright is unavailable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import threading
+import os
 
 import pytest
 
@@ -15,8 +16,8 @@ COOKIE = "# Netscape HTTP Cookie File\n.example.org\tTRUE\t/\tTRUE\t0\tsession\t
 FILENAME = "fixture-private-filename.txt"
 
 
-@pytest.fixture(scope="module")
-def vault_browser():
+@pytest.fixture(scope="module",params=os.environ.get('ONDA_TEST_BROWSERS','chromium').split(','))
+def vault_browser(request):
     playwright = pytest.importorskip("playwright.sync_api")
 
     class Handler(BaseHTTPRequestHandler):
@@ -38,9 +39,10 @@ def vault_browser():
     thread.start()
     with playwright.sync_playwright() as instance:
         try:
-            browser = instance.chromium.launch(headless=True)
+            browser = getattr(instance,request.param).launch(headless=True)
         except playwright.Error:
             server.shutdown()
+            if os.environ.get('ONDA_TEST_BROWSERS'):raise
             pytest.skip("Playwright Chromium is not installed in this API-only environment")
         yield browser, f"http://127.0.0.1:{server.server_port}"
         browser.close()

@@ -44,6 +44,8 @@ class JobStore:
             db.execute('CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, owner TEXT NOT NULL, idem TEXT NOT NULL, fingerprint TEXT NOT NULL, payload BLOB, checkpoint BLOB, status TEXT NOT NULL, priority INTEGER NOT NULL, created REAL NOT NULL, updated REAL NOT NULL, expires REAL NOT NULL, lease REAL NOT NULL DEFAULT 0, fence TEXT, attempts INTEGER NOT NULL DEFAULT 0, progress TEXT NOT NULL DEFAULT \'{}\', file TEXT, UNIQUE(owner,idem))')
             db.execute('CREATE INDEX IF NOT EXISTS queue ON jobs(status,priority,created)')
             db.execute('CREATE TABLE IF NOT EXISTS heartbeat (id INTEGER PRIMARY KEY, timestamp REAL NOT NULL)')
+            db.execute('CREATE TABLE IF NOT EXISTS measurements (id TEXT PRIMARY KEY, owner TEXT NOT NULL, created REAL NOT NULL, body TEXT NOT NULL)')
+            db.execute('CREATE INDEX IF NOT EXISTS measurements_owner ON measurements(owner,created)')
         os.chmod(self.database, 0o600)
 
     def connect(self):
@@ -94,8 +96,30 @@ class JobStore:
         result = {key: row[key] for key in ('id','status','attempts')}
         result.update(createdAt=row['created'], updatedAt=row['updated'], expiresAt=row['expires'], progress=json.loads(row['progress']))
         if row['file'] and row['status'] == 'ready':
-            result['file'] = {k: v for k,v in json.loads(row['file']).items() if k != 'path'}
+            result['file'] = {k: v for k,v in json.loads(row['file']).items() if k in {'filename','size','mimeType','sha256','etag'}}
         return result
+
+    def list(self, owner):
+        with self.connect() as db:
+            rows = db.execute('SELECT * FROM jobs WHERE owner=? AND expires>? ORDER BY created DESC LIMIT 30', (owner,time.time())).fetchall()
+        return [self.snapshot(row) for row in rows]
+
+    def unclaim(self, job, fence):
+        with self.connect() as db:
+            db.execute("UPDATE jobs SET status='queued',attempts=max(0,attempts-1),fence=NULL WHERE id=? AND fence=? AND status='running'", (job,fence))
+
+    def record_measurement(self, owner, record):
+        from .download_history import validate_record
+        validate_record(record)
+        with self.connect() as db:
+            db.execute('INSERT OR IGNORE INTO measurements VALUES(?,?,?,?)',(record['id'],owner,record['at'],json.dumps(record)))
+            db.execute('DELETE FROM measurements WHERE created<?',(time.time()-30*86400,))
+            db.execute('DELETE FROM measurements WHERE owner=? AND id NOT IN (SELECT id FROM measurements WHERE owner=? ORDER BY created DESC LIMIT 120)',(owner,owner))
+
+    def history(self, owner):
+        with self.connect() as db:
+            rows=db.execute('SELECT body FROM measurements WHERE owner=? AND created>? ORDER BY created DESC LIMIT 120',(owner,time.time()-30*86400)).fetchall()
+        return [json.loads(row['body']) for row in rows]
 
     def get(self, job, owner=None, *, include_expired=False):
         with self.connect() as db:
@@ -154,6 +178,7 @@ class JobStore:
     def cleanup(self):
         import shutil
         with self.connect() as db:
+            db.execute('DELETE FROM measurements WHERE created<?',(time.time()-30*86400,))
             rows = db.execute("SELECT id FROM jobs WHERE expires<? AND (status!='running' OR lease<?)", (time.time(), time.time())).fetchall()
             for row in rows:
                 shutil.rmtree(self.root / row['id'], ignore_errors=True)
@@ -188,8 +213,9 @@ def gateway():
 def capabilities():
     store = local_store()
     policy = ResourcePolicy.from_environment()
-    return {'configured': bool(store or gateway()), 'enabled': bool(store and store.healthy()),
-            'healthy': bool(store and store.healthy()), 'mode': 'persistent' if store else 'gateway' if gateway() else 'disabled',
+    healthy=bool(store and store.healthy())
+    return {'configured': bool(store or gateway()), 'enabled': healthy,
+            'healthy': healthy, 'mode': 'persistent' if store else 'gateway' if gateway() else 'disabled',
             'maxSourceMB': policy.max_source_bytes//1024**2 if store else None,
             'maxOutputMB': policy.max_output_bytes//1024**2 if store else None,
             'operationTimeoutSeconds': policy.process_seconds if store else None}
@@ -230,6 +256,13 @@ def register_jobs(app, model):
         forwarded = await proxy(request)
         return forwarded if forwarded is not None else await asyncio.to_thread(capabilities)
 
+    @app.get('/api/jobs/history')
+    async def job_history(request:Request):
+        forwarded=await proxy(request)
+        if forwarded is not None:return forwarded
+        store,user=owner(request)
+        return {'records':await asyncio.to_thread(store.history,user),'windowDays':30,'maxRecords':120,'resourceScope':'process_observation'}
+
     @app.post('/api/jobs')
     async def create_job(request: Request):
         forwarded = await proxy(request)
@@ -261,11 +294,7 @@ def register_jobs(app, model):
         if forwarded is not None:
             return forwarded
         store,user = owner(request)
-        def read():
-            with store.connect() as db:
-                rows = db.execute('SELECT * FROM jobs WHERE owner=? AND expires>? ORDER BY created DESC LIMIT 30', (user,time.time())).fetchall()
-            return {'jobs':[store.snapshot(row) for row in rows]}
-        return await asyncio.to_thread(read)
+        return {'jobs': await asyncio.to_thread(store.list,user)}
 
     @app.get('/api/jobs/{job}')
     async def get_job(job: str, request: Request):

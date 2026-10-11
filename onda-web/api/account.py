@@ -270,10 +270,10 @@ def user_identity(request: Request) -> str:
     return user_id
 
 
-def blob_http(method: str, url: str, *, headers: dict, body: bytes | None = None):
+def blob_http(method: str, url: str, *, headers: dict, body: bytes | None = None, timeout=(3,8)):
     """Bound network responses and refuse redirects carrying storage credentials."""
     try:
-        with requests.request(method, url, headers=headers, data=body, timeout=(3, 8),
+        with requests.request(method, url, headers=headers, data=body, timeout=timeout,
                               allow_redirects=False, stream=True) as response:
             declared = response.headers.get("Content-Length")
             if declared is not None:

@@ -38,22 +38,27 @@ class JobGuard(Guard):
         self.totals, self.transfers = {}, {}
         self.progress_lock = threading.Lock()
         self.transfer_started = time.monotonic()
+        self.transfer_offset = 0
         self.progress = self
         self.partition = row['owner']
+        self.lease_lock = threading.RLock()
 
     def check(self):
         super().check()
-        if time.monotonic()-self.last_lease>.5:
-            row = self.store.get(self.job,include_expired=True)
-            if row['expires']<=time.time():
-                self.abort()
-                raise AudioError('A tarefa expirou.', 'job_expired',410)
-            if row['status']!='running' or row['fence']!=self.fence:
-                self.abort()
-                raise AudioError('Tarefa cancelada ou reassumida por outro worker.', 'cancelled',499)
-            self.last_lease = time.monotonic()
-            self.store.update(self.job,self.fence)
-            self.store.heartbeat()
+        with self.lease_lock:
+            if time.monotonic()-self.last_lease>.5:
+                row = self.store.get(self.job,include_expired=True)
+                if row['expires']<=time.time():
+                    self.abort()
+                    raise AudioError('A tarefa expirou.', 'job_expired',410)
+                if row['status']!='running' or row['fence']!=self.fence:
+                    self.abort()
+                    raise AudioError('Tarefa cancelada ou reassumida por outro worker.', 'cancelled',499)
+                self.last_lease = time.monotonic()
+                if not self.store.update(self.job,self.fence):
+                    self.abort()
+                    raise AudioError('A tarefa mudou de worker.', 'cancelled',499)
+                self.store.heartbeat()
 
     def emit(self, stage, **values):
         if time.monotonic()-self.last_progress<.25 and not values.get('force'):
@@ -67,21 +72,29 @@ class JobGuard(Guard):
         self.last_progress=time.monotonic()
 
     def begin_download(self, totals, *, offsets=None, attempt=1):
-        self.totals=totals
-        self.transfers=dict(offsets or {})
-        self.transfer_started=time.monotonic()
-        self.emit('downloading',attempt=attempt,force=True)
+        with self.progress_lock:
+            self.totals=dict(totals)
+            self.transfers=dict(offsets or {})
+            self.transfer_offset=sum(self.transfers.values())
+            self.transfer_started=time.monotonic()
+            self.emit('downloading',attempt=attempt,force=True)
 
     def transfer(self, identity, downloaded, total=None, **kwargs):
-        self.transfers[identity]=downloaded
-        if total is not None:
-            self.totals[identity]=total
-        known=list(self.totals.values())
-        size=sum(known) if known and all(type(v) in (int,float) and v>0 for v in known) else None
-        self.emit('downloading',downloadedBytes=sum(self.transfers.values()),totalBytes=size,attempt=kwargs.get('attempt',1))
+        with self.progress_lock:
+            self.transfers[identity]=downloaded
+            if total is not None:self.totals[identity]=total
+            known=list(self.totals.values())
+            size=sum(known) if known and all(type(v) in (int,float) and v>0 for v in known) else None
+            elapsed=time.monotonic()-self.transfer_started
+            self.emit('downloading',downloadedBytes=sum(self.transfers.values()),totalBytes=size,speedBytesPerSecond=max(0,sum(self.transfers.values())-self.transfer_offset)/elapsed if elapsed>0 else None,attempt=kwargs.get('attempt',1))
 
 
 def process_job(store, row):
+    from .download_history import Measurement
+    measurement=None
+    output_size=0
+    result_status='failed'
+    result_code=None
     policy=ResourcePolicy.from_environment()
     directory=store.root/row['id']
     directory.mkdir(mode=0o700,exist_ok=True)
@@ -90,9 +103,7 @@ def process_job(store, row):
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         os.close(lock)
-        if store.update(row['id'],row['fence'],status='queued'):
-            with store.connect() as db:
-                db.execute("UPDATE jobs SET attempts=max(0,attempts-1) WHERE id=? AND fence=? AND status='queued'",(row['id'],row['fence']))
+        store.unclaim(row['id'],row['fence'])
         time.sleep(.5)
         return
     register_workspace(directory)
@@ -100,6 +111,7 @@ def process_job(store, row):
     try:
         guard.emit('extracting',force=True)
         data=store.open(row['id'],row['payload'])
+        measurement=Measurement(mode='worker',media_type=data['media_type'],format=data['format'],identity=row['id']+'-'+str(row['attempts']))
         guard.acquired_checkpoint=None
         guard.partial_checkpoint=None
         if row['checkpoint']:
@@ -109,7 +121,10 @@ def process_job(store, row):
                 guard.partial_checkpoint=checkpoint
             for item in checkpoint.get('inputs',[]):
                 path=(directory/item['path']).resolve()
-                if directory not in path.parents or not path.is_file() or sha256(path,guard)!=item['sha256']:
+                if directory not in path.parents:
+                    valid=False
+                    break
+                if not path.is_file() or sha256(path,guard)!=item['sha256']:
                     valid=False
                     break
             if valid:
@@ -120,7 +135,9 @@ def process_job(store, row):
             value={'kind':'acquired','video':isinstance(sources,VideoSources),'inputs':[], 'details':details}
             for path in paths:
                 if path:
-                    value['inputs'].append({'path':str(path.relative_to(directory)),'sha256':sha256(path,guard)})
+                    digest=sha256(path,guard)
+                    item={'path':str(path.relative_to(directory)),'sha256':digest,'size':path.stat().st_size}
+                    value['inputs'].append(item)
             store.update(row['id'],row['fence'],checkpoint=value)
         guard.save_partial=lambda value: store.update(row['id'],row['fence'],checkpoint=value)
         guard.save_acquired=checkpoint
@@ -130,6 +147,7 @@ def process_job(store, row):
         guard.emit('verifying',force=True)
         digest=sha256(target,guard)
         size=target.stat().st_size
+        output_size=size
         guard.check_output(size)
         mime=VIDEO_FORMATS[data['format']][2] if data['media_type']=='video' else FORMATS[data['format']][1]
         import re
@@ -138,6 +156,7 @@ def process_job(store, row):
         guard.check()
         os.chmod(target,0o400)
         if store.update(row['id'],row['fence'],status='ready',file=file,progress={'stage':'ready','downloadedBytes':size,'totalBytes':size}):
+            result_status='ready'
             for item in directory.iterdir():
                 if item!=target:
                     if item.is_dir():
@@ -146,22 +165,28 @@ def process_job(store, row):
                         item.unlink(missing_ok=True)
     except Exception as exc:
         code=exc.code if isinstance(exc,AudioError) else 'worker_failed'
+        result_code=code
         current=store.get(row['id'],include_expired=True)
         if current['status']=='running' and current['fence']==row['fence']:
             if retry_kind(exc)=='transient' and row['attempts']<3:
                 # Keep acquired input checkpoint; bounded retries remain visible.
                 store.update(row['id'],row['fence'],status='queued',progress={'stage':'recoverable_failure','code':code})
+                result_status='recoverable_failure'
                 time.sleep(min(4,2**row['attempts']))
             else:
                 store.update(row['id'],row['fence'],status='failed',progress={'stage':'failed','code':code})
                 shutil.rmtree(directory,ignore_errors=True)
         elif current['status']=='cancelled':
+            result_status='cancelled'
             shutil.rmtree(directory,ignore_errors=True)
         LOGGER.warning('job_failure code=%s',code)
     finally:
         guard.abort()
         release_workspace(directory)
         os.close(lock)
+        if measurement:
+            try:store.record_measurement(row['owner'],measurement.finish(status=result_status,transferred=guard.received,output=output_size,code=result_code,attempt=row['attempts']))
+            except Exception:LOGGER.warning('worker_metric_failure code=history_unavailable')
 
 
 def main():
@@ -173,12 +198,14 @@ def main():
     signal.signal(signal.SIGINT,lambda *_:stopping.set())
     last_cleanup=0
     while not stopping.is_set():
-        store.heartbeat()
-        if time.monotonic()-last_cleanup>60:
-            store.cleanup()
-            last_cleanup=time.monotonic()
-        row=store.claim()
-        if row:
-            process_job(store,row)
-        else:
-            stopping.wait(1)
+        try:
+            store.heartbeat()
+            if time.monotonic()-last_cleanup>60:
+                store.cleanup()
+                last_cleanup=time.monotonic()
+            row=store.claim()
+            if row: process_job(store,row)
+            else: stopping.wait(1)
+        except Exception as exc:
+            LOGGER.warning('worker_control_failure code=%s',exc.code if isinstance(exc,AudioError) else 'worker_unavailable')
+            stopping.wait(5)

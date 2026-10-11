@@ -1,0 +1,64 @@
+{
+  "scope": "Historical performance and browser validation; external worker and Clerk production migration cancelled by user",
+  "tests": {
+    "full": {
+      "tests": "1256",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "80.926"
+    },
+    "browserMatrix": {
+      "tests": "102",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "64.364"
+    },
+    "httpFlows": {
+      "tests": "6",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "33.676"
+    },
+    "historyFinal": {
+      "tests": "18",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "0.988"
+    },
+    "metricsFinal": {
+      "tests": "36",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "1.515"
+    }
+  },
+  "flows": {},
+  "physicalDevicesTested": false,
+  "safariMacosTested": false,
+  "browserChecksTotal": 108,
+  "httpFlow": {
+    "engines": [
+      "chromium",
+      "firefox",
+      "webkit"
+    ],
+    "viewports": [
+      1440,
+      390
+    ],
+    "formats": [
+      "mp4",
+      "mp3"
+    ],
+    "transport": "real local HTTP to the actual API",
+    "conversion": "real FFmpeg",
+    "authentication": "explicit verified Clerk test fixture",
+    "accountStorage": "private Blob transport fixture",
+    "physicalDevices": false
+  }
+}

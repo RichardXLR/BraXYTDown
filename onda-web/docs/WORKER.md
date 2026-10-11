@@ -38,3 +38,9 @@ Falhas temporárias têm tentativas limitadas. `Retry-After` nunca é encurtado.
 ## Expansão
 
 SQLite exige API e workers no mesmo servidor e volume. Para múltiplos servidores, substitua esse armazenamento por uma fila e banco compartilhados, mantendo idempotência, fencing e isolamento; entregue arquivos por armazenamento de objetos. Redis não é necessário para a instalação de um servidor. Faça backup criptografado do banco e proteja a chave separadamente.
+
+## Histórico de execução
+
+O worker registra medições numéricas por conta em uma tabela separada da fila: tempo, bytes recebidos, tamanho produzido, tentativa, resultado, código de erro e observações de CPU/RAM do processo. A exclusão da tarefa após 24 horas não apaga o histórico recente. O histórico tem no máximo 120 registros por conta e uma janela de 30 dias; a limpeza periódica também remove as medições antigas. Não contém URL, cookies, payload ou checkpoints. A rota protegida `/api/jobs/history` só consulta o proprietário autenticado.
+
+Esta alteração não ativa o worker por conta própria. O usuário optou por manter a hospedagem atual sem servidor externo; SQLite, gateway e worker continuam opcionais. Nenhuma fila compartilhada ou dependência S3/PostgreSQL foi adicionada à versão publicada.

@@ -166,7 +166,8 @@ async def health():
         deployment_id = None
     policy = ResourcePolicy.from_environment()
     from .jobs import capabilities as jobs_capabilities
-    return {"ok": True, "resourcePolicy": policy.capabilities(), "jobs": jobs_capabilities(), "diagnostics": diagnostics(), "formats": list(FORMATS), "maxDuration": MAX_DURATION,
+    jobs_status = await asyncio.to_thread(jobs_capabilities)
+    return {"ok": True, "resourcePolicy": policy.capabilities(), "jobs": jobs_status, "diagnostics": diagnostics(), "formats": list(FORMATS), "maxDuration": MAX_DURATION,
             "videoFormats": list(VIDEO_FORMATS), "maxVideoDuration": VIDEO_DURATION,
             "videoResolutions": ["source", "2160", "1440", "1080", "720", "480", "360"],
             "maxLosslessDuration": LOSSLESS_DURATION, "maxSourceMB": min(policy.max_source_bytes, policy.max_workspace_bytes) // 1024 ** 2, "maxOutputMB": min(policy.max_output_bytes, policy.max_workspace_bytes) // 1024 ** 2,
@@ -231,6 +232,7 @@ class DownloadResponse(StreamingResponse):
         super().__init__(content, **kwargs)
         self.cleanup = cleanup
         self.deadline = deadline
+        self.finalize = None
 
     async def __call__(self, scope, receive, send):
         try:
@@ -248,6 +250,8 @@ class DownloadResponse(StreamingResponse):
                     await self.body_iterator.aclose()
                 finally:
                     self.cleanup()
+                    if self.finalize is not None:
+                        await self.finalize()
 
 
 def acquire_slot():
@@ -338,6 +342,7 @@ def progress_download(body, request, directory, guard, cleanup, queued):
                 await asyncio.wait({worker}, timeout=.25)
             target, details = await worker
             size = target.stat().st_size
+            guard.onda_output_size = size
             guard.check_output(size)
             guard.seconds = guard.resource_policy.total_seconds if guard.resource_policy else 290
             title = re.sub(r"[\x00-\x1f\x7f/\\]", "", str(details.get("title") or "Mídia")).strip()[:160] or "Mídia"
@@ -375,7 +380,10 @@ def progress_download(body, request, directory, guard, cleanup, queued):
                 raise AudioError("A transferência foi interrompida antes de concluir o arquivo.", "download_incomplete", 502)
             yield frame({"type": "progress", "stage": "ready", "downloadedBytes": size, "totalBytes": size})
             yield frame({"type": "complete", "size": size})
+            guard.onda_result_status = 'ready'
         except AudioError as exc:
+            guard.onda_result_code = exc.code
+            guard.onda_result_status = 'cancelled' if exc.code == 'cancelled' else 'failed'
             LOGGER.warning("audio_request_failed code=%s status=%d", exc.code, exc.status)
             error_event = {"type": "error", "code": exc.code, "error": exc.message}
             attempts = getattr(exc, "recovery_attempts", None)
@@ -384,6 +392,8 @@ def progress_download(body, request, directory, guard, cleanup, queued):
             yield frame(error_event)
         except Exception:
             # Never expose an upstream exception, URL, cookie or log line.
+            guard.onda_result_status='failed'
+            guard.onda_result_code='download_failed'
             yield frame({"type": "error", "code": "download_failed", "error": "Não foi possível concluir o download. Tente novamente."})
         finally:
             guard.abort()
@@ -416,6 +426,13 @@ async def download_link(body: DownloadInput, request: Request):
     guard = Guard(seconds=policy.process_seconds, maximum_bytes=policy.max_transfer_bytes,
                   started=started, resource_policy=policy, workspace=directory)
     guard.partition = partition
+    from .download_history import Measurement, persist
+    measurement = Measurement(mode='inline',media_type=body.media_type,format=body.format)
+    principal=getattr(getattr(request,'state',None),'onda_auth',None)
+    metric_user=principal.user_id if principal and principal.kind=='user' else None
+    guard.onda_result_status = 'cancelled'
+    guard.onda_result_code = None
+    guard.onda_output_size = 0
     cleanup_lock = threading.Lock()
     cleaned = False
 
@@ -433,9 +450,16 @@ async def download_link(body: DownloadInput, request: Request):
                 LOGGER.info("download_released mode=%s elapsed_ms=%.1f transferred_bytes=%d", policy.mode, (time.monotonic()-started)*1000, guard.received)
                 cleaned = True
 
+    async def save_measurement():
+        if not metric_user:return
+        record=measurement.finish(status=guard.onda_result_status,transferred=guard.received,output=guard.onda_output_size,code=guard.onda_result_code)
+        await asyncio.to_thread(persist,metric_user,record)
+
     try:
         if accepts_stream(getattr(request, "headers", {}).get("accept", "")):
-            return progress_download(body, request, directory, guard, cleanup, queued)
+            response=progress_download(body, request, directory, guard, cleanup, queued)
+            response.finalize=save_measurement
+            return response
         options = {"cookies": body.cookies, "settings": body.settings()}
         session = body.session_options()
         if session is not None:
@@ -443,6 +467,7 @@ async def download_link(body: DownloadInput, request: Request):
         target, details = await run_guarded(request, guard, functools.partial(prepare_download, **options),
                                            body.url, directory, body.format, body.quality)
         guard.check_output(target.stat().st_size)
+        guard.onda_output_size=target.stat().st_size
         guard.seconds = policy.total_seconds
         headers = download_headers(details["title"], body.format, target.stat().st_size)
         recovery = details.get("recovery", {})
@@ -463,14 +488,24 @@ async def download_link(body: DownloadInput, request: Request):
                         guard.check()
                         yield chunk
                         await asyncio.sleep(0)
+                guard.onda_result_status='ready'
+            except BaseException as exc:
+                guard.onda_result_status='cancelled' if isinstance(exc,asyncio.CancelledError) or isinstance(exc,AudioError) and exc.code=='cancelled' else 'failed'
+                guard.onda_result_code=exc.code if isinstance(exc,AudioError) else 'download_failed'
+                raise
             finally:
                 cleanup()
 
         mime = VIDEO_FORMATS[body.format][2] if body.media_type == "video" else FORMATS[body.format][1]
-        return DownloadResponse(stream_file(), cleanup=cleanup, deadline=started + policy.total_seconds,
+        response=DownloadResponse(stream_file(), cleanup=cleanup, deadline=started + policy.total_seconds,
                                 media_type=mime, headers=headers)
-    except BaseException:
+        response.finalize=save_measurement
+        return response
+    except BaseException as exc:
+        guard.onda_result_status='cancelled' if isinstance(exc,asyncio.CancelledError) or isinstance(exc,AudioError) and exc.code=='cancelled' else 'failed'
+        guard.onda_result_code=exc.code if isinstance(exc,AudioError) else 'download_failed'
         cleanup()
+        with CancelScope(shield=True):await save_measurement()
         raise
 
 
@@ -485,6 +520,8 @@ register_account(app)
 register_auth(app)
 from .jobs import register_jobs
 register_jobs(app, DownloadInput)
+from .download_history import register_history
+register_history(app)
 
 @app.middleware("http")
 async def operation_clock(request, call_next):

@@ -1,0 +1,62 @@
+(() => {
+  'use strict';
+  const root = document.getElementById('download-history-dashboard');
+  if (!root) return;
+  let controller = null, generation = 0, loadedAt = 0, records = [], unavailable = [];
+  const number = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
+  const nf = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
+  function el(tag, cls, text) { const node = document.createElement(tag); if (cls) node.className = cls; if (text !== undefined) node.textContent = String(text); return node; }
+  const bytes = value => { const n = number(value); return n >= 1024 ** 3 ? `${nf.format(n / 1024 ** 3)} GiB` : n >= 1024 ** 2 ? `${nf.format(n / 1024 ** 2)} MiB` : `${nf.format(n / 1024)} KiB`; };
+  const speed = row => number(row.elapsedSeconds) > 0 ? number(row.transferredBytes) / row.elapsedSeconds / 1024 ** 2 : 0;
+  const status = { ready: 'Concluído', failed: 'Falhou', cancelled: 'Cancelado', recoverable_failure: 'Nova tentativa' };
+  function chart(rows, key, title, unit) {
+    const card = el('article', 'performance-chart studio-card'); card.append(el('h2', '', title));
+    const values = rows.slice(0, 24).reverse().map(row => key === 'speed' ? speed(row) : number(row[key]));
+    const max = Math.max(0, ...values) || 1; const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg'); svg.setAttribute('viewBox', '0 0 600 150'); svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', values.length ? `${title}. ${values.map(v => nf.format(v)).join(', ')} ${unit}. Da mais antiga para a mais recente.` : `${title}. Ainda sem medições.`);
+    const width = 570 / Math.max(1, values.length);
+    values.forEach((value, i) => { const bar = document.createElementNS(ns, 'rect'); const h = value / max * 124; Object.entries({ x: 15 + i * width, y: 135 - h, width: Math.max(2, width - 5), height: h, rx: 3 }).forEach(([k, v]) => bar.setAttribute(k, String(v))); svg.append(bar); });
+    card.append(svg, el('p', 'performance-chart-caption', `Até 24 execuções · escala máxima ${nf.format(max)} ${unit}`)); return card;
+  }
+  function render(data = records) {
+    const fragment = document.createDocumentFragment();
+    if (unavailable.length) fragment.append(el('p', 'performance-warning', `Não foi possível consultar: ${unavailable.join(' e ')}. As demais medições continuam abaixo.`));
+    if (!data.length) { const empty = el('div', 'performance-empty studio-card'); empty.append(el('span', 'section-eyebrow', 'SEU HISTÓRICO COMEÇA AQUI'), el('h2', '', 'As próximas execuções contam.'), el('p', '', 'Depois de um processamento, consulte aqui suas medições reais. Nenhum resultado de demonstração é incluído.')); fragment.append(empty); root.replaceChildren(fragment); return; }
+    const stats = el('div', 'performance-stats');
+    const done = data.filter(row => row.status === 'ready'); const failed = data.filter(row => ['failed', 'recoverable_failure'].includes(row.status));
+    for (const [label, value] of [['Execuções', data.length], ['Concluídas', done.length], ['Falhas / novas tentativas', failed.length], ['Volume recebido', bytes(data.reduce((s, row) => s + number(row.transferredBytes), 0))]]) { const card = el('article', 'performance-stat studio-card'); card.append(el('span', '', label), el('strong', '', value)); stats.append(card); }
+    fragment.append(stats);
+    const charts = el('div', 'performance-charts'); charts.append(chart(data, 'speed', 'Vazão média do processamento', 'MiB/s'), chart(data, 'elapsedSeconds', 'Tempo de processamento', 's')); fragment.append(charts);
+    fragment.append(el('p', 'performance-note', 'Vazão = bytes recebidos ÷ tempo total da execução. CPU e pico de RAM são observações do processo do servidor e seus subprocessos; tarefas simultâneas podem compartilhar estes recursos. O pico de RAM é cumulativo desde a inicialização do processo.'));
+    const card = el('div', 'performance-table-wrap studio-card'); const table = el('table', 'performance-table');
+    const caption = el('caption', 'sr-only', 'Medições das suas execuções mais recentes'); const head = el('thead'); const heading = el('tr');
+    ['Quando', 'Arquivo / caminho', 'Resultado', 'Tempo', 'Vazão', 'Recebido / saída', 'CPU observada', 'Pico RAM observado'].forEach(text => { const cell = el('th', '', text); cell.scope = 'col'; heading.append(cell); }); head.append(heading);
+    const body = el('tbody');
+    for (const row of data) { const line = el('tr'); const date = new Date(number(row.at) * 1000); const label = status[row.status] || 'Desconhecido';
+      [date.toLocaleString('pt-BR'), `${String(row.format || '').toUpperCase()} · ${row.mode === 'worker' ? 'Worker' : 'Vercel'}`, label + (row.code ? ` · ${String(row.code).slice(0, 64)}` : ''), `${nf.format(number(row.elapsedSeconds))} s`, `${nf.format(speed(row))} MiB/s`, `${bytes(row.transferredBytes)} / ${bytes(row.outputBytes)}`, `${nf.format(number(row.processCpuSeconds))} s`, bytes(row.processPeakRssBytes)].forEach((value, i) => line.append(el('td', i === 2 ? `performance-result result-${row.status}` : '', value))); body.append(line);
+    }
+    table.append(caption, head, body); card.append(table); fragment.append(card); root.replaceChildren(fragment);
+  }
+  async function load(force = false) {
+    if (!window.OndaAuth?.signedIn || controller || (!force && Date.now() - loadedAt < 30000)) return;
+    const scope = ++generation; controller = new AbortController(); const current = controller;
+    const button = document.getElementById('refresh-download-history'); if (button) button.disabled = true;
+    if (!records.length) root.replaceChildren(el('p', '', 'Consultando suas medições…'));
+    const timer = setTimeout(() => current.abort(), 20000);
+    try {
+      const paths = ['/api/downloads/history', '/api/jobs/history'];
+      const results = await Promise.allSettled(paths.map(async path => { const response = await OndaAuth.fetch(path, { signal: current.signal, cache: 'no-store' }); if (path.includes('/jobs/') && response.status === 503) { const error = await response.json(); if (error.code === 'worker_not_configured') return { records: [] }; } if (!response.ok) throw new Error('Unavailable'); return response.json(); }));
+      if (scope !== generation || current.signal.aborted || !OndaAuth.signedIn) return;
+      const map = new Map(); unavailable = [];
+      results.forEach((result, i) => { if (result.status === 'rejected') unavailable.push(i ? 'worker' : 'Vercel'); else for (const row of (Array.isArray(result.value.records) ? result.value.records.slice(0, 120) : [])) if (row && typeof row.id === 'string' && number(row.at) > Date.now() / 1000 - 30 * 86400 && status[row.status]) map.set(`${row.mode}:${row.id}`, row); });
+      records = [...map.values()].sort((a, b) => b.at - a.at); loadedAt = Date.now(); render();
+    } catch { if (scope === generation && OndaAuth.signedIn) { unavailable = ['histórico']; render(); } }
+    finally { clearTimeout(timer); if (controller === current) controller = null; if (button) button.disabled = false; }
+  }
+  document.getElementById('refresh-download-history')?.addEventListener('click', () => load(true));
+  addEventListener('onda:tab', event => { if (event.detail?.tab === 'performance') load(); });
+  addEventListener('onda:auth', event => { if (!event.detail?.signedIn) { generation++; controller?.abort(); records = []; unavailable = []; loadedAt = 0; root.replaceChildren(); } });
+  if (document.getElementById('tab-performance')?.getAttribute('aria-selected') === 'true') load();
+  window.OndaDownloadHistory = Object.freeze({ render });
+})();

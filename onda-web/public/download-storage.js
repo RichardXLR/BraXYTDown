@@ -4,16 +4,18 @@
   const DISK_LIMIT = 4 * 1024 ** 3;
   function memorySink(metadata) {
     if (metadata.size > MEMORY_LIMIT) throw new Error('Este navegador não disponibilizou espaço em disco. Para arquivos grandes, use um navegador com armazenamento privado de arquivos.');
-    let parts = [], bytes = 0;
+    let parts = [], bytes = 0, closed = false;
     return { kind: 'memory', async write(chunk) {
+      if (closed || bytes + chunk.length > metadata.size) throw new Error('A transferência retornou um tamanho inválido.');
       bytes += chunk.length;
       if (bytes > MEMORY_LIMIT) throw new Error('A memória segura deste navegador foi atingida.');
       parts.push(chunk);
     }, async commit() {
+      if (closed || bytes !== metadata.size) throw new Error('A transferência ficou incompleta.');
       const blob = new Blob(parts, { type: metadata.mime });
-      parts = [];
+      parts = []; closed = true;
       return blob;
-    }, async abort() { parts = []; } };
+    }, async abort() { parts = []; closed = true; } };
   }
   async function create(metadata, { userId, ensureOperation = () => {} } = {}) {
     ensureOperation();

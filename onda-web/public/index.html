@@ -19,6 +19,7 @@
   <link rel="stylesheet" href="/identity.css" />
   <link rel="stylesheet" href="/download-experience.css" />
   <link rel="stylesheet" href="/maintenance-center.css" />
+  <link rel="stylesheet" href="/download-history.css" />
   <script src="/clerk-portuguese.js" defer></script>
   <script src="/account.js" defer></script>
 </head>
@@ -59,6 +60,7 @@
           <button class="nav-item" id="tab-download" data-workspace-tab="download" type="button" role="tab" aria-selected="true" aria-controls="panel-download" tabindex="0"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 16v4h16v-4"/></svg><span>Áudio e vídeo</span><span class="nav-active-dot" aria-hidden="true"></span></button>
           <button class="nav-item" id="tab-library" data-workspace-tab="library" type="button" role="tab" aria-selected="false" aria-controls="panel-library" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v16M9 4v16m5-15 4-1 4 15-4 1Z"/></svg><span>Biblioteca</span><span class="nav-count" id="history-count">0</span></button>
           <button class="nav-item" id="tab-compatibility" data-workspace-tab="compatibility" type="button" role="tab" aria-selected="false" aria-controls="panel-compatibility" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg><span>Compatibilidade</span></button>
+          <button class="nav-item" id="tab-performance" data-workspace-tab="performance" type="button" role="tab" aria-selected="false" aria-controls="panel-performance" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v16h16M8 15v-4m4 4V7m4 8v-6"/></svg><span>Desempenho</span></button>
           <button class="nav-item" id="tab-personalization" data-workspace-tab="personalization" type="button" role="tab" aria-selected="false" aria-controls="panel-personalization" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18h1a2 2 0 0 0 1-3.7 2 2 0 0 1 1-3.8h2a4 4 0 0 0 4-4C21 6 17 3 12 3Z"/><circle cx="7.5" cy="10" r=".7"/><circle cx="10" cy="6.5" r=".7"/><circle cx="15" cy="6.5" r=".7"/></svg><span>Personalização</span></button>
           <button class="nav-item" id="tab-credits" data-workspace-tab="credits" type="button" role="tab" aria-selected="false" aria-controls="panel-credits" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2M18 5l2-2m-2 7h3"/></svg><span>Créditos</span></button>
           <button class="nav-item" id="tab-help" data-workspace-tab="help" type="button" role="tab" aria-selected="false" aria-controls="panel-help" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4M12 16h.01"/></svg><span>Ajuda</span></button>
@@ -224,6 +226,11 @@
       </section>
       </section>
 
+      <section class="workspace-panel" id="panel-performance" data-workspace-panel="performance" role="tabpanel" aria-labelledby="tab-performance" tabindex="0" hidden>
+        <div class="section-heading"><div><span class="section-eyebrow">CADA EXECUÇÃO, COM TRANSPARÊNCIA</span><h1 class="view-title">Seu fluxo. <span>Em números.</span></h1><p class="view-description">Tempo, volume processado e falhas das suas últimas execuções.</p></div><button class="secondary-button" id="refresh-download-history" type="button">Atualizar medições</button></div>
+        <section id="download-history-dashboard" aria-label="Histórico de desempenho"><p role="status">Abra esta aba para consultar suas medições.</p></section>
+        <p class="performance-note">Histórico dos últimos 30 dias, com até 120 registros por caminho de processamento. Registros antigos são descartados na próxima gravação. URLs, cookies e tokens não fazem parte destas medições. O tempo inclui extração e conversão; no worker, a transferência final para seu dispositivo acontece depois.</p>
+      </section>
       <section class="workspace-panel" id="panel-help" data-workspace-panel="help" role="tabpanel" aria-labelledby="tab-help" tabindex="0" hidden>
         <div class="view-heading" data-reveal><div class="eyebrow">GUIA DO SEU ESTÚDIO</div><h1 class="view-title">Menos dúvidas. <span>Mais play.</span></h1><p class="view-description">Entenda os formatos, os ajustes e o acesso às suas fontes.</p></div>
         <aside class="help-brand-card"><div><span class="section-eyebrow">FEITO PRA DAR PLAY</span><h2>Onda<span class="brand-dot">.</span></h2><p>Seu som, na sua frequência.</p></div><button class="intro-replay" data-intro-replay type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2 6M20 4v7h-7M10 9l4 3-4 3Z"/></svg>Rever abertura <span aria-hidden="true">→</span></button></aside>
