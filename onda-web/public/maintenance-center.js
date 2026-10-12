@@ -29,8 +29,16 @@
   function render(data = {}) {
     const root = document.getElementById('autocura-transparency');
     if (!root) return;
+    const diagnosticsOpen = root.querySelector('.maintenance-diagnostics')?.open === true;
     if (!data || typeof data !== 'object' || Array.isArray(data)) data = {};
     const fragment = document.createDocumentFragment();
+    const diagnostics = node('details', 'maintenance-diagnostics interface-disclosure');
+    diagnostics.open = diagnosticsOpen;
+    const diagnosticSummary = node('summary', '', 'Componentes e testes');
+    const marker = node('span', '', '+'); marker.setAttribute('aria-hidden', 'true');
+    diagnosticSummary.append(marker);
+    const diagnosticContent = node('div', 'disclosure-content');
+    diagnostics.append(diagnosticSummary, diagnosticContent);
     const run = data.run && typeof data.run === 'object' ? data.run : null;
     const runCard = node('div', 'maintenance-run-card');
     const runText = node('div', 'maintenance-run-copy');
@@ -62,15 +70,18 @@
     }
     const checks = list(data.checks);
     const stats = node('div', 'maintenance-summary');
+    stats.hidden = !checks.length;
     stats.setAttribute('aria-label', 'Resumo dos testes do relatório');
     for (const [status, title] of [['passed', 'Aprovados'], ['blocked', 'Bloqueados'], ['failed', 'Falhos'], ['unknown', 'Sem confirmação']]) {
       const card = node('div', 'maintenance-stat'); card.dataset.status = status;
-      card.append(node('strong', '', checks.filter((item) => item.status === status).length), node('span', '', title));
+      const total = checks.filter((item) => item.status === status).length;
+      card.hidden = total === 0;
+      card.append(node('strong', '', total), node('span', '', title));
       stats.append(card);
     }
     fragment.append(stats);
     const versionsSection = node('section', 'maintenance-section');
-    heading(versionsSection, 'Componentes publicados', 'Versões confirmadas pelo relatório e pela execução correspondente.');
+    heading(versionsSection, 'Componentes publicados');
     const versions = list(data.current_versions, 3);
     if (!versions.length) versionsSection.append(node('p', 'maintenance-empty', 'As versões publicadas ainda não puderam ser confirmadas.'));
     else {
@@ -84,7 +95,7 @@
       }
       versionsSection.append(rows);
     }
-    fragment.append(versionsSection);
+    diagnosticContent.append(versionsSection);
     const changesSection = node('section', 'maintenance-section');
     heading(changesSection, 'Alterações da última publicação');
     const changes = list(data.component_changes, 40);
@@ -102,7 +113,7 @@
       }
       changesSection.append(rows, node('p', 'maintenance-date', `Publicação registrada: ${date(changes[0].at)}`));
     }
-    fragment.append(changesSection);
+    diagnosticContent.append(changesSection);
     if (checks.length) {
       const details = node('details', 'maintenance-checks');
       const summary = node('summary', '', `Ver ${checks.length} testes do relatório`);
@@ -119,15 +130,15 @@
         rows.append(row);
       }
       details.append(rows);
-      fragment.append(details);
-      if (checks.some((item) => item.status === 'blocked')) fragment.append(node('p', 'maintenance-context', 'Um bloqueio da plataforma permanece visível. Ele não conta como teste aprovado nem garante que o download dessa fonte funcione.'));
+      diagnosticContent.append(details);
+      if (checks.some((item) => item.status === 'blocked')) diagnosticContent.append(node('p', 'maintenance-context', 'Testes bloqueados pela fonte não contam como aprovados.'));
     }
     const issues = list(data.quarantine, 10);
     const pending = data.pending && typeof data.pending === 'object' ? data.pending : null;
     const failure = data.failure && typeof data.failure === 'object' ? data.failure : null;
     const totalQuarantine = count(data.quarantined_versions);
     const issueSection = node('section', 'maintenance-section maintenance-issues');
-    heading(issueSection, 'Pendências e quarentena', 'Versões reprovadas ficam isoladas para preservar a última versão aprovada.');
+    heading(issueSection, 'Pendências');
     if (pending) {
       const item = node('div', 'maintenance-issue'); item.dataset.kind = 'pending';
       item.append(node('strong', '', pending.operation === 'manual_rollback' ? 'Recuperação aguardando confirmação' : 'Publicação aguardando confirmação'), node('p', '', 'O registro de atualização ainda está aberto. A próxima execução deve verificar a recuperação antes de publicar outra versão.'), node('span', 'maintenance-date', date(pending.created_at)));
@@ -153,10 +164,11 @@
     }
     if (!pending && !failure && !totalQuarantine) issueSection.append(node('p', 'maintenance-empty', reported.report_run_id && data.diagnostics_available !== false
       ? 'Nenhuma pendência registrada no relatório consultado.' : 'As pendências ainda não puderam ser verificadas.'));
-    fragment.append(issueSection);
+    if (pending || failure || totalQuarantine || !reported.report_run_id || data.diagnostics_available === false) fragment.append(issueSection);
     const footer = node('p', 'maintenance-context maintenance-evidence-date');
     footer.textContent = `Consulta ao GitHub: ${date(data.checked_at)}. O status pode permanecer em cache por até 5 minutos.`;
-    fragment.append(footer);
+    diagnosticContent.append(footer);
+    fragment.append(diagnostics);
     root.replaceChildren(fragment);
   }
   window.OndaMaintenanceCenter = Object.freeze({ render });

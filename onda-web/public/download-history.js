@@ -17,26 +17,40 @@
     svg.setAttribute('aria-label', values.length ? `${title}. ${values.map(v => nf.format(v)).join(', ')} ${unit}. Da mais antiga para a mais recente.` : `${title}. Ainda sem medições.`);
     const width = 570 / Math.max(1, values.length);
     values.forEach((value, i) => { const bar = document.createElementNS(ns, 'rect'); const h = value / max * 124; Object.entries({ x: 15 + i * width, y: 135 - h, width: Math.max(2, width - 5), height: h, rx: 3 }).forEach(([k, v]) => bar.setAttribute(k, String(v))); svg.append(bar); });
-    card.append(svg, el('p', 'performance-chart-caption', `Até 24 execuções · escala máxima ${nf.format(max)} ${unit}`)); return card;
+    card.append(svg, el('p', 'performance-chart-caption', `Escala: ${nf.format(max)} ${unit}`)); return card;
   }
   function render(data = records) {
+    const expanded = Boolean(root.querySelector('.performance-details')?.open);
+    const trendsExpanded = Boolean(root.querySelector('.performance-trends')?.open);
     const fragment = document.createDocumentFragment();
     if (unavailable.length) fragment.append(el('p', 'performance-warning', `Não foi possível consultar: ${unavailable.join(' e ')}. As demais medições continuam abaixo.`));
-    if (!data.length) { const empty = el('div', 'performance-empty studio-card'); empty.append(el('span', 'section-eyebrow', 'SEU HISTÓRICO COMEÇA AQUI'), el('h2', '', 'As próximas execuções contam.'), el('p', '', 'Depois de um processamento, consulte aqui suas medições reais. Nenhum resultado de demonstração é incluído.')); fragment.append(empty); root.replaceChildren(fragment); return; }
+    if (!data.length) { const empty = el('div', 'performance-empty studio-card'); empty.append(el('h2', '', 'Nenhuma execução ainda'), el('p', '', 'Faça um download para acompanhar suas medições.')); const link = el('a', 'primary-link', 'Baixar um arquivo →'); link.href = '/?tab=download'; empty.append(link); fragment.append(empty); root.replaceChildren(fragment); return; }
     const stats = el('div', 'performance-stats');
     const done = data.filter(row => row.status === 'ready'); const failed = data.filter(row => ['failed', 'recoverable_failure'].includes(row.status));
-    for (const [label, value] of [['Execuções', data.length], ['Concluídas', done.length], ['Falhas / novas tentativas', failed.length], ['Volume recebido', bytes(data.reduce((s, row) => s + number(row.transferredBytes), 0))]]) { const card = el('article', 'performance-stat studio-card'); card.append(el('span', '', label), el('strong', '', value)); stats.append(card); }
+    for (const [label, value] of [['Execuções', data.length], ['Concluídas', done.length], ['Falhas / tentativas', failed.length], ['Volume recebido', bytes(data.reduce((s, row) => s + number(row.transferredBytes), 0))]]) { const card = el('article', 'performance-stat studio-card'); card.append(el('span', '', label), el('strong', '', value)); stats.append(card); }
     fragment.append(stats);
-    const charts = el('div', 'performance-charts'); charts.append(chart(data, 'speed', 'Vazão média do processamento', 'MiB/s'), chart(data, 'elapsedSeconds', 'Tempo de processamento', 's')); fragment.append(charts);
-    fragment.append(el('p', 'performance-note', 'Vazão = bytes recebidos ÷ tempo total da execução. CPU e pico de RAM são observações do processo do servidor e seus subprocessos; tarefas simultâneas podem compartilhar estes recursos. O pico de RAM é cumulativo desde a inicialização do processo.'));
+    const charts = el('div', 'performance-charts'); charts.append(chart(data, 'speed', 'Vazão média', 'MiB/s'), chart(data, 'elapsedSeconds', 'Tempo de preparo', 's'));
     const card = el('div', 'performance-table-wrap studio-card'); const table = el('table', 'performance-table');
     const caption = el('caption', 'sr-only', 'Medições das suas execuções mais recentes'); const head = el('thead'); const heading = el('tr');
-    ['Quando', 'Arquivo / caminho', 'Resultado', 'Tempo', 'Vazão', 'Recebido / saída', 'CPU observada', 'Pico RAM observado'].forEach(text => { const cell = el('th', '', text); cell.scope = 'col'; heading.append(cell); }); head.append(heading);
+    const columns = ['Quando', 'Formato', 'Resultado', 'Tempo', 'Vazão média', 'Arquivo'];
+    columns.forEach(text => { const cell = el('th', '', text); cell.scope = 'col'; heading.append(cell); }); head.append(heading);
     const body = el('tbody');
     for (const row of data) { const line = el('tr'); const date = new Date(number(row.at) * 1000); const label = status[row.status] || 'Desconhecido';
-      [date.toLocaleString('pt-BR'), `${String(row.format || '').toUpperCase()} · ${row.mode === 'worker' ? 'Worker' : 'Vercel'}`, label + (row.code ? ` · ${String(row.code).slice(0, 64)}` : ''), `${nf.format(number(row.elapsedSeconds))} s`, `${nf.format(speed(row))} MiB/s`, `${bytes(row.transferredBytes)} / ${bytes(row.outputBytes)}`, `${nf.format(number(row.processCpuSeconds))} s`, bytes(row.processPeakRssBytes)].forEach((value, i) => line.append(el('td', i === 2 ? `performance-result result-${row.status}` : '', value))); body.append(line);
+      [date.toLocaleString('pt-BR'), String(row.format || '').toUpperCase(), label, `${nf.format(number(row.elapsedSeconds))} s`, `${nf.format(speed(row))} MiB/s`, bytes(row.outputBytes)].forEach((value, i) => { const cell = el('td', i === 2 ? `performance-result result-${row.status}` : '', value); cell.dataset.label = columns[i]; line.append(cell); }); body.append(line);
     }
     table.append(caption, head, body); card.append(table); fragment.append(card); root.replaceChildren(fragment);
+    const trends = el('details', 'performance-trends interface-disclosure'); trends.open = trendsExpanded;
+    const trendsSummary = el('summary', '', 'Gráficos de desempenho'); const trendsMarker = el('span', '', '+'); trendsMarker.setAttribute('aria-hidden', 'true'); trendsSummary.append(trendsMarker);
+    const trendsContent = el('div', 'disclosure-content'); trendsContent.append(charts); trends.append(trendsSummary, trendsContent); root.append(trends);
+    const details = el('details', 'performance-details interface-disclosure'); details.open = expanded;
+    const summary = el('summary', '', 'Medições técnicas'); const marker = el('span', '', '+'); marker.setAttribute('aria-hidden', 'true'); summary.append(marker); details.append(summary);
+    const content = el('div', 'disclosure-content');
+    content.append(el('p', 'performance-note', 'Vazão = bytes recebidos ÷ tempo total, incluindo processamento. CPU e pico de RAM são observações do processo do servidor e seus subprocessos, compartilhadas entre tarefas simultâneas. O pico de RAM é cumulativo desde a inicialização.'));
+    const resourceScroll = el('div', 'performance-resource-scroll'); resourceScroll.tabIndex = 0; resourceScroll.setAttribute('aria-label', 'Tabela de medições técnicas');
+    const resources = el('table', 'performance-resource-table');
+    const resourceHead = el('thead'); const rowHead = el('tr'); ['Formato / caminho', 'Recebido', 'CPU observada', 'Pico RAM observado', 'Código'].forEach(value => { const cell = el('th', '', value); cell.scope = 'col'; rowHead.append(cell); }); resourceHead.append(rowHead); const resourceBody = el('tbody');
+    for (const row of data) { const line = el('tr'); [`${String(row.format || '').toUpperCase()} · ${row.mode === 'worker' ? 'Worker' : 'Vercel'}`, bytes(row.transferredBytes), `${nf.format(number(row.processCpuSeconds))} s`, bytes(row.processPeakRssBytes), row.code ? String(row.code).slice(0, 64) : '—'].forEach(value => line.append(el('td', '', value))); resourceBody.append(line); }
+    resources.append(resourceHead, resourceBody); resourceScroll.append(resources); content.append(resourceScroll); details.append(content); root.append(details);
   }
   async function load(force = false) {
     if (!window.OndaAuth?.signedIn || controller || (!force && Date.now() - loadedAt < 30000)) return;

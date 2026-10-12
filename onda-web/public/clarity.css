@@ -1,0 +1,91 @@
+/* Clear hierarchy: primary actions first, optional details on demand. */
+.workspace-content{padding-top:32px}
+.studio-hero{display:block;padding-bottom:0;margin-bottom:24px}
+.studio-hero h1,.view-title{font-size:clamp(30px,3.4vw,44px);line-height:1.16;letter-spacing:-.045em}
+.hero-copy,.view-description{margin-top:10px;font-size:14px;line-height:1.65}
+.view-heading,.workspace-section>.section-heading{margin-bottom:24px}
+.app-topbar .topbar-actions{gap:14px}
+.account-sync #account-sync-label,.sound-toggle [data-sound-label]{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.account-sync{width:36px;min-width:36px;padding:8px;justify-content:center}
+.account-sync[data-state=error],.account-sync[data-state=offline]{border-color:var(--danger);color:var(--danger)}
+.sound-toggle{width:40px;min-width:40px;padding:10px;justify-content:center}
+.sidebar-bottom{padding-top:16px}
+.workspace-tabs .nav-item{order:0}
+.account-sign-out{min-height:44px;min-width:44px}
+.download-card #download-form{padding-top:24px}
+.url-label-row label{font-size:13px}.source-row{margin-top:12px;gap:12px;align-items:center}
+.source-row #url-help{font-size:11px;line-height:1.5}.source-row .inspect-button{font-size:11px;white-space:nowrap}
+.download-actions{display:block;margin-top:20px}.download-button{width:100%;min-height:54px}
+.media-type-fieldset{margin-top:24px}.media-type-fieldset legend{font-size:12px;margin-bottom:10px}
+.media-type-choice>span{padding:14px 18px;gap:10px;min-height:52px}.media-type-choice>span>span{font-size:13px}
+.options-grid{gap:22px 24px;margin-top:24px}.options-grid legend{font-size:12px;margin-bottom:10px}
+.format-chips .choice>span{min-height:46px;padding:12px 10px;font-size:12px}
+.quality-chips .choice>span{min-height:48px;padding:12px 6px;display:flex;flex-direction:row;align-items:baseline;justify-content:center;gap:4px;font-size:17px}
+.quality-chips .choice>span small{font-size:9px;margin:0}
+#quality-note{margin:12px 0 0;font-size:11px;line-height:1.6}
+.media-tools,.advanced-options{margin-top:22px}.advanced-options{padding-top:0;border-top:0}
+.media-tools>summary,.advanced-options>summary{min-height:50px;padding-block:15px}
+.advanced-options>summary small{display:none}
+.card-footer{padding-block:16px;font-size:11px;line-height:1.6}.card-footer .privacy-label{display:none}
+.interface-disclosure{margin-top:16px;border:1px solid var(--line);border-radius:12px;background:var(--panel-inset,transparent);min-width:0}
+.interface-disclosure>summary{display:flex;justify-content:space-between;align-items:center;gap:12px;list-style:none;cursor:pointer;min-height:48px;padding:14px 16px;color:var(--text);font-size:12px;font-weight:600}
+.interface-disclosure>summary::-webkit-details-marker{display:none}
+.interface-disclosure>summary>span[aria-hidden]{font-size:17px;line-height:1;font-weight:400;color:var(--muted);transition:transform .15s}
+.interface-disclosure[open]>summary>span[aria-hidden]{transform:rotate(45deg)}
+.interface-disclosure>.disclosure-content{padding:0 16px 16px}.interface-disclosure>.disclosure-content>*:first-child{margin-top:0}
+.interface-disclosure>summary:focus-visible{outline:2px solid var(--lime);outline-offset:3px;border-radius:10px}
+.download-estimate{padding:16px;margin-top:18px}.estimate-main{margin-top:0;align-items:flex-start}
+.estimate-main h3{font-size:13px}.estimate-main p{font-size:11px;line-height:1.6}#estimate-value{font-size:21px}
+.estimate-options{background:transparent;margin-top:12px}.estimate-options>summary{font-size:11px;padding:10px 12px;min-height:44px}
+.estimate-options .estimate-comparison{padding:0 12px 12px;margin-top:0}
+.compatibility-test-panel{margin-top:0;margin-bottom:24px}.compatibility-test-heading p{font-size:12px;line-height:1.6}
+.compatibility-grid{align-items:start}.compatibility-card{padding:24px}.compatibility-card>h3{font-size:17px}
+.compatibility-copy{font-size:12px;line-height:1.65}.compatibility-test-note{margin-top:14px;font-size:11px;line-height:1.6}
+.compatibility-test-panel .interface-disclosure{background:transparent}.compatibility-test-panel .canary-buttons{padding-top:4px;margin-top:0}
+.healing-card .autocura-heading{margin-bottom:12px}.autocura-repository{margin-top:16px;font-size:11px}
+.autocura-details{margin-top:0}.service-versions .engine-versions{margin-top:0}
+.maintenance-summary{display:flex;flex-wrap:wrap;gap:12px;margin-top:16px}
+.maintenance-stat{display:flex;flex-direction:row;align-items:baseline;gap:5px;padding:0;background:none;border:none;border-radius:0}
+.maintenance-stat>strong{font-size:16px;letter-spacing:0}.maintenance-stat>span{font-size:10px}
+.maintenance-diagnostics{margin-top:16px}.maintenance-diagnostics>.disclosure-content>.maintenance-section{margin-top:18px}
+.maintenance-diagnostics .maintenance-context{font-size:11px}
+.preferences-card{padding:24px}.preferences-card-heading{margin-bottom:10px}.preferences-card-heading h2{font-size:17px}
+.preference-field{padding-block:16px}.preference-toggle{padding-block:18px}.preference-toggle small{line-height:1.6}
+.preferences-save-row{margin-top:22px}.preference-sound-note{margin-top:16px}
+.steps-grid .step{padding:20px}.steps-grid .step h3{font-size:16px;margin-top:16px}.steps-grid .step p{font-size:12px;line-height:1.6;margin-top:9px}
+.formats-guide .formats-grid{margin-top:8px;gap:12px}.formats-guide .format-card{padding:20px}.formats-guide .format-detail{display:none}
+.faq-section{gap:24px}.faq-intro h2{font-size:24px}.faq-list>details>summary{font-size:13px;line-height:1.55;padding-block:18px}
+.faq-list>details>p{font-size:12px;line-height:1.8}.rights-note{padding:20px;margin-top:28px}.rights-note h2{font-size:15px}.rights-note p{font-size:12px;line-height:1.6}
+.performance-trends .performance-charts{margin-top:0}.performance-trends .performance-chart{padding:18px}
+.performance-note{font-size:11px;line-height:1.7}.performance-details{margin-top:22px}.performance-details .performance-note{margin-top:0}
+.performance-table{min-width:720px}.performance-resource-table{min-width:760px;border-collapse:collapse;width:100%;font-size:12px}.performance-resource-table th,.performance-resource-table td{padding:14px 12px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top;font-variant-numeric:tabular-nums}.performance-resource-table th{color:var(--muted);font-weight:600}.performance-resource-scroll{overflow:auto}
+.account-introduction>p{max-width:400px;font-size:15px;line-height:1.7}.account-gate-note{font-size:11px}
+/* Enter each screen as a whole, avoiding nested reveal animations. */
+.workspace-panel [data-reveal]{animation:none}.workspace-panel.panel-enter{animation:clarity-enter .18s ease-out both}
+@keyframes clarity-enter{from{opacity:.85}to{opacity:1}}
+@media(max-width:1079px){.workspace-content{padding-top:26px}.workspace-tabs .nav-item{padding-inline:14px}.workspace-tabs .nav-item span{font-size:12px}}
+@media(max-width:600px){
+  .app-topbar .topbar-actions{gap:8px}.account-controls{gap:7px}.studio-hero{margin-bottom:22px}
+  .studio-hero h1,.view-title{font-size:31px}.hero-copy,.view-description{font-size:12px;margin-top:9px}
+  .download-card #download-form{padding:22px 18px}.url-label-row{margin-bottom:12px}
+  .url-field{height:56px}.url-field input{font-size:14px}.source-row{flex-wrap:nowrap}
+  .source-row #url-help{font-size:10px;max-width:62%}.source-row .inspect-button{font-size:10px}
+  .download-actions{margin-top:18px}.download-button{min-height:52px}.media-type-fieldset{margin-top:24px}
+  .media-type-choice>span{padding:12px 14px;min-height:48px}.options-grid{gap:22px;margin-top:22px}
+  .format-chips{gap:6px}.quality-chips{gap:6px}.quality-chips .choice>span{font-size:16px}.format-chips .choice>span{padding:11px 6px}
+  .estimate-main{flex-direction:row;gap:12px}#estimate-value{white-space:normal;min-width:88px;text-align:right;font-size:18px}
+  .compatibility-card{padding:20px}.compatibility-test-panel{padding:20px}.compatibility-test-heading{gap:14px}
+  .preferences-card{padding:20px}.preferences-layout{gap:16px}.preferences-save-row{gap:14px}
+  .how-section .section-heading,.formats-section .section-heading{margin-bottom:16px}.steps-grid{gap:12px}
+  .faq-section{grid-template-columns:1fr;gap:16px}.creator-content{padding:28px 22px}.creator-content h2{font-size:42px}
+  .performance-table-wrap{border:0;background:transparent;overflow:visible;box-shadow:none}
+  .performance-table{display:block;min-width:0;width:100%}.performance-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+  .performance-table tbody{display:grid;gap:12px}.performance-table tbody tr{display:grid;grid-template-columns:1fr 1fr;gap:14px 12px;padding:18px;border:1px solid var(--line);border-radius:14px;background:var(--panel-inset)}
+  .performance-table tbody td{padding:0;border:0;min-width:0;font-size:12px;line-height:1.6}
+  .performance-table tbody td::before{content:attr(data-label);display:block;color:var(--muted);font-size:10px;margin-bottom:3px}
+  .performance-table tbody td:nth-child(3){grid-column:1/-1;max-width:none}
+  .performance-resource-table{min-width:650px;font-size:11px}.performance-resource-table th,.performance-resource-table td{padding:12px}
+}
+@media(prefers-reduced-motion:reduce){.workspace-panel.panel-enter{animation:none}.interface-disclosure>summary>span[aria-hidden]{transition:none}}
+body[data-motion=off] .workspace-panel.panel-enter{animation:none}
+

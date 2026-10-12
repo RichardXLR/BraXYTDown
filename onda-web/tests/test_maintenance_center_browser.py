@@ -65,6 +65,8 @@ def test_visible_tests_components_changes_and_safe_exact_run_link(maintenance_pa
     page.evaluate('data => OndaMaintenanceCenter.render(data)', data())
     assert page.locator('.maintenance-run-title').inner_text() == 'Concluída\nAutomático ativo'
     assert page.locator('.maintenance-stat > strong').all_inner_texts() == ['1', '1', '1', '0']
+    assert page.locator('.maintenance-diagnostics').get_attribute('open') is None
+    page.locator('.maintenance-diagnostics > summary').click()
     assert page.locator('.maintenance-version dd').all_inner_texts() == ['2026.8.19', '7.0.2-static', '2.9.7']
     assert page.locator('.maintenance-run-link').get_attribute('href') == 'https://github.com/RichardXLR/BraXYTDown/actions/runs/42'
     assert '2026.7.10' in page.locator('.maintenance-changes').inner_text()
@@ -73,6 +75,8 @@ def test_visible_tests_components_changes_and_safe_exact_run_link(maintenance_pa
     assert 'Bloqueado pela fonte' in page.locator('.maintenance-check-list').inner_text()
     page.locator('.maintenance-quarantine summary').click()
     assert 'A versão candidata falhou.' in page.locator('.maintenance-quarantine').inner_text()
+    page.evaluate('data => OndaMaintenanceCenter.render(data)', data())
+    assert page.locator('.maintenance-diagnostics').get_attribute('open') is not None
 
 
 def test_unknown_state_and_failed_latest_run_never_show_active_updater(maintenance_page):
@@ -120,6 +124,8 @@ def test_pending_and_version_distribution_are_explicit(maintenance_page):
     payload['current_versions'][1]['version'] = None; payload['current_versions'][1]['package_version'] = '0.6.0'
     payload['pending'] = {'operation': 'manual_rollback', 'created_at': '2026-10-09T05:30:00Z'}
     page.evaluate('data => OndaMaintenanceCenter.render(data)', payload)
+    assert 'Recuperação aguardando confirmação' in page.locator('.maintenance-issues').inner_text()
+    page.locator('.maintenance-diagnostics > summary').click()
     assert 'binário não confirmado' in page.locator('.maintenance-version').nth(1).inner_text()
     assert 'Recuperação aguardando confirmação' in page.locator('.maintenance-issues').inner_text()
 

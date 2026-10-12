@@ -118,6 +118,7 @@
       report_unconfirmed: 'Relatório aguardando confirmação', verification_unavailable: 'Estado do AutoCura não confirmado' };
     $('healing-title').textContent = labels[data.state] || 'Estado do AutoCura não confirmado';
     $('healing-message').textContent = typeof data.message === 'string' ? data.message : 'Atualize o status para verificar a manutenção.';
+    $('healing-message').hidden = data.state === 'active';
     const date = data.last_check ? new Date(data.last_check) : null;
     $('autocura-last-check').textContent = date && Number.isFinite(date.getTime()) ? date.toLocaleString('pt-BR') : 'Nenhuma execução verificada';
     $('autocura-next-check').textContent = typeof data.schedule === 'string' ? data.schedule : 'Aguardando ativação no GitHub';
@@ -179,7 +180,7 @@
     const muted = selectedMediaType() === 'video' && $('mute-video').checked;
     $('normalize-audio').disabled = Boolean(activeController) || muted;
     $('mute-video').disabled = Boolean(activeController) || selectedMediaType() !== 'video';
-    $('normalize-help').textContent = muted ? 'Indisponível em vídeo sem áudio. Desative “Vídeo sem áudio” para normalizar o volume.' : 'Ajusta o volume para uma referência comum. Não remove ruído nem recria qualidade.';
+    $('normalize-help').textContent = muted ? 'Ative o áudio para normalizar o volume.' : 'Equilibra o volume do áudio.';
     const count = Number($('strip-metadata').checked) + Number($('normalize-audio').checked && !muted) + Number(muted) + Number(Boolean($('trim-start').value.trim() || $('trim-end').value.trim()));
     $('tools-active-count').textContent = `${count} ${count === 1 ? 'ativo' : 'ativos'}`;
     $('tools-error').hidden = true;
@@ -580,7 +581,7 @@
     if (validatedCookieLink && validatedCookieLink !== input.value.trim()) invalidateCookieValidation();
     const source = detectSource(input.value.trim());
     updateCookieApplicability();
-    $('source-label').textContent = source ? `${source} · acesso depende da disponibilidade da fonte` : 'YouTube, TikTok e outras fontes suportadas';
+    $('source-label').textContent = source || 'YouTube, TikTok e outras fontes.';
     $('url-help').classList.toggle('detected', Boolean(source));
     inspectButton.disabled = Boolean(activeController) || !isPublicURL(input.value.trim());
     if (input.value.trim() !== metadataURL) {
@@ -616,15 +617,11 @@
     $('quality-chips').hidden = lossless;
     $('lossless-choice').hidden = !lossless;
     $('button-format').textContent = format.toUpperCase();
-    $('quality-note').textContent = video ? 'Até 4K (2160p) e 30 fps. A orientação é preservada; fontes menores não são ampliadas.' : lossless
-      ? 'Formato sem perda. A conversão não aumenta a qualidade da fonte.'
-      : 'O arquivo final depende da qualidade do áudio de origem.';
+    $('quality-note').textContent = video ? 'Até 4K e 30 fps, conforme a fonte.' : 'A conversão não recupera detalhes ausentes na fonte.';
+    $('quality-note').hidden = !video && !lossless;
     if (!video && !lossless) lastQuality = form.elements.quality.value;
     $('download-button-label').textContent = `Baixar ${mediaLabel(type)}`;
-    $('studio-format-count').textContent = video ? '4 formatos de vídeo' : '8 formatos de áudio';
-    $('card-mode-title').textContent = video ? 'VÍDEO POR LINK' : 'ÁUDIO POR LINK';
-    $('hero-media-word').textContent = video ? 'seu vídeo.' : 'seu som.';
-    $('download-limits').textContent = video ? 'Sem limite por duração · 4K / 30 fps · capacidade conforme recursos disponíveis' : 'Sem limite por duração · capacidade conforme recursos disponíveis';
+    $('hero-media-word').textContent = video ? 'vídeo.' : 'áudio.';
     document.body.dataset.mediaType = type;
     updateTools();
     if (currentMediaType !== type) {
@@ -1312,11 +1309,11 @@
     $('version-deno').textContent = displayVersion(versions.deno);
     const unavailable = ['error', 'unavailable', 'failed'].includes(data.status) || data.ok === false;
     const limited = ['degraded', 'partial', 'limited'].includes(data.status);
-    $('compatibility-state').textContent = unavailable ? 'Serviço indisponível' : limited ? 'Disponibilidade parcial' : 'Configuração consultada';
+    $('compatibility-state').textContent = unavailable ? 'Serviço indisponível' : limited ? 'Disponibilidade parcial' : 'Serviço online';
     $('compatibility-dot').classList.toggle('available', !unavailable && !limited);
     $('compatibility-dot').classList.toggle('unavailable', unavailable || limited);
-    $('compatibility-message').textContent = typeof data.message === 'string' && data.message
-      ? data.message : 'Estas são as ferramentas da versão publicada. Teste uma fonte para verificar o acesso atual.';
+    $('compatibility-message').textContent = (unavailable || limited) && typeof data.message === 'string' && data.message
+      ? data.message : 'Teste um link para conferir o acesso à fonte.';
     const count = Number(data.sitesCount);
     $('compatibility-count').textContent = Number.isFinite(count) && count >= 0 && data.sitesCount != null
       ? `${count.toLocaleString('pt-BR')} extratores no catálogo · acesso depende de cada link` : 'Catálogo de extratores não informado pelo serviço.';

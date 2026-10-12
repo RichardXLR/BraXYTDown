@@ -221,7 +221,7 @@
     const detail = document.getElementById('estimate-detail');
     const comparisons = document.getElementById('estimate-quality-comparison');
     if (!region || !value || !detail || !comparisons) return;
-    if (metadata === null && selection === null) { region.hidden = true; comparisons.replaceChildren(); return; }
+    if (metadata == null || selection === null) { region.hidden = true; comparisons.replaceChildren(); return; }
     region.hidden = false;
     const result = estimate(metadata, selection);
     region.dataset.state = result.state;

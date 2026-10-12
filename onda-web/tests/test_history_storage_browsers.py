@@ -38,6 +38,10 @@ def test_history_is_responsive_and_renders_only_actual_numeric_metrics(history_b
         page.evaluate("""() => OndaDownloadHistory.render([{id:'fixture',at:Date.now()/1000,mode:'worker',format:'mp4',status:'ready',elapsedSeconds:10,transferredBytes:104857600,outputBytes:1000,processCpuSeconds:2,processPeakRssBytes:52428800}])""")
         assert page.locator('.performance-stat strong').all_inner_texts()==['1','1','0','100 MiB']
         assert '10 MiB/s' in page.locator('.performance-table').inner_text()
+        assert not page.locator('.performance-charts').is_visible()
+        page.locator('.performance-trends > summary').click()
+        assert page.locator('.performance-charts').is_visible()
+        assert '10 MiB/s' in page.locator('.performance-charts').inner_text()
         assert page.evaluate('() => document.documentElement.scrollWidth <= innerWidth')
         assert page.locator('svg[role=img]').count()==2
         page.evaluate('() => OndaDownloadHistory.render([])')

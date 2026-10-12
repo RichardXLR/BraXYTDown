@@ -114,6 +114,14 @@ def test_owned_audio_video_download_saves_and_history_appears(media_browser,medi
         page.locator('.performance-table').wait_for(timeout=10000)
         assert 'Concluído' in page.locator('.performance-table').inner_text()
         assert page.evaluate('() => document.documentElement.scrollWidth <= innerWidth')
+        # Tabs must show their content at the top, with all sections retained
+        # inside the desktop workspace rather than below the sidebar.
+        page.evaluate('() => scrollTo(0, document.documentElement.scrollHeight)')
+        page.locator('#tab-personalization').click()
+        page.wait_for_function('() => scrollY === 0')
+        assert page.locator('#panel-personalization').evaluate("p => p.parentElement.matches('main.workspace-content')")
+        assert page.locator('#panel-personalization h1').is_visible()
+        assert page.locator('#panel-personalization h1').bounding_box()['y'] < 250
         assert not errors
         metrics=[json.loads(data) for path,(data,_) in files.items() if path.startswith('metrics/v1/')]
         assert len(metrics)==1 and metrics[0]['records'][0]['status']=='ready'

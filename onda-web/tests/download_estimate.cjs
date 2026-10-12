@@ -150,9 +150,11 @@ const cases = {
     try {
       const { render } = require('../public/download-estimate.js');
       render(null, audio);
+      assert.equal(elements['download-estimate'].hidden, true, 'No empty estimate before a link is analyzed');
+      render({}, audio);
       assert.equal(elements['download-estimate'].hidden, false);
       assert.equal(elements['download-estimate'].dataset.state, 'unknown');
-      assert.match(elements['estimate-detail'].textContent, /Analise o link/);
+      assert.match(elements['estimate-detail'].textContent, /não informou a duração/);
       assert.equal(elements['estimate-quality-comparison'].children.length, 0);
       render(metadata, video);
       assert.equal(elements['download-estimate'].dataset.state, 'ready');

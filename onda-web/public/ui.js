@@ -154,6 +154,7 @@
   function activate(tab, { focus = false, updateURL = true } = {}) {
     if (!workspaceTabs.some((button) => button.dataset.workspaceTab === tab)) tab = 'download';
     if (!workspaceTabs.some((button) => button.dataset.workspaceTab === tab)) return;
+    const changed = activeWorkspace !== tab;
     activeWorkspace = tab;
     for (const button of workspaceTabs) {
       const selected = button.dataset.workspaceTab === tab;
@@ -186,6 +187,7 @@
         history.replaceState(null, '', url.pathname + url.search);
       } catch { /* Panels work without URL updates. */ }
     }
+    if (changed) window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
     dispatchEvent(new CustomEvent('onda:tab', { detail: { tab } }));
   }
   function tabKeyboard(event, button) {
