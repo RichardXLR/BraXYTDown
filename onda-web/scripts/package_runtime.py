@@ -5,6 +5,7 @@ import hashlib
 import json
 import shutil
 import subprocess
+import sys
 
 import deno
 import imageio_ffmpeg
@@ -18,6 +19,7 @@ def digest(path):
 
 def main():
     root = Path(__file__).resolve().parents[1]
+    subprocess.run([sys.executable, str(root / "scripts" / "build_app_cache.py")], check=True)
     executable = Path(deno.find_deno_bin())
     target = root / "bin" / "deno"
     target.parent.mkdir(exist_ok=True)

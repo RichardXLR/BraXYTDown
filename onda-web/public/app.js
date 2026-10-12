@@ -638,6 +638,9 @@
   }
 
   function showStatus(kind, title, message) {
+    window.OndaErrorActions?.clear();
+    $('status-announcement')?.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+    $('status-announcement')?.setAttribute('aria-live', kind === 'error' ? 'assertive' : 'polite');
     status.hidden = false;
     status.className = `operation-status ${kind}`;
     statusTitle.textContent = title;
@@ -708,6 +711,8 @@
 
   function startOperation(kind) {
     timedOut = false;
+    window.OndaErrorActions?.clear();
+    if (kind === 'download') window.OndaStageTimes?.reset();
     const controller = new AbortController();
     activeController = controller;
     timeoutId = window.setTimeout(() => {
@@ -758,8 +763,44 @@
       else message = `Não foi possível processar o link (erro ${response.status}). Tente outro link público.`;
     }
     const error = new Error(message);
-    error.code = code;
+    error.code = code || ({ 401: 'authentication_required', 413: 'output_too_large', 429: 'rate_limited', 502: 'upstream_unavailable', 503: 'upstream_unavailable', 504: 'timeout' }[response.status] || 'download_failed');
+    const retry = response.headers?.get?.('Retry-After');
+    error.retryAfter = /^\d+$/.test(retry || '') ? Number(retry) : Math.max(0, (Date.parse(retry) - Date.now()) / 1000) || undefined;
     return error;
+  }
+
+  function revealControl(id, detailsId) {
+    const details = $(detailsId);
+    if (details) details.open = true;
+    const control = $(id);
+    control?.scrollIntoView({ block: 'center', behavior: 'auto' });
+    control?.focus({ preventScroll: true });
+  }
+
+  function offerErrorActions(error) {
+    const failedURL = input.value.trim(), failedKind = activeKind;
+    window.OndaErrorActions?.render(error, {
+      allowRetry: failedKind === 'download' || failedKind === 'inspect',
+      ensure: () => !sessionLocked && !activeController && window.OndaAuth.signedIn && input.value.trim() === failedURL,
+      run(action) {
+        if (action === 'cookies') { revealControl('cookies-input', 'advanced-options'); announce('Exporte uma nova sessão da sua própria conta e importe os cookies.'); }
+        if (action === 'password') revealControl('video-password', 'advanced-options');
+        if (action === 'trim') revealControl('trim-start', 'media-tools');
+        if (action === 'link') input.focus();
+        if (action === 'account') location.assign('/?account=sign-in');
+        if (action === 'retry') { if (failedKind === 'inspect') void inspect(); else form.requestSubmit(); }
+        if (action === 'test') {
+          $('compatibility-link').value = failedURL; $('compatibility-platform').value = '';
+          $('tab-compatibility').click(); $('test-platform-link').focus(); $('test-platform-link').click();
+        }
+        if (action === 'format' || action === 'quality') {
+          const field = action === 'format' || LOSSLESS.has(selectedFormat())
+            ? $(selectedMediaType() === 'video' ? 'video-format-fieldset' : 'audio-format-fieldset')
+            : $(selectedMediaType() === 'video' ? 'video-resolution-fieldset' : 'audio-quality-fieldset');
+          field?.scrollIntoView({ block: 'center', behavior: 'auto' }); field?.querySelector('input:checked')?.focus({ preventScroll: true });
+        }
+      },
+    });
   }
 
   function showOperationError(error) {
@@ -771,6 +812,8 @@
         : error.message || 'Não foi possível concluir. Tente novamente.';
       showStatus('error', 'Não foi possível concluir', message);
     }
+    window.OndaStageTimes?.render(error.stageSeconds);
+    offerErrorActions({ ...error, code: error.name === 'AbortError' ? (timedOut ? 'timeout' : 'cancelled') : error instanceof TypeError ? 'network_error' : error.code });
   }
 
   function formatDuration(seconds) {
@@ -867,6 +910,7 @@
 
   function renderDownloadProgress(event) {
     if (event.type !== 'progress') return;
+    window.OndaStageTimes?.render(event.stageSeconds);
     const labels = {
       extracting: ['Extraindo os detalhes', 'Identificando as faixas disponíveis na fonte.'],
       downloading: ['Transferindo da fonte', 'Recebendo a mídia para preparar o arquivo.'],
@@ -912,7 +956,9 @@
     progressTrack.classList.toggle('indeterminate', percent === null);
     progressFill.style.width = percent === null ? '0%' : `${Math.max(0, Math.min(event.stage === 'ready' ? 100 : 99, percent))}%`;
     if (percent !== null) { progressTrack.setAttribute('role', 'progressbar'); progressTrack.setAttribute('aria-valuemin', '0'); progressTrack.setAttribute('aria-valuemax', '100'); progressTrack.setAttribute('aria-valuenow', String(Math.round(Math.max(0, Math.min(100, percent))))); }
-    else { progressTrack.removeAttribute('role'); progressTrack.removeAttribute('aria-valuenow'); }
+    else { progressTrack.setAttribute('role', 'progressbar'); progressTrack.removeAttribute('aria-valuenow'); }
+    progressTrack.setAttribute('aria-label', 'Progresso da etapa atual');
+    progressTrack.setAttribute('aria-valuetext', percent === null ? `${label[0]}: andamento indeterminado` : `${label[0]}: ${Math.round(Math.max(0, Math.min(100, percent)))}%`);
     window.dispatchEvent(new CustomEvent('onda:download-progress', { detail: { stage: event.stage, downloadedBytes: received, totalBytes: total } }));
   }
 
@@ -982,6 +1028,7 @@
           error.code = job.progress?.code || 'download_failed'; throw error;
         }
         if (job.status === 'ready') {
+          window.OndaStageTimes?.render(job.progress?.stageSeconds);
           const delivery = await window.OndaAuth.fetch(`/api/jobs/${id}/delivery`, { method: 'POST', signal: controller.signal });
           if (!delivery.ok) throw await responseError(delivery);
           const data = await delivery.json();
@@ -1031,7 +1078,7 @@
     // This validates scope and expiry, not whether an origin accepts a session.
     if (cookieContent($('cookies-input').value.trim()) !== cookies || input.value.trim() !== url) throw new DOMException('A sessão da fonte mudou.', 'AbortError');
     sourceValidation = { identity, time: Date.now() };
-    if (result.expired === true || result.valid === false) throw new Error('Renove os cookies da origem antes de continuar.');
+    if (result.expired === true || result.valid === false) { const error = new Error('Renove os cookies da origem antes de continuar.'); error.code = 'cookies_expired'; throw error; }
   }
 
   async function download(event) {
@@ -1094,6 +1141,7 @@
           if (event.type === 'file') {
             if (!(type === 'video' ? event.mime.startsWith('video/') : event.mime.startsWith('audio/'))) throw new Error('O arquivo recebido não corresponde ao tipo de mídia escolhido.');
             fileDetails = event;
+            window.OndaStageTimes?.render(event.stageSeconds);
           }
         },
       }) : null;
@@ -1640,6 +1688,8 @@
     providersController?.abort();
     maintenanceController?.abort();
   });
+  form.addEventListener('input', () => window.OndaErrorActions?.clear());
+  form.addEventListener('change', () => window.OndaErrorActions?.clear());
   restoreDraft();
   const queryMedia = new URL(window.location.href).searchParams.get('media');
   if (['audio', 'video'].includes(queryMedia)) form.elements.media_type.value = queryMedia;

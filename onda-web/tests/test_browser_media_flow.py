@@ -32,7 +32,8 @@ def media_browser(request):
 
 @pytest.fixture
 def media_server(monkeypatch):
-    files={}
+    class FixtureFiles(dict):pass
+    files=FixtureFiles()
     def blob(method,url,*,headers,body=None,**kwargs):
         parsed=urlsplit(url)
         path=parse_qs(parsed.query)['pathname'][0] if method=='PUT' else parsed.path.lstrip('/')
@@ -80,6 +81,7 @@ def media_server(monkeypatch):
     origin=f'http://127.0.0.1:{server.server_port}'
     monkeypatch.setenv('CLERK_ALLOWED_ORIGINS',origin)
     thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+    files.disconnect=lambda: (server.shutdown(),server.server_close())
     try:yield origin,files
     finally:server.shutdown();server.server_close();thread.join(5);client.close()
 

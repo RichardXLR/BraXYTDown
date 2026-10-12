@@ -64,7 +64,8 @@ def test_opt_in_frames_and_legacy_bytes_share_one_prepare_and_cleanup(monkeypatc
         assert "content-length" not in stream.headers
         events, payload = decode(stream.content)
         assert payload == data
-        assert events[0] == {"type": "progress", "stage": "extracting"}
+        assert events[0]["type"] == "progress" and events[0]["stage"] == "extracting"
+        assert events[0]["stageSeconds"]["extracting"] >= 0
         assert [event["stage"] for event in events if event.get("type") == "progress"][:3] == ["extracting", "downloading", "converting"]
         file = next(event for event in events if event["type"] == "file")
         assert file["size"] == len(data) and file["mime"] == "audio/mpeg"

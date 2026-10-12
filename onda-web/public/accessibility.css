@@ -1,0 +1,43 @@
+/* Readable contrast, useful touch targets and visible keyboard focus. */
+body{--muted:#b3c3d6;--focus-ring:#a3d4ff;--safe-action:#075ac7;--safe-action-end:#0647ad}
+body[data-theme=light]{--muted:#435873;--focus-ring:#034b9e}
+body[data-accent=cyan]{--safe-action:#006379;--safe-action-end:#005364}
+body[data-accent=violet]{--safe-action:#6242b5;--safe-action-end:#513096}
+:where(a,button,summary,input,select,textarea,[tabindex]):focus-visible{outline:3px solid var(--focus-ring,#91caff);outline-offset:4px}
+.choice input:focus-visible+span,.media-type-choice input:focus-visible+span{outline:3px solid var(--focus-ring);outline-offset:3px}
+.preference-toggle:has(input:focus-visible){outline:3px solid var(--focus-ring);outline-offset:3px;border-radius:10px}
+button,summary,.primary-link,.creator-instagram{touch-action:manipulation}
+.secondary-button,.text-button,.history-retry,.sound-toggle,.account-sync,.paste-button{min-height:44px}
+#download-button,.primary-link{background:linear-gradient(115deg,var(--safe-action),var(--safe-action-end));color:#fff}
+.url-field input,#cookies-input,.session-access-grid input,.platform-test-fields input{font-size:16px}
+.hero-copy,.view-description,.compatibility-copy,.compatibility-test-heading p,.advanced-intro,.session-introduction p{font-size:14px;line-height:1.75;color:var(--muted)}
+.source-row #url-help,.source-row .inspect-button,.card-footer,.format-context,#quality-note,.cookies-help,.cookies-filename,.cookies-status,.cookies-memory-status,.session-privacy-note,.session-method>p,.session-guide p,.session-guide li,.tools-heading p,.trim-help,.tool-flag small,.cookie-renewal-note,.preferences-save-row p,.preference-toggle small,.preference-sound-note p,.maintenance-context,.maintenance-empty,.maintenance-date,.compatibility-test-note,.performance-note{font-size:13px;line-height:1.7;color:var(--muted)}
+.format-chips .choice>span,.media-type-choice>span>span,.workspace-tabs .nav-item span,.options-grid legend,.media-type-fieldset legend,.interface-disclosure>summary,.history-meta,.performance-table,.performance-resource-table{font-size:13px}
+.quality-chips .choice>span small,.performance-table tbody td::before,.cookie-center-facts dt,.download-metrics dt,.maintenance-stat>span{font-size:12px;color:var(--muted)}
+.choice>span,.format-chips .choice>span{color:var(--text)}
+body[data-theme=light] .choice.selected>span,body[data-theme=light] .media-type-choice.selected>span{color:#064b91;border-color:#376da4;background:#e2effd}
+.status-heading>div>span,.status-heading p{font-size:14px;line-height:1.7}.progress-track{scroll-margin-top:170px}
+.error-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.error-actions button{font-size:13px;padding:12px 16px}.error-actions[hidden]{display:none}
+.stage-time-list{display:grid;gap:0;font-size:13px;margin:0}.stage-time-list>div{display:flex;justify-content:space-between;align-items:baseline;gap:20px;padding:9px 0;border-bottom:1px solid var(--line)}.stage-time-list dt{color:var(--muted)}.stage-time-list dd{margin:0;font-weight:650;white-space:nowrap;font-variant-numeric:tabular-nums}.stage-time-note{font-size:12px;line-height:1.7;color:var(--muted);margin-top:12px}
+.history-stage-times{margin-top:10px;min-width:150px}.history-stage-times>summary{font-size:12px;cursor:pointer;padding:8px 0;min-height:40px;color:var(--lime)}.history-stage-times .stage-time-list{font-size:12px}.history-stage-times .stage-time-list>div{gap:12px;flex-wrap:wrap}.history-stage-times .stage-time-note{max-width:260px}
+body[data-theme=light] .result-ready{color:#006253}body[data-theme=light] .result-failed,body[data-theme=light] .result-recoverable_failure{color:#a82823}
+.performance-resource-scroll:focus-visible{outline-offset:2px}.performance-table td{overflow-wrap:anywhere}
+@media(max-width:600px){.source-row{flex-wrap:wrap;gap:4px 12px}.source-row #url-help{max-width:100%;font-size:12px}.source-row .inspect-button{font-size:12px}.performance-table tbody td{font-size:13px}.card-footer{font-size:12px}.tool-flag strong{font-size:14px}.compatibility-test-panel,.compatibility-card{padding-inline:20px}.history-stage-times{grid-column:1/-1;min-width:0}.history-stage-times .stage-time-list>div{display:block}.history-stage-times dd{margin-top:3px}}
+@media(forced-colors:active){.choice.selected>span,.media-type-choice.selected>span{outline:2px solid Highlight}.progress-track{border:1px solid CanvasText}.progress-track>div{background:Highlight}.preference-switch{border:1px solid CanvasText}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+body[data-theme=light]{--lime:#09549c;--polish-accent:#09549c;--onda-accent:#09549c}
+body[data-theme=light][data-accent=cyan]{--lime:#006075;--polish-accent:#006075;--onda-accent:#006075}
+body[data-theme=light][data-accent=violet]{--lime:#6138a4;--polish-accent:#6138a4;--onda-accent:#6138a4}
+.media-tools legend span{color:var(--muted)}.skip-link{background:var(--safe-action);color:#fff;font-size:14px;min-height:44px;line-height:1.6}.maintenance-pill{font-size:12px;line-height:1.5}.maintenance-run-link{font-size:13px;min-height:44px}
+body[data-theme=light]{--studio-accent:#09549c}
+body[data-theme=light][data-accent=cyan]{--studio-accent:#006075}
+body[data-theme=light][data-accent=violet]{--studio-accent:#6138a4}
+.media-tools legend span{opacity:1;font-size:13px}
+
+@media(max-width:600px){.download-button{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:10px;padding-inline:14px}.download-button #download-button-label{white-space:nowrap}.download-button .button-format{margin:0;width:auto}}
+#download-progress{background:var(--panel-inset);color:var(--text);border-color:var(--line)}
+#download-progress .download-stages li{color:var(--muted);font-size:12px}
+#download-progress .download-stages li>span{background:var(--panel-inset);color:var(--muted);border-color:var(--line);font-size:12px}
+#download-progress .download-stages li[data-state=active],#download-progress .download-stages li[data-state=complete],#download-progress .download-stages li[data-state=active]>span,#download-progress .download-stages li[data-state=complete]>span{color:var(--lime)}
+#download-progress .download-metrics dd{color:var(--text);font-size:13px}#download-progress .download-metrics dt{color:var(--muted);font-size:12px}
+#progress-track{background:var(--line)}

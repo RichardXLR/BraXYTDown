@@ -7,6 +7,7 @@ import queue
 import struct
 import threading
 import time
+from .stage_timing import StageTiming
 
 CONTENT_TYPE = "application/x-onda-download;version=1"
 JSON_LIMIT = 16 * 1024
@@ -48,6 +49,7 @@ class ProgressReporter:
         self.events = queue.Queue(maxsize=8)
         self.lock = threading.Lock()
         self.clock = clock
+        self.timing = StageTiming(clock=clock)
         self.last_emit = -math.inf
         self.stage = None
         self.tracks = {}
@@ -62,10 +64,12 @@ class ProgressReporter:
             self._emit_locked(stage, force=force, **values)
 
     def _emit_locked(self, stage, *, force=False, **values):
+        self.timing.enter(stage)
         now = self.clock()
         if not force and stage == self.stage and now - self.last_emit < .25:
             return
         event = {"type": "progress", "stage": stage}
+        event['stageSeconds'] = self.timing.snapshot()
         for key, value in values.items():
             if (key in _NUMBERS and isinstance(value, (int, float)) and not isinstance(value, bool)
                     and math.isfinite(value) and 0 <= value <= 2 ** 53 - 1):

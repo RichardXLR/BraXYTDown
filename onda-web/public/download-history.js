@@ -36,7 +36,19 @@
     columns.forEach(text => { const cell = el('th', '', text); cell.scope = 'col'; heading.append(cell); }); head.append(heading);
     const body = el('tbody');
     for (const row of data) { const line = el('tr'); const date = new Date(number(row.at) * 1000); const label = status[row.status] || 'Desconhecido';
-      [date.toLocaleString('pt-BR'), String(row.format || '').toUpperCase(), label, `${nf.format(number(row.elapsedSeconds))} s`, `${nf.format(speed(row))} MiB/s`, bytes(row.outputBytes)].forEach((value, i) => { const cell = el('td', i === 2 ? `performance-result result-${row.status}` : '', value); cell.dataset.label = columns[i]; line.append(cell); }); body.append(line);
+      [date.toLocaleString('pt-BR'), String(row.format || '').toUpperCase(), label, `${nf.format(number(row.elapsedSeconds))} s`, `${nf.format(speed(row))} MiB/s`, bytes(row.outputBytes)].forEach((value, i) => { const cell = el('td', i === 2 ? `performance-result result-${row.status}` : '', value); cell.dataset.label = columns[i];
+        const measured = window.OndaStageTimes?.validate(row.stageSeconds);
+        if (i === 3 && measured) {
+          const details = el('details', 'history-stage-times'); details.append(el('summary', '', 'Tempos por etapa'));
+          const times = el('dl', 'stage-time-list');
+          for (const [key, label] of Object.entries(window.OndaStageTimes.labels)) {
+            const item = el('div'); item.append(el('dt', '', key === 'delivering' ? 'Envio pelo servidor' : label), el('dd', '', Object.hasOwn(measured, key) ? window.OndaStageTimes.format(measured[key]) : 'Não medido')); times.append(item);
+          }
+          const largest = Object.entries(measured).sort((a,b) => b[1] - a[1])[0];
+          details.append(times, el('p', 'stage-time-note', `Maior tempo observado: ${window.OndaStageTimes.labels[largest[0]]}. Inclui novas tentativas; envio pelo servidor difere da recepção no dispositivo.`));
+          cell.append(details);
+        }
+        line.append(cell); }); body.append(line);
     }
     table.append(caption, head, body); card.append(table); fragment.append(card); root.replaceChildren(fragment);
     const trends = el('details', 'performance-trends interface-disclosure'); trends.open = trendsExpanded;

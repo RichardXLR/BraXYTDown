@@ -312,7 +312,7 @@ def download_headers(title: str, audio_format: str, size: int):
 
 def progress_download(body, request, directory, guard, cleanup, queued):
     """Start processing only when the ASGI iterator owns its cleanup lifecycle."""
-    reporter = ProgressReporter()
+    reporter = guard.progress or ProgressReporter()
     guard.progress = reporter
 
     async def stream():
@@ -355,6 +355,8 @@ def progress_download(body, request, directory, guard, cleanup, queued):
                              "queued": bool(queued)}
             file_event = {"type": "file", "name": f"{title}.{body.format}", "title": title,
                           "mime": mime, "size": size, "recovery": safe_recovery}
+            reporter.timing.enter('delivering')
+            file_event['stageSeconds'] = reporter.timing.snapshot()
             resolution = details.get("output_resolution")
             if isinstance(resolution, int) and not isinstance(resolution, bool) and 0 < resolution <= 2160:
                 file_event["resolution"] = resolution
@@ -386,6 +388,7 @@ def progress_download(body, request, directory, guard, cleanup, queued):
             guard.onda_result_status = 'cancelled' if exc.code == 'cancelled' else 'failed'
             LOGGER.warning("audio_request_failed code=%s status=%d", exc.code, exc.status)
             error_event = {"type": "error", "code": exc.code, "error": exc.message}
+            error_event['stageSeconds'] = reporter.timing.snapshot(finish=True)
             attempts = getattr(exc, "recovery_attempts", None)
             if isinstance(attempts, int) and 1 <= attempts <= 3:
                 error_event["recovery"] = {"attempts": attempts, "exhausted": bool(getattr(exc, "recovery_exhausted", False))}
@@ -394,7 +397,7 @@ def progress_download(body, request, directory, guard, cleanup, queued):
             # Never expose an upstream exception, URL, cookie or log line.
             guard.onda_result_status='failed'
             guard.onda_result_code='download_failed'
-            yield frame({"type": "error", "code": "download_failed", "error": "Não foi possível concluir o download. Tente novamente."})
+            yield frame({"type": "error", "code": "download_failed", "error": "Não foi possível concluir o download. Tente novamente.", 'stageSeconds': reporter.timing.snapshot(finish=True)})
         finally:
             guard.abort()
             if worker is not None:
@@ -428,6 +431,7 @@ async def download_link(body: DownloadInput, request: Request):
     guard.partition = partition
     from .download_history import Measurement, persist
     measurement = Measurement(mode='inline',media_type=body.media_type,format=body.format)
+    guard.progress = ProgressReporter()
     principal=getattr(getattr(request,'state',None),'onda_auth',None)
     metric_user=principal.user_id if principal and principal.kind=='user' else None
     guard.onda_result_status = 'cancelled'
@@ -452,7 +456,8 @@ async def download_link(body: DownloadInput, request: Request):
 
     async def save_measurement():
         if not metric_user:return
-        record=measurement.finish(status=guard.onda_result_status,transferred=guard.received,output=guard.onda_output_size,code=guard.onda_result_code)
+        record=measurement.finish(status=guard.onda_result_status,transferred=guard.received,output=guard.onda_output_size,code=guard.onda_result_code,
+                                  stage_seconds=guard.progress.timing.snapshot(finish=True))
         await asyncio.to_thread(persist,metric_user,record)
 
     try:
@@ -461,6 +466,7 @@ async def download_link(body: DownloadInput, request: Request):
             response.finalize=save_measurement
             return response
         options = {"cookies": body.cookies, "settings": body.settings()}
+        guard.report('extracting', force=True)
         session = body.session_options()
         if session is not None:
             options["session"] = session
@@ -482,6 +488,7 @@ async def download_link(body: DownloadInput, request: Request):
             headers["X-Media-Resolution"] = str(resolution)
 
         async def stream_file():
+            guard.progress.timing.enter('delivering')
             try:
                 with target.open("rb") as file:
                     while chunk := file.read(64 * 1024):

@@ -15,6 +15,12 @@
   function validText(value, maximum) {
     return typeof value === 'string' && value.length > 0 && value.length <= maximum && !/[\u0000-\u001f\u007f]/.test(value);
   }
+  function stageSeconds(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const entries = Object.entries(value);
+    if (!entries.length || entries.length > 4 || entries.some(([key, n]) => !['extracting', 'downloading', 'converting', 'delivering'].includes(key) || typeof n !== 'number' || !Number.isFinite(n) || n < 0 || n > Number.MAX_SAFE_INTEGER)) return null;
+    return Object.fromEntries(entries);
+  }
   function recovery(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
     const result = {};
@@ -44,6 +50,7 @@
     const header = new Uint8Array(5);
     let headerUsed = 0, payload = null, payloadUsed = 0, kind = 0;
     let metadata = null, received = 0, complete = false, succeeded = false, events = 0;
+    let preparationTimes = null;
     const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
     let deliveryStarted = null, lastDeliveryTime = null, lastDeliveryBytes = 0;
     const decoder = new TextDecoder('utf-8', { fatal: true });
@@ -58,7 +65,7 @@
       if (!metadata || deliveryStarted === null) return;
       const time = now();
       if (!force && lastDeliveryTime !== null && time - lastDeliveryTime < .25) return;
-      const event = { type: 'progress', stage: 'delivering', downloadedBytes: received, totalBytes: metadata.size, measurement: 'browser' };
+      const event = { type: 'progress', stage: 'delivering', downloadedBytes: received, totalBytes: metadata.size, measurement: 'browser', stageSeconds: { ...(preparationTimes || {}), delivering: Math.max(0, time - deliveryStarted) } };
       const elapsed = time - (lastDeliveryTime ?? deliveryStarted);
       if (elapsed > 0) event.speedBytesPerSecond = (received - lastDeliveryBytes) / elapsed;
       lastDeliveryTime = time;
@@ -83,6 +90,11 @@
         if (!STAGES.has(event.stage)) throw invalid();
         if (event.stage === 'ready' && (!metadata || received !== metadata.size)) throw invalid();
         const progress = { type: 'progress', stage: event.stage };
+        if (event.stageSeconds !== undefined) {
+          const times = stageSeconds(event.stageSeconds);
+          if (!times) throw invalid();
+          progress.stageSeconds = times;
+        }
         for (const key of COUNTERS) {
           if (event[key] === undefined) continue;
           if (typeof event[key] !== 'number' || !Number.isFinite(event[key]) || event[key] < 0 || event[key] > Number.MAX_SAFE_INTEGER) throw invalid();
@@ -98,6 +110,10 @@
         const error = new Error(validText(event.error, 512) ? event.error : 'Não foi possível concluir o download. Tente novamente.');
         error.code = typeof event.code === 'string' && /^[a-z_]{1,64}$/.test(event.code) ? event.code : 'download_failed';
         error.recovery = recovery(event.recovery);
+        if (event.stageSeconds !== undefined) {
+          error.stageSeconds = stageSeconds(event.stageSeconds);
+          if (!error.stageSeconds) throw invalid();
+        }
         throw error;
       }
       if (event.type === 'file') {
@@ -108,6 +124,11 @@
           sink = await sinkFactory(metadata);
           if (!sink || !["write", "commit", "abort"].every(key => typeof sink[key] === "function")) throw invalid();
           check();
+        }
+        if (event.stageSeconds !== undefined) {
+          preparationTimes = stageSeconds(event.stageSeconds);
+          if (!preparationTimes) throw invalid();
+          metadata.stageSeconds = preparationTimes;
         }
         deliveryStarted = now();
         if (event.resolution !== undefined) {
@@ -165,7 +186,7 @@
       check();
       if (blob.size !== metadata.size) throw invalid();
       reportDelivery(true);
-      notify({ type: 'progress', stage: 'ready', downloadedBytes: received, totalBytes: metadata.size, measurement: 'browser' });
+      notify({ type: 'progress', stage: 'ready', downloadedBytes: received, totalBytes: metadata.size, measurement: 'browser', stageSeconds: { ...(preparationTimes || {}), delivering: Math.max(0, now() - deliveryStarted) } });
       succeeded = true;
       return { blob, metadata, storageKind: sink?.kind || "memory", cleanup: sink ? () => sink.abort() : async () => {} };
     } finally {

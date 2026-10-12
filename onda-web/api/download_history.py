@@ -11,6 +11,7 @@ import urllib.parse
 from fastapi import Request
 from .account import BlobCredentials,BLOB_API,BLOB_API_VERSION,blob_http,user_identity,parse_json
 from .security import AudioError
+from .stage_timing import valid_timings
 
 RETENTION_SECONDS=30*86400
 MAX_RECORDS=120
@@ -29,16 +30,17 @@ class Measurement:
         children=resource.getrusage(resource.RUSAGE_CHILDREN)
         return own.ru_utime+own.ru_stime+children.ru_utime+children.ru_stime,max(own.ru_maxrss,children.ru_maxrss)*1024
 
-    def finish(self, *, status, transferred=0, output=0, code=None, attempt=1):
+    def finish(self, *, status, transferred=0, output=0, code=None, attempt=1, stage_seconds=None):
         cpu,rss=self.usage()
         record={**self.record,'status':status,'elapsedSeconds':round(max(0,time.monotonic()-self.started),3),'transferredBytes':max(0,int(transferred)),'outputBytes':max(0,int(output)),'attempt':attempt,'processCpuSeconds':round(max(0,cpu-self.before[0]),3),'processPeakRssBytes':rss}
         if code and isinstance(code,str) and len(code)<=64 and all(c.isalnum() or c=='_' for c in code):record['code']=code
+        if valid_timings(stage_seconds):record['stageSeconds']=dict(stage_seconds)
         return record
 
 
 def validate_record(record):
     if not isinstance(record,dict):raise ValueError('invalid metric')
-    allowed={'id','at','mode','mediaType','format','status','elapsedSeconds','transferredBytes','outputBytes','attempt','processCpuSeconds','processPeakRssBytes','code'}
+    allowed={'id','at','mode','mediaType','format','status','elapsedSeconds','transferredBytes','outputBytes','attempt','processCpuSeconds','processPeakRssBytes','code','stageSeconds'}
     if set(record)-allowed:raise ValueError('unexpected metric')
     if not isinstance(record.get('id'),str) or len(record['id'])>80:raise ValueError('invalid id')
     if record.get('mode') not in {'inline','worker'} or record.get('mediaType') not in {'audio','video'}:raise ValueError('invalid scope')
@@ -48,6 +50,7 @@ def validate_record(record):
         value=record.get(key)
         if type(value) not in (int,float) or not math.isfinite(value) or not 0<=value<2**53:raise ValueError('invalid measure')
     if 'code' in record and (not isinstance(record['code'],str) or len(record['code'])>64 or not all(c.isalnum() or c=='_' for c in record['code'])):raise ValueError('invalid code')
+    if 'stageSeconds' in record and not valid_timings(record['stageSeconds']):raise ValueError('invalid stage timing')
     return record
 
 

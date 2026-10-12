@@ -77,6 +77,20 @@ const cases = {
   },
   async unknown_frame_kind() { await reject([file(), frame(3, owned())]); },
   async footer_wrong_size() { await reject([file(), frame(2, owned()), complete(3)]); },
+  async measured_stage_times_survive_file_delivery() {
+    const stages = { extracting: 1.2, downloading: 4.3, converting: 2.1 };
+    const wire = [json({ type: 'progress', stage: 'converting', stageSeconds: stages }), json({ type: 'file', name: 'owned.mp4', title: 'Owned', mime: 'video/mp4', size: 4, stageSeconds: stages }), frame(2, owned()), complete(4)];
+    const events = []; const result = await receive(response(wire), { onEvent: event => events.push(event) });
+    assert.equal(result.metadata.stageSeconds.extracting, 1.2);
+    assert.equal(events.at(-1).stageSeconds.downloading, 4.3);
+    assert.equal(events.at(-1).stageSeconds.converting, 2.1);
+    assert(events.at(-1).stageSeconds.delivering >= 0);
+    assert.equal(events.at(-1).measurement, 'browser');
+  },
+  async invalid_stage_times_fail_closed() {
+    for (const stageSeconds of [[], {}, { extracting: -1 }, { extracting: true }, { cookies: 1 }]) await reject([json({ type: 'progress', stage: 'extracting', stageSeconds })]);
+    await reject([json({ type: 'error', code: 'cookies_expired', error: 'Renew', stageSeconds: { private: 'secret' } })]);
+  },
   async rejects_invalid_progress() {
     await reject([json({ type: 'progress', stage: 'extracting', downloadedBytes: 'private' })]);
     await reject([json({ type: 'progress', stage: 'unknown' })]);

@@ -292,7 +292,7 @@ def translate_error(exc: Exception, guard: Guard) -> AudioError:
         return exc
     text = str(exc).lower()
     if any(token in text for token in ("cookies are no longer valid", "cookies have expired", "expired cookies", "invalid cookie", "session expired", "session has expired")):
-        return AudioError("A sessão da origem expirou ou foi rejeitada. Renove os cookies em Acesso à fonte.", "source_session_invalid", 422)
+        return AudioError("A sessão da origem expirou ou foi rejeitada. Renove os cookies em Cookies e acesso.", "source_session_invalid", 422)
     if any(token in text for token in ("login required", "requires authentication", "please log in", "sign in to access")):
         return AudioError("Entre na plataforma de origem e importe uma sessão válida.", "source_login_required", 422)
     if any(token in text for token in ("private video", "members-only", "members only")):
@@ -301,7 +301,7 @@ def translate_error(exc: Exception, guard: Guard) -> AudioError:
         return AudioError("A plataforma não aceitou a senha desse vídeo. Confira a senha fornecida pelo criador.",
                           "video_password_invalid", 422)
     if any(token in text for token in ("--video-password", "protected by a password", "password-protected", "password protected")):
-        return AudioError("Esse vídeo exige uma senha. Informe a senha do vídeo fornecida pelo criador em Acesso à fonte.",
+        return AudioError("Esse vídeo exige uma senha. Informe a senha do vídeo fornecida pelo criador em Cookies e acesso.",
                           "video_password_required", 422)
     if "429" in text or "too many requests" in text:
         return AudioError("A origem limitou temporariamente as solicitações. Aguarde um pouco e tente novamente.", "upstream_rate_limited", 429)

@@ -15,7 +15,7 @@ def history_browser(request):
         def log_message(self,*args):pass
         def do_GET(self):
             if self.path=='/fixture':
-                content=b'''<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{margin:0;padding:16px;font-family:Arial;background:#081627;color:#fff}:root{--text:#fff;--muted:#9eafc4;--line:#24394f;--lime:#5aa9ff}.studio-card{border:1px solid #24394f;border-radius:18px}.sr-only{position:absolute;clip:rect(0,0,0,0);height:1px;width:1px}</style><link rel="stylesheet" href="/download-history.css"></head><body><button id="refresh-download-history">Atualizar</button><div id="download-history-dashboard"></div><script src="/download-history.js"></script><script src="/download-storage.js"></script><script src="/download-stream.js"></script></body></html>'''
+                content=b'''<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{margin:0;padding:16px;font-family:Arial;background:#081627;color:#fff}:root{--text:#fff;--muted:#9eafc4;--line:#24394f;--lime:#5aa9ff}.studio-card{border:1px solid #24394f;border-radius:18px}.sr-only{position:absolute;clip:rect(0,0,0,0);height:1px;width:1px}</style><link rel="stylesheet" href="/download-history.css"></head><body><button id="refresh-download-history">Atualizar</button><div id="download-history-dashboard"></div><script src="/stage-times.js"></script><script src="/download-history.js"></script><script src="/download-storage.js"></script><script src="/download-stream.js"></script></body></html>'''
                 self.send_response(200);self.send_header('Content-Type','text/html');self.end_headers();self.wfile.write(content)
             else:super().do_GET()
     server=ThreadingHTTPServer(('127.0.0.1',0),functools.partial(Handler,directory=str(ROOT/'public')))
@@ -35,9 +35,12 @@ def test_history_is_responsive_and_renders_only_actual_numeric_metrics(history_b
     browser,origin=history_browser
     with browser.new_context(viewport={'width':width,'height':900}) as context:
         page=context.new_page();page.goto(origin+'/fixture')
-        page.evaluate("""() => OndaDownloadHistory.render([{id:'fixture',at:Date.now()/1000,mode:'worker',format:'mp4',status:'ready',elapsedSeconds:10,transferredBytes:104857600,outputBytes:1000,processCpuSeconds:2,processPeakRssBytes:52428800}])""")
+        page.evaluate("""() => OndaDownloadHistory.render([{id:'fixture',at:Date.now()/1000,mode:'worker',format:'mp4',status:'ready',elapsedSeconds:10,transferredBytes:104857600,outputBytes:1000,processCpuSeconds:2,processPeakRssBytes:52428800,stageSeconds:{extracting:2,downloading:5,converting:3}}])""")
         assert page.locator('.performance-stat strong').all_inner_texts()==['1','1','0','100 MiB']
         assert '10 MiB/s' in page.locator('.performance-table').inner_text()
+        page.locator('.history-stage-times > summary').click()
+        assert '5 s' in page.locator('.history-stage-times').inner_text()
+        assert 'Não medido' in page.locator('.history-stage-times').inner_text()
         assert not page.locator('.performance-charts').is_visible()
         page.locator('.performance-trends > summary').click()
         assert page.locator('.performance-charts').is_visible()

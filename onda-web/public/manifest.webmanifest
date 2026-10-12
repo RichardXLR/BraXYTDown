@@ -1,0 +1,13 @@
+{
+  "id": "/",
+  "name": "Onda — áudio e vídeo",
+  "short_name": "Onda",
+  "lang": "pt-BR",
+  "description": "Prepare e salve seus áudios e vídeos autorizados.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#050d1b",
+  "theme_color": "#050d1b",
+  "icons": [{ "src": "/assets/onda-app-icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }]
+}

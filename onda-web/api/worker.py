@@ -35,11 +35,14 @@ class JobGuard(Guard):
         self.store, self.job, self.fence = store,row['id'],row['fence']
         self.last_lease = 0
         self.last_progress = 0
+        self.current_progress_stage = None
         self.totals, self.transfers = {}, {}
         self.progress_lock = threading.Lock()
         self.transfer_started = time.monotonic()
         self.transfer_offset = 0
         self.progress = self
+        from .stage_timing import StageTiming
+        self.timing = StageTiming()
         self.partition = row['owner']
         self.lease_lock = threading.RLock()
 
@@ -61,9 +64,12 @@ class JobGuard(Guard):
                 self.store.heartbeat()
 
     def emit(self, stage, **values):
-        if time.monotonic()-self.last_progress<.25 and not values.get('force'):
+        self.timing.enter(stage)
+        if stage == self.current_progress_stage and time.monotonic()-self.last_progress<.25 and not values.get('force'):
             return
+        self.current_progress_stage = stage
         safe = {'stage':stage}
+        safe['stageSeconds'] = self.timing.snapshot()
         for key in ('downloadedBytes','totalBytes','speedBytesPerSecond','processedSeconds','durationSeconds','outputBytes','attempt'):
             value = values.get(key)
             if type(value) in (int,float) and 0<=value<2**53:
@@ -71,9 +77,9 @@ class JobGuard(Guard):
         self.store.update(self.job,self.fence,progress=safe)
         self.last_progress=time.monotonic()
 
-    def begin_download(self, totals, *, offsets=None, attempt=1):
+    def begin_download(self, totals=None, *, offsets=None, attempt=1):
         with self.progress_lock:
-            self.totals=dict(totals)
+            self.totals=dict(totals or {})
             self.transfers=dict(offsets or {})
             self.transfer_offset=sum(self.transfers.values())
             self.transfer_started=time.monotonic()
@@ -155,7 +161,7 @@ def process_job(store, row):
         file={'path':target.name,'filename':f'{title}.{data["format"]}','size':size,'mimeType':mime,'sha256':digest,'etag':'"'+digest+'"','mtimeNs':target.stat().st_mtime_ns}
         guard.check()
         os.chmod(target,0o400)
-        if store.update(row['id'],row['fence'],status='ready',file=file,progress={'stage':'ready','downloadedBytes':size,'totalBytes':size}):
+        if store.update(row['id'],row['fence'],status='ready',file=file,progress={'stage':'ready','downloadedBytes':size,'totalBytes':size,'stageSeconds':guard.timing.snapshot(finish=True)}):
             result_status='ready'
             for item in directory.iterdir():
                 if item!=target:
@@ -185,7 +191,7 @@ def process_job(store, row):
         release_workspace(directory)
         os.close(lock)
         if measurement:
-            try:store.record_measurement(row['owner'],measurement.finish(status=result_status,transferred=guard.received,output=output_size,code=result_code,attempt=row['attempts']))
+            try:store.record_measurement(row['owner'],measurement.finish(status=result_status,transferred=guard.received,output=output_size,code=result_code,attempt=row['attempts'],stage_seconds=guard.timing.snapshot(finish=True)))
             except Exception:LOGGER.warning('worker_metric_failure code=history_unavailable')
 
 

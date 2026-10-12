@@ -2,13 +2,14 @@
   'use strict';
   const MEMORY_LIMIT = 100 * 1024 * 1024;
   const DISK_LIMIT = 4 * 1024 ** 3;
+  function limitError(message) { const error = new Error(message); error.code = 'memory_limit'; return error; }
   function memorySink(metadata) {
-    if (metadata.size > MEMORY_LIMIT) throw new Error('Este navegador não disponibilizou espaço em disco. Para arquivos grandes, use um navegador com armazenamento privado de arquivos.');
+    if (metadata.size > MEMORY_LIMIT) throw limitError('Este navegador não disponibilizou espaço em disco. Para arquivos grandes, use um navegador com armazenamento privado de arquivos.');
     let parts = [], bytes = 0, closed = false;
     return { kind: 'memory', async write(chunk) {
       if (closed || bytes + chunk.length > metadata.size) throw new Error('A transferência retornou um tamanho inválido.');
       bytes += chunk.length;
-      if (bytes > MEMORY_LIMIT) throw new Error('A memória segura deste navegador foi atingida.');
+      if (bytes > MEMORY_LIMIT) throw limitError('A memória segura deste navegador foi atingida.');
       parts.push(chunk);
     }, async commit() {
       if (closed || bytes !== metadata.size) throw new Error('A transferência ficou incompleta.');
@@ -26,7 +27,7 @@
     let directory, handle, writer, name;
     try {
       const quota = await navigator.storage.estimate();
-      if (Number.isFinite(quota.quota) && metadata.size + 16 * 1024 * 1024 > quota.quota - (quota.usage || 0)) throw new Error('Não há espaço suficiente no armazenamento do navegador. Libere espaço e tente novamente.');
+      if (Number.isFinite(quota.quota) && metadata.size + 16 * 1024 * 1024 > quota.quota - (quota.usage || 0)) throw limitError('Não há espaço suficiente no armazenamento do navegador. Libere espaço e tente novamente.');
       directory = await (await navigator.storage.getDirectory()).getDirectoryHandle('onda-downloads', { create: true });
       directory = await directory.getDirectoryHandle(account, { create: true });
       // Only stale random files from this account are eligible for cleanup.

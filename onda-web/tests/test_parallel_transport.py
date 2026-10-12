@@ -155,7 +155,11 @@ def test_interrupted_hls_fragment_restarts_without_appending_a_changed_represent
                                                "mp3", guard, engine.MediaSettings(), None)
     assert path.read_bytes() == original and details["recovery"]["attempts"] == 2
     assert len(requests) == 2 and all("Range" not in request.headers for request in requests)
-    assert guard.received == len(original) * 2 - len(segment) + prefix
+    # Sibling fragments are cancelled concurrently: some may finish before
+    # the failed fragment interrupts them. The successful retry is complete;
+    # observed bytes must include its payload and the interrupted prefix,
+    # without pretending that every cancelled peer transferred its full size.
+    assert len(original) + prefix <= guard.received <= len(original) * 2 - len(segment) + prefix
     assert not (tmp_path / "attempt-1").exists()
     guard.close_sockets()
 
