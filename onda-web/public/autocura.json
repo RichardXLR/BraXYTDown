@@ -2,7 +2,7 @@
   "automated": true,
   "automation_enabled": true,
   "baseline_platform_check": {
-    "checked_at": "2026-10-12T05:24:54.993767+00:00",
+    "checked_at": "2026-10-12T13:19:43.163428+00:00",
     "checks": [
       {
         "code": "platform_blocked",
@@ -15,7 +15,7 @@
         "status": "blocked"
       }
     ],
-    "deployment_id": "dpl_AQvtreYaqkCqeRCZVGwAzuDYMAb1"
+    "deployment_id": "dpl_E26VoC1AG9f7PeEYUph6Cw9u6Yjn"
   },
   "canaries": [
     {
@@ -33,7 +33,7 @@
   "components": "all_pinned_python_dependencies",
   "execution": {
     "repository": "RichardXLR/BraXYTDown",
-    "run_id": "38207730956",
+    "run_id": "38254742900",
     "workflow": "Onda AutoCura 3.0"
   },
   "history": [
@@ -859,7 +859,7 @@
     }
   ],
   "last_check": {
-    "checked_at": "2026-10-12T05:27:08.490751+00:00",
+    "checked_at": "2026-10-12T13:20:00.367844+00:00",
     "checks": [
       {
         "name": "runtime",
@@ -1046,7 +1046,7 @@
       "youtube_status": "blocked"
     },
     "platform_baseline": {
-      "checked_at": "2026-10-12T05:24:54.993767+00:00",
+      "checked_at": "2026-10-12T13:19:43.163428+00:00",
       "checks": [
         {
           "code": "platform_blocked",
@@ -1059,14 +1059,14 @@
           "status": "blocked"
         }
       ],
-      "deployment_id": "dpl_AQvtreYaqkCqeRCZVGwAzuDYMAb1"
+      "deployment_id": "dpl_E26VoC1AG9f7PeEYUph6Cw9u6Yjn"
     },
     "release_gate": {
       "accepted_existing_blocks": [
         "me_at_zoo_metadata",
         "big_buck_bunny_metadata"
       ],
-      "baseline_deployment_id": "dpl_AQvtreYaqkCqeRCZVGwAzuDYMAb1",
+      "baseline_deployment_id": "dpl_E26VoC1AG9f7PeEYUph6Cw9u6Yjn",
       "status": "passed",
       "youtube_policy": "baseline",
       "youtube_verified": false
@@ -1093,7 +1093,7 @@
   ],
   "schedule": "23 5 * * *",
   "schema": 3,
-  "snapshot_at": "2026-10-12T05:27:08.492597+00:00",
+  "snapshot_at": "2026-10-12T13:20:00.370599+00:00",
   "snapshot_only": true,
   "state": "passed",
   "status": "passed",
