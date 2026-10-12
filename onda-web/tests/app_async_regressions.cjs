@@ -32,6 +32,7 @@ function fixture() {
     clearTimeout(id) { timers.delete(id); },
     announce(text) { notices.push(text); }, updateSource() { notices.push('source-updated'); },
     showStatus(kind) { notices.push(kind); },
+    clearSpaceReview() {},
     window: { OndaAccount: { storage: { setItem(key, value) { saved.set(key, value); } } } },
   };
   context.window.setTimeout = context.setTimeout;

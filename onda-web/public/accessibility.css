@@ -41,3 +41,4 @@ body[data-theme=light][data-accent=violet]{--studio-accent:#6138a4}
 #download-progress .download-stages li[data-state=active],#download-progress .download-stages li[data-state=complete],#download-progress .download-stages li[data-state=active]>span,#download-progress .download-stages li[data-state=complete]>span{color:var(--lime)}
 #download-progress .download-metrics dd{color:var(--text);font-size:13px}#download-progress .download-metrics dt{color:var(--muted);font-size:12px}
 #progress-track{background:var(--line)}
+#media-source{color:var(--lime);font-size:13px}#media-duration{color:var(--muted);font-size:13px}

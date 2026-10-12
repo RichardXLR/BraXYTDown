@@ -180,3 +180,13 @@ As dependências mantêm suas licenças. Consulte `public/third-party-notices.tx
 ## Modernização do pipeline
 
 Veja o [relatório técnico e resultados reproduzíveis](docs/MODERNIZATION.md) e o [manual do worker](docs/WORKER.md). Nenhum servidor persistente ou armazenamento pago é criado automaticamente. Os testes locais de arquivos de mais de 1 GiB não representam uma garantia de processamento desse tamanho em Vercel Functions.
+
+### Verificação antecipada de espaço
+
+Antes de enviar uma tarefa para processamento, o frontend compara a faixa estimada do resultado com a capacidade de recebimento do navegador. A consulta de cota e a análise de metadados executam em paralelo. Metadados são reaproveitados por até 60 segundos somente para o mesmo link, tipo de mídia e configuração de acesso; o identificador SHA-256 da consulta fica apenas em memória. O caminho automático de análise tem orçamento de 10 segundos; falhas de metadados não impedem um download que a API consiga concluir. Cancelamento e logout interrompem a consulta e impedem o envio da tarefa.
+
+`navigator.storage.estimate()` informa **a cota da origem**, não o espaço físico livre do dispositivo ou da pasta Downloads. Valores ausentes, inválidos, rejeitados ou consultas acima de 1,2 segundo são tratados como desconhecidos. A interface não promete espaço suficiente nesses casos. Com OPFS e cota conhecida, considera o uso existente e a reserva temporária de 16 MiB; a alternativa já existente em memória permanece limitada a 100 MiB. A capacidade de RAM livre não é inferida. Os limites atuais da rota e do armazenamento continuam válidos.
+
+Se o mínimo estimado exceder a capacidade, solicita revisão; se somente o máximo exceder, informa o risco. O processamento ainda não foi iniciado. É possível rever qualidade, selecionar um trecho, liberar espaço e repetir, ou tentar explicitamente com a estimativa. Essa escolha vale para uma única tentativa com a mesma fonte, sessão e ajustes, sem persistir na conta. A confirmação do tamanho real e a checagem de cota antes de escrever o arquivo continuam no recebimento. Uma estimativa aprovada não garante espaço físico nem elimina o tratamento de falta de espaço.
+
+Regressões reproduzíveis: `pytest tests/test_download_capacity.py tests/test_space_check_browser.py`. Os cenários de cota são controlados; valores de 500 MiB, 1 GiB e 2 GiB nos testes de política não representam gravação real desses arquivos ou validação da capacidade da Vercel. A matriz de navegadores cobre Chromium, Firefox e WebKit, com FFmpeg e transferência HTTP próprios nos fluxos permitidos.

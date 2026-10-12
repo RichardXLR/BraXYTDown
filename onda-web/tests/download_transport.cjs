@@ -13,7 +13,9 @@ function between(start, end) {
 }
 const timers = new Map(), busy = [];
 let nextTimer = 0;
-const context = { assert, AbortController, DOMException, Blob, Promise, Uint8Array,
+const context = { assert, AbortController, DOMException, Blob, Promise, Uint8Array, TextEncoder,
+  crypto: require('node:crypto').webcrypto, Date, setTimeout, clearTimeout,
+  metadata: null, metadataURL: '', metadataIdentity: '', metadataAt: 0, deviceCapacity: null,
   activeController: null, sessionLocked: false, timeoutId: null, timedOut: false,
   MAX_DOWNLOAD_BYTES: 8,
   setBusy(kind) { busy.push(kind); },
@@ -22,10 +24,12 @@ const context = { assert, AbortController, DOMException, Blob, Promise, Uint8Arr
   getURL() { return 'https://fixture.example/watch/1'; }, getCookies() { return ''; },
   selectedMediaType() { return 'video'; }, withCookies(payload) { return payload; },
   mediaLabel() { return 'vídeo'; }, showStatus() {}, renderMetadata() {}, showOperationError() {},
+  clearSpaceReview() {}, updateDownloadEstimate() {},
 };
 vm.createContext(context);
 vm.runInContext([
   between('  function startOperation(', '  async function responseError('),
+  between('  async function inspectForSpace(', '  function toolsError('),
   between('  async function receiveDownload(', '  async function download('),
   between('  async function inspect(', '  function formatBytes('),
 ].join('\n'), context);
@@ -60,16 +64,28 @@ const controller = () => startOperation('download');
   assert.equal(busy.length, busyBeforeLock, 'A signed-out account cannot dispatch an idle/resume event.');
   context.sessionLocked = false;
 
+  const checked = controller(), beforeCheckTimer = timers.get(context.timeoutId);
+  context.armOperationTimeout(checked);
+  beforeCheckTimer();
+  assert(!checked.signal.aborted, 'Rearming after preflight must protect the full processing window from the old timeout.');
+  const currentTimer = timers.get(context.timeoutId);
+  currentTimer();
+  assert(checked.signal.aborted, 'The current timeout still cancels overdue work.');
+  endOperation(checked);
+
   // A response can already be buffered when sign-out cancels the fetch.
   // Resolving its JSON afterward must not paint metadata or reopen the studio.
   let finishMetadata;
+  let metadataStarted;
+  const metadataReady = new Promise(resolve => { metadataStarted = resolve; });
   const metadataEvents = [];
   context.window.OndaAuth = { async fetch() { return { ok: true,
-    json() { return new Promise(resolve => { finishMetadata = resolve; }); } }; } };
+    json() { return new Promise(resolve => { finishMetadata = resolve; metadataStarted(); }); } }; } };
+  context.window.OndaDownloadStorage = { capacity: async () => ({ kind: 'unknown', availableBytes: null }) };
   context.renderMetadata = () => metadataEvents.push('metadata');
   context.showStatus = kind => metadataEvents.push(kind);
   const inspection = context.inspect();
-  await new Promise(setImmediate);
+  await metadataReady;
   context.sessionLocked = true;
   context.activeController.abort();
   finishMetadata({ title: 'Private fixture' });

@@ -53,6 +53,8 @@
   let objectURL = null;
   let metadata = null;
   let metadataURL = '';
+  let metadataIdentity = '', metadataAt = 0;
+  let deviceCapacity = null, spaceReview = null, approvedSpaceEstimate = null;
   let lastQuality = '320';
   let history = readHistory();
   let compatibilityStatusController = null;
@@ -190,13 +192,96 @@
   }
 
   function updateDownloadEstimate() {
-    window.OndaDownloadEstimate?.render(metadataURL === input.value.trim() ? metadata : null, {
+    const data = metadataURL === input.value.trim() ? metadata : null;
+    const selection = estimateSelection();
+    window.OndaDownloadEstimate?.render(data, selection);
+    renderSpaceCheck(window.OndaDownloadEstimate?.estimate(data, selection));
+  }
+
+  function estimateSelection() {
+    return {
       media_type: selectedMediaType(), format: selectedFormat(), quality: selectedQuality(),
       video_resolution: form.elements.video_resolution.value,
       trim_start: parseTime($('trim-start').value), trim_end: parseTime($('trim-end').value),
       mute: selectedMediaType() === 'video' && $('mute-video').checked,
       normalize_audio: $('normalize-audio').checked, strip_metadata: $('strip-metadata').checked,
-    });
+    };
+  }
+
+  function renderSpaceCheck(estimate) {
+    const root = $('space-check');
+    root.hidden = !deviceCapacity;
+    if (!deviceCapacity) return;
+    const check = window.OndaDownloadStorage.assess(estimate, deviceCapacity);
+    const bytes = window.OndaDownloadEstimate.formatBytes;
+    const title = check.state === 'insufficient' ? 'A estimativa supera a capacidade deste navegador.'
+      : check.state === 'risk' ? 'O arquivo pode ultrapassar o espaço disponível.'
+      : check.state === 'available' ? 'A estimativa cabe na capacidade de recebimento.'
+      : !estimate || estimate.state !== 'ready' ? 'Tamanho final desconhecido; espaço não confirmado.'
+      : 'Este navegador não informou o espaço disponível.';
+    $('space-check-title').textContent = title;
+    root.dataset.state = check.state;
+    const detail = check.kind === 'disk'
+      ? `Cota disponível para este site: ${check.availableBytes === 0 ? '0 MB' : bytes(check.availableBytes)}. Reservamos ${bytes(window.OndaDownloadStorage.SPACE_RESERVE)} para o recebimento temporário.`
+      : check.kind === 'memory'
+        ? `Este navegador não disponibiliza armazenamento de arquivos ao site. O recebimento usa memória, com limite de ${bytes(window.OndaDownloadStorage.MEMORY_LIMIT)}; isso não mede a RAM livre.`
+        : 'A consulta de armazenamento não está disponível. O download pode continuar, e o recebimento verificará o arquivo quando o tamanho real for conhecido.';
+    $('space-check-detail').textContent = [detail,
+      check.kind === 'disk' && check.route === 'memory' ? `Este arquivo pode usar a alternativa em memória, limitada a ${bytes(window.OndaDownloadStorage.MEMORY_LIMIT)}, sem ocupar a cota temporária.` : '',
+      'A estimativa pode variar. A cota do navegador não mede o espaço físico livre nem garante espaço na pasta em que você salvará o arquivo.'].filter(Boolean).join(' ');
+  }
+
+  function clearSpaceReview() {
+    spaceReview = null;
+    approvedSpaceEstimate = null;
+    $('space-check-actions').hidden = true;
+  }
+
+  async function preflightSpace(payload, selection, controller) {
+    clearSpaceReview();
+    const [inspection, capacity] = await Promise.all([
+      inspectForSpace(payload, controller, true), window.OndaDownloadStorage.capacity(),
+    ]);
+    ensureOperation(controller);
+    deviceCapacity = capacity;
+    const estimate = window.OndaDownloadEstimate.estimate(inspection.data, selection);
+    window.OndaDownloadEstimate.render(inspection.data || {}, selection);
+    renderSpaceCheck(estimate);
+    const check = window.OndaDownloadStorage.assess(estimate, capacity);
+    return { ...check, key: JSON.stringify([inspection.identity, selection, estimate.minBytes, estimate.maxBytes]) };
+  }
+
+  async function inspectForSpace(payload, controller, optional = false) {
+    const body = JSON.stringify(payload);
+    // Reuse only recent metadata from the same source, media type and session.
+    // The digest stays in memory; URLs and credentials are not persisted here.
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body));
+    ensureOperation(controller);
+    const identity = Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, '0')).join('');
+    if (metadata && metadataURL === payload.url && metadataIdentity === identity && Date.now() - metadataAt < 60000) return { data: metadata, identity };
+    const request = new AbortController();
+    const stop = () => request.abort();
+    controller.signal.addEventListener('abort', stop, { once: true });
+    const timer = optional ? setTimeout(stop, 10000) : null;
+    try {
+      const response = await window.OndaAuth.fetch('/api/inspect', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body, signal: request.signal,
+      });
+      ensureOperation(controller);
+      if (!response.ok) throw await responseError(response);
+      const data = await response.json();
+      ensureOperation(controller);
+      if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('A fonte não informou detalhes válidos.');
+      metadataIdentity = identity; metadataAt = Date.now();
+      renderMetadata(data, payload.url);
+      return { data, identity };
+    } catch (error) {
+      ensureOperation(controller);
+      if (!optional || ['authentication_required', 'auth_forbidden'].includes(error.code)) throw error;
+      // Optional metadata must not turn a working download into a failure.
+      // The download API still enforces access, URL security and output limits.
+      return { data: null, identity };
+    } finally { clearTimeout(timer); controller.signal.removeEventListener('abort', stop); }
   }
 
   function toolsError(message, field) {
@@ -518,6 +603,8 @@
 
   function lockSourceSession() {
     sessionLocked = true;
+    metadata = null; metadataURL = ''; metadataIdentity = ''; metadataAt = 0;
+    deviceCapacity = null; clearSpaceReview(); $('space-check').hidden = true;
     cookieSaveSequence += 1;
     cookieVault?.close();
     clearSessionFields();
@@ -578,6 +665,7 @@
     // Every edit invalidates clipboard reads, even when an edited link returns
     // to its previous value before the permission prompt finishes.
     clipboardGeneration += 1;
+    clearSpaceReview();
     if (validatedCookieLink && validatedCookieLink !== input.value.trim()) invalidateCookieValidation();
     const source = detectSource(input.value.trim());
     updateCookieApplicability();
@@ -597,6 +685,7 @@
   }
 
   function updateChoices() {
+    clearSpaceReview();
     const type = selectedMediaType();
     const video = type === 'video';
     const format = selectedFormat();
@@ -699,6 +788,8 @@
     $('cookies-dropzone').setAttribute('aria-disabled', String(Boolean(kind)));
     $('test-current-link').disabled = Boolean(kind);
     $('test-platform-link').disabled = Boolean(kind);
+    $('space-review-quality').disabled = Boolean(kind);
+    $('space-continue').disabled = Boolean(kind);
     $('compatibility-platform').disabled = Boolean(kind);
     $('compatibility-link').readOnly = Boolean(kind);
     $('compatibility-canaries').querySelectorAll('button').forEach((button) => { button.disabled = Boolean(kind); });
@@ -715,13 +806,19 @@
     if (kind === 'download') window.OndaStageTimes?.reset();
     const controller = new AbortController();
     activeController = controller;
-    timeoutId = window.setTimeout(() => {
-      if (activeController !== controller || sessionLocked) return;
+    armOperationTimeout(controller);
+    setBusy(kind);
+    return controller;
+  }
+
+  function armOperationTimeout(controller) {
+    if (timeoutId) window.clearTimeout(timeoutId);
+    const timer = window.setTimeout(() => {
+      if (timeoutId !== timer || activeController !== controller || sessionLocked) return;
       timedOut = true;
       controller.abort();
     }, 315000);
-    setBusy(kind);
-    return controller;
+    timeoutId = timer;
   }
 
   function ownsOperation(controller) {
@@ -855,17 +952,14 @@
     const controller = startOperation('inspect');
     showStatus('loading', 'Buscando os detalhes do link', 'Verificando título, duração e disponibilidade na fonte.');
     try {
-      const response = await window.OndaAuth.fetch('/api/inspect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(withCookies({ url, media_type: selectedMediaType() }, cookies)),
-        signal: controller.signal,
-      });
+      clearSpaceReview();
+      const [, capacity] = await Promise.all([
+        inspectForSpace(withCookies({ url, media_type: selectedMediaType() }, cookies), controller),
+        window.OndaDownloadStorage.capacity(),
+      ]);
       ensureOperation(controller);
-      if (!response.ok) throw await responseError(response);
-      const data = await response.json();
-      ensureOperation(controller);
-      renderMetadata(data, url);
+      deviceCapacity = capacity;
+      updateDownloadEstimate();
       showStatus('info', 'Link analisado', `Escolha o formato e clique em “Baixar ${mediaLabel()}” para continuar.`);
     } catch (error) {
       if (ownsOperation(controller)) showOperationError(controller.signal.aborted ? new DOMException('Operação cancelada.', 'AbortError') : error);
@@ -1093,6 +1187,8 @@
     const type = selectedMediaType();
     const format = selectedFormat();
     const quality = selectedQuality();
+    const acceptedEstimate = approvedSpaceEstimate;
+    clearSpaceReview();
     releaseFile();
     const controller = startOperation('download');
     showStatus('loading', `Preparando seu ${mediaLabel(type)}`, 'Verificando a fonte e recuperando falhas temporárias automaticamente. O tempo depende do conteúdo e dos ajustes.');
@@ -1102,6 +1198,21 @@
     renderDownloadProgress({ type: 'progress', stage: 'extracting' });
     try {
       await preflightSource(url, cookies, controller);
+      showStatus('loading', 'Conferindo o espaço para receber', 'Comparando o tamanho estimado com a capacidade informada por este navegador.');
+      const check = await preflightSpace(withCookies({ url, media_type: type }, cookies),
+        { media_type: type, format, quality, ...options }, controller);
+      ensureOperation(controller);
+      if (['insufficient', 'risk'].includes(check.state) && acceptedEstimate !== check.key) {
+        spaceReview = { key: check.key, url };
+        $('space-check-actions').hidden = false;
+        showStatus('info', 'Confira o espaço antes de baixar', 'A estimativa pode ultrapassar a capacidade de recebimento. Libere espaço, reduza a qualidade ou escolha um trecho. Você também pode tentar, pois o tamanho final pode variar.');
+        $('space-check').scrollIntoView({ block: 'center', behavior: 'auto' });
+        $('space-check').focus({ preventScroll: true });
+        return;
+      }
+      // The optional size check must not consume the existing processing window.
+      armOperationTimeout(controller);
+      showStatus('loading', `Preparando seu ${mediaLabel(type)}`, 'Verificando a fonte e recuperando falhas temporárias automaticamente.');
       if (jobsEnabled) {
         clearTimeout(timeoutId); timeoutId = null;
         const response = await window.OndaAuth.fetch('/api/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ download: withCookies({ url, media_type: type, format, quality, ...options }, cookies), idempotencyKey: crypto.randomUUID(), priority: 1 }), signal: controller.signal });
@@ -1505,6 +1616,18 @@
   });
   input.addEventListener('input', () => { invalidateCookieValidation(); updateSource(); });
   inspectButton.addEventListener('click', inspect);
+  $('space-review-quality').addEventListener('click', () => {
+    if (activeController || sessionLocked || !spaceReview) return;
+    const field = $(selectedMediaType() === 'video' ? 'video-resolution-fieldset'
+      : LOSSLESS.has(selectedFormat()) ? 'audio-format-fieldset' : 'audio-quality-fieldset');
+    field.scrollIntoView({ block: 'center', behavior: 'auto' });
+    field.querySelector('input:checked')?.focus({ preventScroll: true });
+  });
+  $('space-continue').addEventListener('click', () => {
+    if (activeController || sessionLocked || !window.OndaAuth.signedIn || !spaceReview || spaceReview.url !== input.value.trim()) return;
+    approvedSpaceEstimate = spaceReview.key;
+    form.requestSubmit();
+  });
   $('cookies-input').addEventListener('input', () => { sessionImportGeneration += 1; cookieMetadata = null; invalidateCookieValidation(); void persistCookies(); });
   $('clear-cookies').addEventListener('click', async () => {
     clearSessionFields();
@@ -1688,8 +1811,8 @@
     providersController?.abort();
     maintenanceController?.abort();
   });
-  form.addEventListener('input', () => window.OndaErrorActions?.clear());
-  form.addEventListener('change', () => window.OndaErrorActions?.clear());
+  form.addEventListener('input', () => { window.OndaErrorActions?.clear(); clearSpaceReview(); });
+  form.addEventListener('change', () => { window.OndaErrorActions?.clear(); clearSpaceReview(); });
   restoreDraft();
   const queryMedia = new URL(window.location.href).searchParams.get('media');
   if (['audio', 'video'].includes(queryMedia)) form.elements.media_type.value = queryMedia;

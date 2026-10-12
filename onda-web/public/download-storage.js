@@ -2,6 +2,43 @@
   'use strict';
   const MEMORY_LIMIT = 100 * 1024 * 1024;
   const DISK_LIMIT = 4 * 1024 ** 3;
+  const SPACE_RESERVE = 16 * 1024 * 1024;
+  const validBytes = value => Number.isSafeInteger(value) && value >= 0;
+
+  // StorageManager describes this origin's quota, not physical disk space.
+  // Private modes and some browsers do not expose a useful estimate.
+  async function capacity({ timeoutMs = 1200 } = {}) {
+    const storage = navigator.storage;
+    if (typeof storage?.getDirectory !== 'function') return { kind: 'memory', availableBytes: null };
+    const unknown = { kind: 'unknown', availableBytes: null };
+    if (typeof storage.estimate !== 'function') return unknown;
+    let timer;
+    try {
+      const quota = await Promise.race([
+        Promise.resolve().then(() => storage.estimate()),
+        new Promise(resolve => { timer = setTimeout(() => resolve(null), Math.max(10, Math.min(2000, timeoutMs || 1200))); }),
+      ]);
+      if (!quota || !validBytes(quota.quota) || !validBytes(quota.usage)) return unknown;
+      return { kind: 'disk', availableBytes: Math.max(0, quota.quota - quota.usage) };
+    } catch { return unknown; }
+    finally { clearTimeout(timer); }
+  }
+
+  function assess(estimate, capacity) {
+    const kind = ['disk', 'memory'].includes(capacity?.kind) ? capacity.kind : 'unknown';
+    const availableBytes = kind === 'disk' && validBytes(capacity.availableBytes) ? capacity.availableBytes : null;
+    const diskBudget = availableBytes === null ? null : Math.min(DISK_LIMIT, Math.max(0, availableBytes - SPACE_RESERVE));
+    // Small outputs can still use the existing bounded memory fallback when
+    // the origin quota is exhausted. RAM availability itself is not measurable.
+    const budgetBytes = kind === 'memory' ? MEMORY_LIMIT : diskBudget === null ? null : Math.max(MEMORY_LIMIT, diskBudget);
+    const known = estimate?.state === 'ready' && validBytes(estimate.minBytes) && estimate.minBytes > 0
+      && validBytes(estimate.maxBytes) && estimate.maxBytes >= estimate.minBytes;
+    const state = !known || budgetBytes === null ? 'unknown' : estimate.minBytes > budgetBytes ? 'insufficient'
+      : estimate.maxBytes > budgetBytes ? 'risk' : 'available';
+    const route = diskBudget !== null && known && estimate.maxBytes <= diskBudget ? 'disk'
+      : known && estimate.maxBytes <= MEMORY_LIMIT && kind !== 'unknown' ? 'memory' : kind;
+    return { state, kind, route, availableBytes, budgetBytes };
+  }
   function limitError(message) { const error = new Error(message); error.code = 'memory_limit'; return error; }
   function memorySink(metadata) {
     if (metadata.size > MEMORY_LIMIT) throw limitError('Este navegador não disponibilizou espaço em disco. Para arquivos grandes, use um navegador com armazenamento privado de arquivos.');
@@ -26,8 +63,9 @@
     ensureOperation();
     let directory, handle, writer, name;
     try {
-      const quota = await navigator.storage.estimate();
-      if (Number.isFinite(quota.quota) && metadata.size + 16 * 1024 * 1024 > quota.quota - (quota.usage || 0)) throw limitError('Não há espaço suficiente no armazenamento do navegador. Libere espaço e tente novamente.');
+      const space = await capacity();
+      ensureOperation();
+      if (space.kind === 'disk' && metadata.size + SPACE_RESERVE > space.availableBytes) throw limitError('Não há espaço suficiente no armazenamento do navegador. Libere espaço e tente novamente.');
       directory = await (await navigator.storage.getDirectory()).getDirectoryHandle('onda-downloads', { create: true });
       directory = await directory.getDirectoryHandle(account, { create: true });
       // Only stale random files from this account are eligible for cleanup.
@@ -76,5 +114,5 @@
       return handle.getFile();
     }, abort };
   }
-  window.OndaDownloadStorage = Object.freeze({ create, MEMORY_LIMIT, DISK_LIMIT });
+  window.OndaDownloadStorage = Object.freeze({ create, capacity, assess, SPACE_RESERVE, MEMORY_LIMIT, DISK_LIMIT });
 })();
