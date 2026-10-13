@@ -11,7 +11,7 @@
     "url": "https://onda-audio-2so9drg0e-r79078339-3591s-projects.vercel.app"
   },
   "baseline_platform_check": {
-    "checked_at": "2026-10-13T01:26:16.355220+00:00",
+    "checked_at": "2026-10-13T01:38:08.524337+00:00",
     "checks": [
       {
         "code": "platform_blocked",
@@ -24,7 +24,7 @@
         "status": "blocked"
       }
     ],
-    "deployment_id": "dpl_Hue63onsMtrFJX8LvtTREc7jVVW4"
+    "deployment_id": "dpl_5jxKNLgc9H9aVDRcr1PTUuhA6mt2"
   },
   "history": [
     {
@@ -1048,10 +1048,15 @@
         "yt-dlp": "2026.8.19",
         "yt-dlp-ejs": "0.8.0"
       }
+    },
+    {
+      "at": "2026-10-13T01:38:39.514785+00:00",
+      "deployment_id": "dpl_5jxKNLgc9H9aVDRcr1PTUuhA6mt2",
+      "event": "verified"
     }
   ],
   "last_check": {
-    "checked_at": "2026-10-13T01:29:04.726896+00:00",
+    "checked_at": "2026-10-13T01:38:39.514715+00:00",
     "checks": [
       {
         "name": "runtime",
@@ -1251,7 +1256,7 @@
       "youtube_status": "blocked"
     },
     "platform_baseline": {
-      "checked_at": "2026-10-13T01:26:16.355220+00:00",
+      "checked_at": "2026-10-13T01:38:08.524337+00:00",
       "checks": [
         {
           "code": "platform_blocked",
@@ -1264,14 +1269,14 @@
           "status": "blocked"
         }
       ],
-      "deployment_id": "dpl_Hue63onsMtrFJX8LvtTREc7jVVW4"
+      "deployment_id": "dpl_5jxKNLgc9H9aVDRcr1PTUuhA6mt2"
     },
     "release_gate": {
       "accepted_existing_blocks": [
         "me_at_zoo_metadata",
         "big_buck_bunny_metadata"
       ],
-      "baseline_deployment_id": "dpl_Hue63onsMtrFJX8LvtTREc7jVVW4",
+      "baseline_deployment_id": "dpl_5jxKNLgc9H9aVDRcr1PTUuhA6mt2",
       "status": "passed",
       "youtube_policy": "baseline",
       "youtube_verified": false
@@ -1353,7 +1358,7 @@
   ],
   "schema": 2,
   "status": "passed",
-  "updated_at": "2026-10-13T01:29:04.726966+00:00",
+  "updated_at": "2026-10-13T01:38:39.514791+00:00",
   "versions": {
     "annotated-doc": "0.0.5",
     "annotated-types": "0.8.0",
