@@ -1,5 +1,5 @@
 {
-  "created_at": "2026-10-13T04:21:23.693469+00:00",
+  "created_at": "2026-10-13T09:31:20.870462+00:00",
   "wheels": [
     {
       "filename": "annotated_doc-0.0.5-py3-none-any.whl",
@@ -194,10 +194,10 @@
       "version": "2.34.2"
     },
     {
-      "filename": "starlette-1.7.0-py3-none-any.whl",
+      "filename": "starlette-1.8.0-py3-none-any.whl",
       "name": "starlette",
-      "sha256": "67f8e99895493dd2911a03f11314af6ceebeae4e704bb9f43dfc6a9db151c93e",
-      "version": "1.7.0"
+      "sha256": "dfdd6b29c26483288088d990eee59631dedadd66ce20d203402a7ca8e3c4656f",
+      "version": "1.8.0"
     },
     {
       "filename": "truststore-0.10.5-py3-none-any.whl",

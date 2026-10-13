@@ -35,7 +35,7 @@ dependencies = [
   "pyjwt==2.15.1",
   "python-multipart==0.0.32",
   "requests==2.34.2",
-  "starlette==1.7.0",
+  "starlette==1.8.0",
   "truststore==0.10.5",
   "typing-extensions==4.16.0",
   "typing-inspection==0.4.4",
