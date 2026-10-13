@@ -1816,6 +1816,31 @@
   restoreDraft();
   const queryMedia = new URL(window.location.href).searchParams.get('media');
   if (['audio', 'video'].includes(queryMedia)) form.elements.media_type.value = queryMedia;
+  window.OndaBatchBridge = Object.freeze({
+    snapshot() {
+      const tools = getTools(), cookies = getCookies();
+      if (!tools || cookies === null) return null;
+      const type = selectedMediaType();
+      return { settings: { media_type: type, format: type === 'video' ? form.elements.video_format.value : form.elements.format.value,
+        quality: form.elements.quality.value, ...tools }, ...(cookies ? { cookies } : {}), ...accessOptions() };
+    },
+    begin() {
+      if (activeController || sessionLocked || !window.OndaAuth.signedIn || saveOpen.hidden === false) throw new Error('Conclua ou salve o arquivo atual antes de receber o ZIP.');
+      releaseFile();
+      const controller = startOperation('download');
+      showStatus('loading', 'Recebendo seu pacote', 'O ZIP continua disponível na sua fila se você cancelar o recebimento.');
+      return { controller, ensure: () => ensureOperation(controller), heartbeat: () => armOperationTimeout(controller),
+        complete(result, name) {
+          ensureOperation(controller);
+          pendingFile = result.blob; fileCleanup = result.cleanup || null;
+          objectURL = URL.createObjectURL(result.blob); saveButton.href = objectURL; saveButton.download = name; saveButton.hidden = false;
+          showStatus('success', 'Seu pacote está pronto', 'Use “Salvar arquivo” para guardar o ZIP no dispositivo.');
+          $('save-file-detail').textContent = `ZIP · ${formatBytes(result.blob.size)}`;
+          saveOpen.hidden = false; saveDialog.showModal(); saveButton.focus({ preventScroll: true });
+        },
+        end: () => endOperation(controller) };
+    },
+  });
   window.OndaMedia = {
     setType(type) {
       if (activeController || !['audio', 'video'].includes(type)) return false;

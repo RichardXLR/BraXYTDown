@@ -52,3 +52,6 @@ dependencies = [
 
 [[tool.vercel.subscribers]]
 entrypoint = "api.batch_subscriber:consume"
+
+[[tool.vercel.subscribers]]
+entrypoint = "api.batch_cleanup:garbage_collect"

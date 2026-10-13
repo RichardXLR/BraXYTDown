@@ -30,6 +30,7 @@
   <script src="/app-install.js" defer></script>
   <script src="/clerk-portuguese.js" defer></script>
   <script src="/account.js" defer></script>
+  <link rel="stylesheet" href="/batch.css" />
 </head>
 <body data-account="loading">
   <section class="account-gate" id="account-gate" aria-labelledby="account-title">
@@ -212,6 +213,19 @@
             <div class="progress-track" id="progress-track" hidden><div id="progress-fill"></div></div>
             <button class="secondary-button" id="save-open" type="button" hidden>Salvar arquivo <span aria-hidden="true">↓</span></button>
           </div>
+          <details class="interface-disclosure batch-center" id="batch-center" hidden>
+            <summary><span>Fila e pacote ZIP</span><span class="details-plus" aria-hidden="true">+</span></summary>
+            <div class="disclosure-content">
+              <p class="batch-intro">Adicione vários links. O servidor prepara o pacote mesmo com a página fechada.</p>
+              <label for="batch-links">Links do pacote <span>um por linha</span></label>
+              <textarea id="batch-links" rows="4" maxlength="50000" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://…" aria-describedby="batch-help"></textarea>
+              <p id="batch-help" class="batch-note">Até 12 links · mesmos formato e ajustes selecionados acima. Pacotes disponíveis por 6 horas; capacidade de até 350 MB, conforme a cota do serviço.</p>
+              <details class="interface-disclosure"><summary>Como ficam meus dados de acesso?<span aria-hidden="true">+</span></summary><div class="disclosure-content"><p class="batch-note">Quando necessários, seus cookies e a senha do vídeo são enviados cifrados para o armazenamento privado da fila. Ficam ali até a limpeza do pacote, após 6 horas ou sua remoção. Remover os cookies do formulário não cancela pacotes já enviados; use “Cancelar pacote”.</p></div></details>
+              <div class="batch-toolbar"><button class="secondary-button" type="button" id="batch-add">Preparar ZIP no servidor</button><button class="text-button" type="button" id="batch-refresh">Atualizar fila</button></div>
+              <p id="batch-message" role="status" aria-live="polite"></p>
+              <div id="batch-list" class="batch-list" aria-label="Seus pacotes"></div>
+            </div>
+          </details>
           <div class="card-footer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6Zm-4 9 3 3 5-6" /></svg><span>Baixe apenas conteúdo próprio ou autorizado.</span></div>
         </div>
 

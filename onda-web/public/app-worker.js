@@ -1,18 +1,20 @@
 'use strict';
 // BEGIN GENERATED SHELL
-const CACHE_VERSION = "e32a43a1262aab0d6ccf09c1";
+const CACHE_VERSION = "e213867ba2df4bc335f7717d";
 const SHELL = {
   "/accessibility.css": "977ab1f2b9a9dfb8c7a95ccf939ab639e98195533fccd0e63db55f9ab13afda8",
   "/account.css": "a538da08271e58b97006a624f78cfc366e469c4d3d213f522bb73481c707070a",
-  "/account.js": "e04b506da1e6fbf950ab0e4fbfbd8221e28ad0bb665ab1929608ba9e10631e18",
+  "/account.js": "90c4df1295ad1e385965f3eb6a3cb30a259b3d478824d2a4a99bb4ef6332b7e3",
   "/app-install.css": "897678bc9bfa7bcd335ba4f176975be4495d521c8f5de6ef3d34518455c45308",
   "/app-install.js": "b31d0b92752f6273fa481e7840cd7ad472d69717423de5953c9c4819974c700e",
-  "/app.js": "1484d9776c0df801e89a0a9db7fd19e0c34c90b77cf67e2ad7ade436fb198f05",
+  "/app.js": "9231804b59ff2ed19b9b617bc23a071d399a692d01423ba95549b2468c31e559",
   "/assets/fonts/manrope-latin-variable.woff2": "a30ddcd349703aff7464c34bef3fffdff405ee50c113440d7c8693c02d210972",
   "/assets/onda-app-icon.png": "c748266086fae5ae2e926aed95a8427fd87f6bd1cc3b753763ebe5eb982c7fe1",
   "/assets/onda-icon.png": "e72c4dbfc231aaf27f37912b0672868fabf4463136672061d7b3ef2ea0d93cc6",
   "/assets/onda-logo.webp": "f0013ebdf872190e3eaf0183dd71f188ff654f8c99aa669e52283462de3e22b1",
   "/atelier.css": "901178223c417a8db9896b2f46ae5a94b7e21e686ed97e5c7c032aa2274b7e8b",
+  "/batch.css": "6d147ef19980bf64a14b291966581e3a4b7717c2759d81ac1287e0eeed2f6c97",
+  "/batch.js": "508a8f754a859c835019210f29d676abbcdc5970aab28839ee8c51920013c4cc",
   "/brand.css": "e77a5037d6129f2ac9002f2c302ef4c3023b57c778947a47746117a20d34ade5",
   "/clarity.css": "75567a476910527bea8f77a9353415488af3ed23fb3168a7732f83edf428d1ed",
   "/clerk-portuguese.js": "5213adeb2db8f7e455ef15afe48a48bf28888049bd0b29689b1cc0f711b2ca34",
@@ -26,7 +28,7 @@ const SHELL = {
   "/error-actions.js": "b46fa32f31d1f740253bbc71dcb98e51037be90267ce56e4f3c494ea278cab98",
   "/experience.css": "7e4e46c7e6485993d54f3fd33216f5d0d36ee1633b6c905bacebabef497e621f",
   "/identity.css": "b10140d7d94e45f31234790360e192fef6929963a17ff0fed5ed0345762e8ab0",
-  "/index.html": "a4ec994c7b690ef17810c3894ed1baae092d7d94a0d20c61af7da471b1193426",
+  "/index.html": "e4e0759219da153518cb1355fc91f0467e8f4075e5bbae6fbfe1409aa93423c9",
   "/intro.js": "9b884c1a72edb175488d60cb94ab1ea37840a7fac06429ab25d8b0d1fc514e95",
   "/maintenance-center.css": "4ead2df696c79cd904cadb753dfa1449e28163f5f008be4ad12c5273de27d7f2",
   "/maintenance-center.js": "e0ffde1297b744783cf312d22687fae4cde19f86e191c72758fd4091a155d49c",

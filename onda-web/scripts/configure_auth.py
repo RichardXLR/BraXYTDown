@@ -31,6 +31,7 @@ def configure():
             or any(not re.fullmatch(r"mch_[A-Za-z0-9]+", values[name]) for name in (
                 "CLERK_AUTOCURA_SOURCE_MACHINE_ID", "CLERK_AUTOCURA_TARGET_MACHINE_ID"))):
         raise CureError("clerk_auth_configuration_missing")
+    values["ONDA_BATCH_ENABLED"] = "true"
     values["CLERK_ALLOWED_ORIGINS"] = ",".join(VERIFIED_APP_ORIGINS)
     body = [{"key": name, "value": value, "type": "encrypted" if name in (
         "CLERK_SECRET_KEY", "CLERK_PUBLISHABLE_KEY") else "plain",

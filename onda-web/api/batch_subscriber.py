@@ -3,11 +3,11 @@ import asyncio
 import os
 import time
 from vercel.queue import subscribe
-from .batch_store import BatchStore, Conflict, probe_path
+from .batch_store import BatchStore, Conflict, HEX32, HEX64, probe_path
 
 TOPIC = 'onda-media-batches-v1'
 
-@subscribe(topic=TOPIC, consumer_group='onda-media-batches-v1', max_concurrency=1, max_attempts=3, retry_after=30)
+@subscribe(topic=TOPIC, consumer_group='onda-media-batches-v1', max_concurrency=1, max_attempts=5, retry_after=120)
 async def consume(payload: dict[str, str]):
     if set(payload) == {'probe', 'owner', 'deployment'}:
         if payload['deployment'] != os.environ.get('VERCEL_DEPLOYMENT_ID'):
@@ -26,5 +26,6 @@ async def consume(payload: dict[str, str]):
                 return
         await asyncio.to_thread(complete)
         return
-    # Media tasks are installed only after the actual platform probe passes.
-    # Unknown/control payloads are never interpreted as user media requests.
+    if set(payload)=={'owner','batch'} and HEX64.fullmatch(payload['owner']) and HEX32.fullmatch(payload['batch']):
+        from .batch_worker import process
+        await process(payload['owner'],payload['batch'])

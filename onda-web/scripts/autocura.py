@@ -926,6 +926,31 @@ class DeploymentChecks:
                     raise CureError("background_queue_probe_timeout")
             except (CureError, TypeError, AttributeError):
                 checks.append({"name": "background_queue_execution", "status": "failed", "code": "background_queue_probe_failed"})
+        if isinstance(health.get("persistentBatches"), dict) and health["persistentBatches"].get("configured") is True:
+            try:
+                job = self.http.json(base + "/api/background/batch-canary", method="POST", payload={"url":base + "/canary.wav"}, headers=headers, timeout=30)
+                identity = job["batch"]["id"]
+                if not re.fullmatch(r"[a-f0-9]{32}", identity):
+                    raise CureError("batch_canary_invalid")
+                deadline = time.monotonic() + 180
+                while time.monotonic() < deadline:
+                    result = self.http.json(base + "/api/background/batch-canary?id=" + identity, headers=headers, timeout=20)["batch"]
+                    if result["status"] == "ready":
+                        import io, zipfile
+                        content, _ = self.http.request(base + "/api/background/batch-canary?id=" + identity + "&file=1", headers=headers, timeout=30)
+                        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                            entries = archive.infolist()
+                            if len(entries) != 2 or archive.testzip() is not None or any(not e.filename.endswith('.mp3') or e.file_size == 0 for e in entries):
+                                raise CureError("batch_canary_integrity_failed")
+                        checks.append({"name":"persistent_batch_zip", "status":"passed", "inspection":{"files":2,"bytes":len(content),"crc":"verified"}})
+                        break
+                    if result["status"] in {"failed","cancelled"}:
+                        raise CureError("batch_canary_processing_failed")
+                    time.sleep(2)
+                else:
+                    raise CureError("batch_canary_timeout")
+            except (CureError, ValueError, KeyError, TypeError, AttributeError):
+                checks.append({"name":"persistent_batch_zip","status":"failed","code":"batch_canary_failed"})
         video_url = self.video_canary_url or base + "/canary.mp4"
         parsed_video = urllib.parse.urlsplit(video_url)
         video_status = None

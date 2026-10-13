@@ -77,6 +77,7 @@ def media_server(monkeypatch):
             else:super().do_GET()
         def do_POST(self):self.api()
         def do_PUT(self):self.api()
+        def do_DELETE(self):self.api()
     server=ThreadingHTTPServer(('127.0.0.1',0),functools.partial(Handler,directory=str(ROOT/'public')))
     origin=f'http://127.0.0.1:{server.server_port}'
     monkeypatch.setenv('CLERK_ALLOWED_ORIGINS',origin)

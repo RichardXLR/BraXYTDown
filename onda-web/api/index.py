@@ -166,6 +166,7 @@ async def health():
         deployment_id = None
     policy = ResourcePolicy.from_environment()
     from .jobs import capabilities as jobs_capabilities
+    from .batches import capabilities as batch_capabilities
     jobs_status = await asyncio.to_thread(jobs_capabilities)
     return {"ok": True, "resourcePolicy": policy.capabilities(), "jobs": jobs_status, "diagnostics": diagnostics(), "formats": list(FORMATS), "maxDuration": MAX_DURATION,
             "videoFormats": list(VIDEO_FORMATS), "maxVideoDuration": VIDEO_DURATION,
@@ -176,6 +177,7 @@ async def health():
                                  "nativeAlternatives": True, "requiresCompleteFile": True},
             "downloadProgress": {"enabled": True, "protocol": PROGRESS_CONTENT_TYPE},
             "backgroundQueueProbe": bool(deployment_id),
+            "persistentBatches": batch_capabilities(),
             "auth": auth_capabilities(),
             "deploymentId": deployment_id,
             "jsRuntime": next(iter(runtime_options()), None)}
@@ -530,6 +532,8 @@ from .jobs import register_jobs
 register_jobs(app, DownloadInput)
 from .batch_probe import register_batch_probe
 register_batch_probe(app, LinkInput)
+from .batches import register_batches
+register_batches(app, DownloadInput)
 from .download_history import register_history
 register_history(app)
 
