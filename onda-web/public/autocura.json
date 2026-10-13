@@ -2,7 +2,7 @@
   "automated": true,
   "automation_enabled": true,
   "baseline_platform_check": {
-    "checked_at": "2026-10-13T00:59:43.568897+00:00",
+    "checked_at": "2026-10-13T01:26:16.355220+00:00",
     "checks": [
       {
         "code": "platform_blocked",
@@ -15,7 +15,7 @@
         "status": "blocked"
       }
     ],
-    "deployment_id": "dpl_6fvGe3qy3KoF6GvokGwGdTesX2sQ"
+    "deployment_id": "dpl_Hue63onsMtrFJX8LvtTREc7jVVW4"
   },
   "canaries": [
     {
@@ -33,7 +33,7 @@
   "components": "all_pinned_python_dependencies",
   "execution": {
     "repository": "RichardXLR/BraXYTDown",
-    "run_id": "38329846519",
+    "run_id": "38332011993",
     "workflow": "Onda AutoCura 3.0"
   },
   "history": [
@@ -870,7 +870,7 @@
     }
   ],
   "last_check": {
-    "checked_at": "2026-10-13T01:02:26.814457+00:00",
+    "checked_at": "2026-10-13T01:28:36.086277+00:00",
     "checks": [
       {
         "name": "runtime",
@@ -904,6 +904,15 @@
       },
       {
         "name": "background_queue_execution",
+        "status": "passed"
+      },
+      {
+        "inspection": {
+          "bytes": 21206,
+          "crc": "verified",
+          "files": 2
+        },
+        "name": "persistent_batch_zip",
         "status": "passed"
       },
       {
@@ -1061,7 +1070,7 @@
       "youtube_status": "blocked"
     },
     "platform_baseline": {
-      "checked_at": "2026-10-13T00:59:43.568897+00:00",
+      "checked_at": "2026-10-13T01:26:16.355220+00:00",
       "checks": [
         {
           "code": "platform_blocked",
@@ -1074,14 +1083,14 @@
           "status": "blocked"
         }
       ],
-      "deployment_id": "dpl_6fvGe3qy3KoF6GvokGwGdTesX2sQ"
+      "deployment_id": "dpl_Hue63onsMtrFJX8LvtTREc7jVVW4"
     },
     "release_gate": {
       "accepted_existing_blocks": [
         "me_at_zoo_metadata",
         "big_buck_bunny_metadata"
       ],
-      "baseline_deployment_id": "dpl_6fvGe3qy3KoF6GvokGwGdTesX2sQ",
+      "baseline_deployment_id": "dpl_Hue63onsMtrFJX8LvtTREc7jVVW4",
       "status": "passed",
       "youtube_policy": "baseline",
       "youtube_verified": false
@@ -1108,10 +1117,10 @@
   ],
   "schedule": "23 5 * * *",
   "schema": 3,
-  "snapshot_at": "2026-10-13T01:02:26.816575+00:00",
+  "snapshot_at": "2026-10-13T01:28:36.507345+00:00",
   "snapshot_only": true,
-  "state": "passed",
-  "status": "passed",
+  "state": "promotion_pending",
+  "status": "promotion_pending",
   "strategy": "immutable_deployment",
   "versions": {
     "annotated-doc": "0.0.5",
