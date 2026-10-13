@@ -47,8 +47,9 @@ jobs:
       - name: Validate reviewed source before using deployment credentials
         run: |
           python -m pip install -r requirements.txt
+          # Build with production dependencies before pytest installs packaging.
+          python scripts/package_runtime.py
           python -m pip install pytest==8.4.2 httpx==0.28.1
-          python scripts/ffmpeg_runtime.py
           python -m pytest -q
           npm install -g vercel@62.7.0
       - name: Bind Clerk authentication to the server

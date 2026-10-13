@@ -14,7 +14,6 @@ import tarfile
 import tempfile
 import time
 from urllib.parse import urljoin, urlsplit
-from packaging.version import Version
 
 API='https://api.github.com/repos/BtbN/FFmpeg-Builds/releases?per_page=5'
 LOCK='ffmpeg-runtime.json'
@@ -43,6 +42,7 @@ def validate(lock):
     return lock
 
 def latest(http):
+    from packaging.version import Version # Metadata watcher only, not the runtime installer.
     releases=http.json(API)
     if not isinstance(releases,list) or not releases:raise BinaryError('ffmpeg_release_unavailable')
     for release in releases:
