@@ -11,7 +11,7 @@
     "url": "https://onda-audio-a0bougevt-r79078339-3591s-projects.vercel.app"
   },
   "baseline_platform_check": {
-    "checked_at": "2026-10-13T09:30:14.903245+00:00",
+    "checked_at": "2026-10-13T12:49:08.038241+00:00",
     "checks": [
       {
         "code": "platform_blocked",
@@ -24,7 +24,7 @@
         "status": "blocked"
       }
     ],
-    "deployment_id": "dpl_1gkx91Tkgv9LZuwuP9KfANrnMkwh"
+    "deployment_id": "dpl_82k3XkCDyN3GtN8t5V38FME3YYHC"
   },
   "history": [
     {
@@ -1162,7 +1162,7 @@
     }
   ],
   "last_check": {
-    "checked_at": "2026-10-13T09:34:25.317812+00:00",
+    "checked_at": "2026-10-13T12:49:44.237051+00:00",
     "checks": [
       {
         "name": "runtime",
@@ -1362,7 +1362,7 @@
       "youtube_status": "blocked"
     },
     "platform_baseline": {
-      "checked_at": "2026-10-13T09:30:14.903245+00:00",
+      "checked_at": "2026-10-13T12:49:08.038241+00:00",
       "checks": [
         {
           "code": "platform_blocked",
@@ -1375,14 +1375,14 @@
           "status": "blocked"
         }
       ],
-      "deployment_id": "dpl_1gkx91Tkgv9LZuwuP9KfANrnMkwh"
+      "deployment_id": "dpl_82k3XkCDyN3GtN8t5V38FME3YYHC"
     },
     "release_gate": {
       "accepted_existing_blocks": [
         "me_at_zoo_metadata",
         "big_buck_bunny_metadata"
       ],
-      "baseline_deployment_id": "dpl_1gkx91Tkgv9LZuwuP9KfANrnMkwh",
+      "baseline_deployment_id": "dpl_82k3XkCDyN3GtN8t5V38FME3YYHC",
       "status": "passed",
       "youtube_policy": "baseline",
       "youtube_verified": false
@@ -1465,7 +1465,7 @@
   ],
   "schema": 2,
   "status": "passed",
-  "updated_at": "2026-10-13T09:34:25.317883+00:00",
+  "updated_at": "2026-10-13T12:49:44.237117+00:00",
   "versions": {
     "annotated-doc": "0.0.5",
     "annotated-types": "0.8.0",
