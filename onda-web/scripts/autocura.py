@@ -313,6 +313,10 @@ class DependencyCandidate:
             selected_match = ffmpeg_binary.ASSET.fullmatch(self.binary_candidate['asset'])
             if current_match and Version(selected_match[2]) < Version(current_match[2]):
                 raise CureError('ffmpeg_automatic_downgrade_rejected')
+            if current_match and selected_match[2] == current_match[2]:
+                # A daily rebuild is not a new stable FFmpeg release. Keep the
+                # verified snapshot until the maintenance release advances.
+                self.binary_candidate = ffmpeg_binary.validate(pinned_binary)
             versions[ffmpeg_binary.COMPONENT] = self.binary_candidate['version']
         self.resolved_versions = dict(versions)
         return dict(versions)

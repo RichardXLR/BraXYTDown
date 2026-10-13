@@ -362,3 +362,16 @@ def test_concurrent_creation_is_fenced_and_retry_retains_exact_payload(batch_env
     retried=asyncio.run(batches.create_batch(store,owner,body,index.DownloadInput))
     assert retried['generation']==intent['generation'] and retried['status']=='queued'
     assert store.payload(owner,intent['id'])==payload
+
+
+def test_python_sdk_duplicate_ack_is_not_reported_as_queue_failure(monkeypatch):
+    from vercel import queue
+    keys=[]
+    async def duplicate(topic,payload,**options):
+        keys.append(options['idempotency_key'])
+        assert len(options['idempotency_key'])<128
+        raise queue.DuplicateIdempotencyKeyError('already accepted fixture')
+    monkeypatch.setattr(queue,'send',duplicate)
+    asyncio.run(REAL_DISPATCH('a'*64,'b'*32,0,generation='c'*32))
+    asyncio.run(batches.schedule_cleanup('a'*64,'b'*32,21600,generation='c'*32))
+    assert len(keys)==2 and keys[0]!=keys[1]

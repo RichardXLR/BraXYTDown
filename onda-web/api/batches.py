@@ -42,19 +42,22 @@ def capabilities():
             'maxArchiveMB':MAX_ARCHIVE//1024**2,'expiresHours':EXPIRY//3600}
 
 async def dispatch(owner,batch,step,*,delay=0,generation=None):
-    from vercel.queue import send
+    from vercel.queue import send, DuplicateIdempotencyKeyError
     payload={'owner':owner,'batch':batch}
     if generation:payload['generation']=generation
-    key=f'{owner}:{batch}:{generation}:{step}' if generation else f'{owner}:{batch}:{step}'
-    await send(TOPIC,payload,idempotency_key=key,retention=86400,delay=delay)
+    key='batch:'+hashlib.sha256(f'{owner}:{batch}:{generation}:{step}'.encode()).hexdigest() if generation else f'{owner}:{batch}:{step}'
+    try:await send(TOPIC,payload,idempotency_key=key,retention=86400,delay=delay)
+    except DuplicateIdempotencyKeyError:pass # This generation/step was already durably accepted.
 
 async def schedule_cleanup(owner,batch,delay,*,generation=None):
-    from vercel.queue import send
+    from vercel.queue import send, DuplicateIdempotencyKeyError
     payload={'owner':owner,'batch':batch}
     if generation:payload['generation']=generation
-    key=f'gc:{owner}:{batch}:{generation}:{int(delay//60)}' if generation else f'gc:{owner}:{batch}:{int(delay//60)}'
-    await send(GC_TOPIC,payload,idempotency_key=key,
-               delay=math.ceil(max(0,delay))+2,retention=86400)
+    key='gc:'+hashlib.sha256(f'{owner}:{batch}:{generation}:{int(delay//60)}'.encode()).hexdigest() if generation else f'gc:{owner}:{batch}:{int(delay//60)}'
+    try:
+        await send(GC_TOPIC,payload,idempotency_key=key,
+                   delay=math.ceil(max(0,delay))+2,retention=86400)
+    except DuplicateIdempotencyKeyError:pass # The acknowledged cleanup message remains durable.
 
 def public_state(value):
     result={key:value[key] for key in ('id','status','created','expires','cursor')}
