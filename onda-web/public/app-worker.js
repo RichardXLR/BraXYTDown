@@ -1,10 +1,10 @@
 'use strict';
 // BEGIN GENERATED SHELL
-const CACHE_VERSION = "e213867ba2df4bc335f7717d";
+const CACHE_VERSION = "25287a2d50f6954a6cc1c3c1";
 const SHELL = {
   "/accessibility.css": "977ab1f2b9a9dfb8c7a95ccf939ab639e98195533fccd0e63db55f9ab13afda8",
   "/account.css": "a538da08271e58b97006a624f78cfc366e469c4d3d213f522bb73481c707070a",
-  "/account.js": "90c4df1295ad1e385965f3eb6a3cb30a259b3d478824d2a4a99bb4ef6332b7e3",
+  "/account.js": "76257acdb6bb5c10c85b1ce8363e6cc4e9f6738181c125b66228a7342a008673",
   "/app-install.css": "897678bc9bfa7bcd335ba4f176975be4495d521c8f5de6ef3d34518455c45308",
   "/app-install.js": "b31d0b92752f6273fa481e7840cd7ad472d69717423de5953c9c4819974c700e",
   "/app.js": "9231804b59ff2ed19b9b617bc23a071d399a692d01423ba95549b2468c31e559",
@@ -13,8 +13,9 @@ const SHELL = {
   "/assets/onda-icon.png": "e72c4dbfc231aaf27f37912b0672868fabf4463136672061d7b3ef2ea0d93cc6",
   "/assets/onda-logo.webp": "f0013ebdf872190e3eaf0183dd71f188ff654f8c99aa669e52283462de3e22b1",
   "/atelier.css": "901178223c417a8db9896b2f46ae5a94b7e21e686ed97e5c7c032aa2274b7e8b",
-  "/batch.css": "6d147ef19980bf64a14b291966581e3a4b7717c2759d81ac1287e0eeed2f6c97",
-  "/batch.js": "508a8f754a859c835019210f29d676abbcdc5970aab28839ee8c51920013c4cc",
+  "/batch-notifications.js": "09cc3f11cf2b3d736e4037ee667b1ba33d0d5ecae2d6e30165431e0964d1ba90",
+  "/batch.css": "eac5f6421e9ddfc776416037714857755e6b8494bda9c37cfcab9de2c74ff557",
+  "/batch.js": "7eaf63fa205ad7e1c82759e5312ddf4afa81c10fa553fe622be26050710dad51",
   "/brand.css": "e77a5037d6129f2ac9002f2c302ef4c3023b57c778947a47746117a20d34ade5",
   "/clarity.css": "75567a476910527bea8f77a9353415488af3ed23fb3168a7732f83edf428d1ed",
   "/clerk-portuguese.js": "5213adeb2db8f7e455ef15afe48a48bf28888049bd0b29689b1cc0f711b2ca34",
@@ -28,7 +29,7 @@ const SHELL = {
   "/error-actions.js": "b46fa32f31d1f740253bbc71dcb98e51037be90267ce56e4f3c494ea278cab98",
   "/experience.css": "7e4e46c7e6485993d54f3fd33216f5d0d36ee1633b6c905bacebabef497e621f",
   "/identity.css": "b10140d7d94e45f31234790360e192fef6929963a17ff0fed5ed0345762e8ab0",
-  "/index.html": "e4e0759219da153518cb1355fc91f0467e8f4075e5bbae6fbfe1409aa93423c9",
+  "/index.html": "3c064929afbf08f9cc0a882452243166c232e843e92f813f215b99546024a968",
   "/intro.js": "9b884c1a72edb175488d60cb94ab1ea37840a7fac06429ab25d8b0d1fc514e95",
   "/maintenance-center.css": "4ead2df696c79cd904cadb753dfa1449e28163f5f008be4ad12c5273de27d7f2",
   "/maintenance-center.js": "e0ffde1297b744783cf312d22687fae4cde19f86e191c72758fd4091a155d49c",
@@ -79,6 +80,64 @@ self.addEventListener('activate', event => {
 });
 self.addEventListener('message', event => {
   if (event.data?.type === 'ACTIVATE_UPDATE' && event.source?.url && new URL(event.source.url).origin === origin) self.skipWaiting();
+  if (event.data?.type === 'SET_PUSH_OWNER' && event.source?.url && new URL(event.source.url).origin === origin
+      && (event.data.owner === null || /^[a-f0-9]{64}$/.test(event.data.owner))) {
+    event.waitUntil(pushOwner(event.data.owner).then(() => event.ports[0]?.postMessage({ ok: true }), () => event.ports[0]?.postMessage({ ok: false })));
+  }
+});
+function pushOwner(value) {
+  // A fingerprint only: no session token or personal/media data is stored.
+  return new Promise((resolve, reject) => {
+    const open = indexedDB.open('onda-push-device', 1);
+    open.onupgradeneeded = () => open.result.createObjectStore('device');
+    open.onerror = () => reject(new Error('Notification device unavailable'));
+    open.onsuccess = () => {
+      const db = open.result, writing = value !== undefined;
+      const transaction = db.transaction('device', writing ? 'readwrite' : 'readonly');
+      const store = transaction.objectStore('device');
+      const request = writing ? store.put(value, 'owner') : store.get('owner');
+      transaction.oncomplete = () => { db.close(); resolve(writing ? value : request.result); };
+      transaction.onerror = transaction.onabort = () => { db.close(); reject(new Error('Notification device unavailable')); };
+    };
+  });
+}
+function validPush(data) {
+  return data?.type === 'BATCH_READY' && /^[a-f0-9]{64}$/.test(data.owner)
+    && /^[a-f0-9]{32}$/.test(data.batch) && Number.isFinite(data.created)
+    && Number.isFinite(data.expires) && data.expires * 1000 > Date.now();
+}
+self.addEventListener('push', event => {
+  event.waitUntil((async () => {
+    let data;
+    try { data = event.data?.json(); } catch { return; }
+    if (!validPush(data) || await pushOwner() !== data.owner) return;
+    await self.registration.showNotification('Onda · Seu ZIP está pronto', {
+      body: 'Seu pacote já está disponível. Toque para abrir a fila e salvar.',
+      icon: '/assets/onda-app-icon.png', badge: '/assets/onda-app-icon.png',
+      tag: `onda-batch:${data.batch}:${data.created}`, data,
+      actions: [{ action: 'open', title: 'Ver arquivo' }],
+    });
+    for (const client of await self.clients.matchAll({ type: 'window', includeUncontrolled: true })) {
+      if (new URL(client.url).origin === origin) client.postMessage(data);
+    }
+  })());
+});
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  event.waitUntil((async () => {
+    const data = event.notification.data;
+    if (!validPush(data) || await pushOwner() !== data.owner) return;
+    for (const client of await self.clients.matchAll({ type: 'window', includeUncontrolled: true })) {
+      const url = new URL(client.url);
+      if (url.origin === origin && ['/', '/index.html'].includes(url.pathname)) {
+        await client.focus();
+        client.postMessage({ ...data, type: 'BATCH_NOTIFICATION_OPEN' });
+        return;
+      }
+    }
+    // A fixed local destination; private file access still requires Clerk.
+    await self.clients.openWindow('/?tab=download#fila');
+  })());
 });
 self.addEventListener('fetch', event => {
   const request = event.request, url = new URL(request.url);

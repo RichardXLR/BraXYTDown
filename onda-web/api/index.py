@@ -534,6 +534,8 @@ from .batch_probe import register_batch_probe
 register_batch_probe(app, LinkInput)
 from .batches import register_batches
 register_batches(app, DownloadInput)
+from .batch_notifications import register_notifications
+register_notifications(app)
 from .download_history import register_history
 register_history(app)
 

@@ -29,3 +29,5 @@ async def consume(payload: dict[str, str]):
     if set(payload) in ({'owner','batch'},{'owner','batch','generation'}) and HEX64.fullmatch(payload['owner']) and HEX32.fullmatch(payload['batch']) and ('generation' not in payload or HEX32.fullmatch(payload['generation'])):
         from .batch_worker import process
         await process(payload['owner'],payload['batch'],payload.get('generation'))
+        from .batch_notifications import deliver_ready
+        await deliver_ready(payload['owner'],payload['batch'],payload.get('generation'))

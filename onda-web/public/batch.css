@@ -15,4 +15,21 @@
 .batch-job progress { width: 100%; height: 5px; accent-color: var(--lime); }
 .batch-center #batch-message { min-height: 1.5em; margin: 14px 0; font-size: .88rem; }
 .batch-job-actions button { min-height: 44px; }
+.batch-notifications { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; margin: 12px 0; }
+.batch-notifications button { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
+.batch-notifications svg, .batch-ready-icon svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.batch-notifications .batch-note { margin: 0; }
+.batch-ready-notice { position: fixed; z-index: 70; left: 50%; bottom: max(24px, env(safe-area-inset-bottom)); transform: translateX(-50%); width: min(620px, calc(100% - 32px)); padding: 18px; border: 1px solid var(--line); border-radius: 20px; background: var(--panel); box-shadow: 0 18px 60px #00133355; display: flex; align-items: center; gap: 14px; animation: batch-notice-enter .35s ease-out; }
+.batch-ready-notice[hidden] { display: none; }
+.batch-ready-notice { pointer-events: none; }
+.batch-ready-notice button { pointer-events: auto; }
+.batch-ready-icon { flex: 0 0 42px; width: 42px; height: 42px; border-radius: 14px; background: var(--panel-inset); display: grid; place-items: center; color: var(--lime); }
+.batch-ready-copy { flex: 1; min-width: 0; }
+.batch-ready-copy strong { font-size: .95rem; }
+.batch-ready-copy p { color: var(--muted); font-size: .82rem; margin: 5px 0 0; line-height: 1.4; }
+.batch-ready-notice .secondary-button { flex-shrink: 0; min-height: 44px; }
+.batch-notice-dismiss { flex: 0 0 44px; min-height: 44px; border: 0; border-radius: 12px; background: transparent; color: var(--muted); font: inherit; font-size: 1.5rem; cursor: pointer; }
+@keyframes batch-notice-enter { from { opacity: 0; translate: 0 12px; } to { opacity: 1; translate: 0 0; } }
+@media (max-width: 480px) { .batch-ready-notice { padding: 14px; gap: 10px; flex-wrap: wrap; } .batch-ready-copy { flex-basis: calc(100% - 106px); } .batch-ready-notice .secondary-button { margin-left: 52px; } .batch-notice-dismiss { position: absolute; right: 8px; top: 8px; } }
+@media (prefers-reduced-motion: reduce) { .batch-ready-notice { animation: none; } }
 @media (max-width: 480px) { .batch-job { padding: 14px; } .batch-toolbar .secondary-button { width: 100%; } }

@@ -31,7 +31,10 @@
   function render(automatic = false) {
     const list = $('batch-list'), focused = document.activeElement;
     // Avoid replacing a keyboard user's focused action during automatic polling.
-    if (automatic && focused && list.contains(focused)) return;
+    if (automatic && focused && list.contains(focused)) {
+      for (const job of jobs) window.OndaBatchNotifications?.ready(job);
+      return;
+    }
     list.replaceChildren();
     for (const job of jobs) {
       if (job.status === 'cancelled') continue;
@@ -70,6 +73,7 @@
       list.append(card);
     }
     if (!list.childElementCount) list.append(node('p', 'Sua fila está vazia.', 'batch-note'));
+    for (const job of [...jobs].reverse()) window.OndaBatchNotifications?.ready(job);
   }
   function schedule() {
     clearTimeout(polling);
@@ -159,10 +163,11 @@
   $('batch-add').addEventListener('click', enqueue);
   $('batch-refresh').addEventListener('click', () => refresh().catch(error => message(error.message)));
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { clearTimeout(polling); void poll(); } });
-  window.addEventListener('onda:auth-state', event => { if (!event.detail?.signedIn) { generation++; request?.abort(); clearTimeout(polling); jobs = []; identity = fingerprint = null; retryIdentities.clear(); $('batch-links').value = ''; $('batch-list').replaceChildren(); } });
+  window.addEventListener('onda:auth', event => { if (!event.detail?.signedIn) { generation++; request?.abort(); clearTimeout(polling); jobs = []; identity = fingerprint = null; retryIdentities.clear(); $('batch-links').value = ''; $('batch-list').replaceChildren(); } });
+  window.addEventListener('onda:batch-ready', event => { if (signedIn()) void refresh().then(() => { if (event.detail?.focus) window.OndaBatchNotifications?.focus(); }).catch(() => {}); });
   window.addEventListener('pagehide', () => { generation++; request?.abort(); clearTimeout(polling); });
   (async () => {
-    try { const response = await api('/api/batches/capabilities'); const config = await response.json(); if (config.configured && signedIn()) { center.hidden = false; await refresh(); } }
+    try { const response = await api('/api/batches/capabilities'); const config = await response.json(); if (config.configured && signedIn()) { center.hidden = false; await refresh(); if (location.hash === '#fila') window.OndaBatchNotifications?.focus(); } }
     catch { /* The single downloader remains available if the queue is offline. */ }
   })();
 })();

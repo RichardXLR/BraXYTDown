@@ -42,5 +42,25 @@ async function main() {
   const bad=environment({tamper:true});let failure;bad.listeners.install({waitUntil:value=>{failure=value;}});
   await assert.rejects(failure,/release changed/);assert(bad.stores.has('onda-shell-last-approved'));
   assert.equal([...bad.stores.keys()].filter(key=>key.startsWith('onda-shell-')).length,1);
+  // Push/click handling with no open page, and strict account/expiry isolation.
+  const notices=[],opened=[],messages=[];let ownerMarker='a'.repeat(64),focused=0;
+  env.context.pushOwner=async value=>value===undefined?ownerMarker:(ownerMarker=value);
+  env.context.self.registration={showNotification:async(title,options)=>notices.push({title,options})};
+  env.context.self.clients.matchAll=async()=>[];
+  env.context.self.clients.openWindow=async url=>opened.push(url);
+  const data={type:'BATCH_READY',owner:ownerMarker,batch:'b'.repeat(32),created:100,expires:Date.now()/1000+600};
+  async function push(data) { let operation;env.listeners.push({data:{json:()=>data},waitUntil:promise=>{operation=promise;}});await operation; }
+  await push(data);assert.equal(notices.length,1);assert.equal(notices[0].options.tag,'onda-batch:'+'b'.repeat(32)+':100');
+  let click;env.listeners.notificationclick({notification:{data,close:()=>{}},waitUntil:promise=>{click=promise;}});await click;
+  assert.deepEqual(opened,['/?tab=download#fila']);
+  env.context.self.clients.matchAll=async()=>[{url:'https://owned.test/?tab=library',focus:async()=>focused++,postMessage:message=>messages.push(message)}];
+  env.listeners.notificationclick({notification:{data,close:()=>{}},waitUntil:promise=>{click=promise;}});await click;
+  assert.equal(focused,1);assert.equal(messages[0].type,'BATCH_NOTIFICATION_OPEN');assert.equal(opened.length,1);
+  await push({...data,owner:'c'.repeat(64)});await push({...data,expires:1});await push({...data,batch:'../private'});
+  assert.equal(notices.length,1);
+  env.listeners.message({data:{type:'SET_PUSH_OWNER',owner:null},source:{url:'https://untrusted.test'},ports:[]});assert.equal(ownerMarker,data.owner);
+  let cleared;env.listeners.message({data:{type:'SET_PUSH_OWNER',owner:null},source:{url:'https://owned.test/'},ports:[{postMessage:reply=>assert.equal(reply.ok,true)}],waitUntil:promise=>{cleared=promise;}});await cleared;
+  await push(data);assert.equal(notices.length,1);
+  env.listeners.notificationclick({notification:{data,close:()=>{}},waitUntil:promise=>{click=promise;}});await click;assert.equal(opened.length,1);
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
