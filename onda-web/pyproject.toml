@@ -1,2 +1,54 @@
+[project]
+name = "onda-media"
+version = "1.0.0"
+requires-python = ">=3.12"
+dependencies = [
+  "annotated-doc==0.0.5",
+  "annotated-types==0.8.0",
+  "anyio==4.15.1",
+  "brotli==1.2.0",
+  "certifi==2026.7.22",
+  "cffi==2.1.1",
+  "charset-normalizer==3.5.2",
+  "clerk-backend-api==7.0.0",
+  "click==8.5.0",
+  "cryptography==50.0.2",
+  "deno==2.9.7",
+  "fastapi==0.143.0",
+  "h11==0.16.0",
+  "h2==4.4.1",
+  "hpack==4.2.0",
+  "httpcore==1.0.9",
+  "httpcore2==2.13.1",
+  "httpx==0.28.1",
+  "httpx2==2.13.1",
+  "hyperframe==6.1.0",
+  "idna==3.20",
+  "imageio-ffmpeg==0.6.0",
+  "mutagen==1.48.1",
+  "opentelemetry-api==1.45.1",
+  "publicsuffixlist==1.1.0.20261010",
+  "pycparser==3.11",
+  "pycryptodomex==3.24.1",
+  "pydantic==2.14.1",
+  "pydantic-core==2.50.1",
+  "pyjwt==2.15.1",
+  "python-multipart==0.0.32",
+  "requests==2.34.2",
+  "starlette==1.7.0",
+  "truststore==0.10.5",
+  "typing-extensions==4.16.0",
+  "typing-inspection==0.4.4",
+  "urllib3==2.8.0",
+  "uvicorn==0.54.0",
+  "vercel-headers==0.7.2",
+  "vercel-internal-core==0.2.1",
+  "vercel-oidc==0.10.0",
+  "vercel-queue==0.9.1",
+  "websockets==17.2",
+  "yt-dlp[default]==2026.8.19",
+  "yt-dlp-ejs==0.8.0"
+]
+
 [[tool.vercel.subscribers]]
 entrypoint = "api.batch_subscriber:consume"

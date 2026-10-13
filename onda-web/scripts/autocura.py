@@ -372,10 +372,26 @@ class DependencyCandidate:
             self.verify_runtime(python, versions)
             self.verify_application(python, artifacts, temporary)
             (self.root / "requirements.txt").write_text(lock)
+            self.sync_project_dependencies(lock)
             atomic_json(self.root / ".autocura" / "artifacts.json", {"created_at": now(), "wheels": artifacts})
             return {"versions": versions, "artifacts": artifacts}
         finally:
             shutil.rmtree(temporary, ignore_errors=True)
+
+    def sync_project_dependencies(self, lock):
+        """Keep the builder manifest aligned with the verified hash lock."""
+        path = self.root / "pyproject.toml"
+        if not path.exists():
+            return
+        text = path.read_text()
+        if "[project]" not in text:
+            return
+        pins = [line.split(" --hash=")[0] for line in lock.splitlines()
+                if re.match(r"[\w-]+(?:\[default\])?==", line)]
+        updated, count = re.subn(r"(?ms)^dependencies = \[.*?^\]", "dependencies = " + json.dumps(pins, indent=2), text, count=1)
+        if count != 1:
+            raise CureError("builder_dependencies_invalid")
+        path.write_text(updated)
 
     def verify_application(self, python: Path, production_artifacts, temporary: Path):
         """Run the whole API/security suite against the actual candidate packages."""
@@ -1272,6 +1288,8 @@ class RepositoryCheckpoint:
         paths = [".autocura/state.json", "public/autocura.json"]
         if include_requirements:
             paths += ["requirements.txt", ".autocura/artifacts.json"]
+            if (self.root / "pyproject.toml").exists():
+                paths += ["pyproject.toml"]
         tree = []
         for path in paths:
             content = (self.root / path).read_text()
@@ -1413,6 +1431,8 @@ class AutoCura:
         with process_lock(self.root / ".autocura" / "update.lock"):
             self.recover()
             original = (self.root / "requirements.txt").read_bytes()
+            project_path = self.root / "pyproject.toml"
+            original_project = project_path.read_bytes() if project_path.exists() else None
             committed = False
             versions = {}
             previous_versions = dict(self.state.get("versions", {}))
@@ -1509,6 +1529,8 @@ class AutoCura:
             finally:
                 if not committed:
                     (self.root / "requirements.txt").write_bytes(original)
+                    if original_project is not None:
+                        project_path.write_bytes(original_project)
 
     def capture_baseline(self, deployment):
         capture = getattr(self.checks, "capture_platform_baseline", None)
