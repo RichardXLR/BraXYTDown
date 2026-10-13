@@ -227,3 +227,15 @@ def test_incomplete_creation_cannot_change_existing_idempotency_payload(batch_en
     body.video_password='different-credentials'
     with pytest.raises(AudioError) as error:batches.create_batch(store,owner,body,index.DownloadInput)
     assert error.value.code=='batch_idempotency_conflict'
+
+def test_restart_reclaims_unpublished_blob_before_new_upload(batch_environment):
+    files,sent=batch_environment
+    with TestClient(index.app) as client:job=submit(client).json()['batch']
+    owner=batch_store.BatchStore.owner('user_fixture');store=batch_store.BatchStore()
+    path=batch_store.batch_path(owner,job['id'],'media_orphan.bin')
+    files[path]=(b'orphaned fixture upload','"orphan-etag"')
+    def interrupted(row):row['artifacts'].append(path);return row
+    store.mutate(batch_store.batch_path(owner,job['id']),interrupted)
+    run_steps(sent)
+    assert path not in files
+    assert batch_store.state_of(store,owner,job['id'])['status']=='ready'

@@ -86,6 +86,20 @@ def track_artifact(store,owner,batch,token,path):
     value=update_owned(store,owner,batch,token,add)
     if not value or not value.get('lease') or value['lease']['token']!=token:raise AudioError('Pacote cancelado.','cancelled',499)
 
+def clear_orphans(store,value,token):
+    """Reclaim unpublished uploads only after the previous lease has ended."""
+    retained={item['result']['path'] for item in value['items'] if item.get('result')}
+    if value.get('file'):retained.add(value['file']['path'])
+    orphaned=[path for path in value['artifacts'] if path not in retained]
+    if not orphaned:return
+    prefix=batch_path(value['owner'],value['id']).rsplit('/',1)[0]+'/'
+    if any(not path.startswith(prefix) for path in orphaned):raise storage_error('invalid_batch_path',400)
+    store.delete(orphaned)
+    def remove(row):row['artifacts']=[path for path in row['artifacts'] if path not in orphaned];return row
+    update_owned(store,value['owner'],value['id'],token,remove)
+    published=sum(item.get('result',{}).get('size',0) for item in value['items'])
+    budget(store,value['owner']+':'+value['id'],published or 1,value['expires'])
+
 def pack(store,value,guard,directory):
     ready=[item for item in value['items'] if item.get('result')]
     if not ready:raise AudioError('Nenhum arquivo foi concluído para este pacote.','batch_empty',422)
@@ -135,6 +149,7 @@ async def process(owner,batch):
                          resource_policy=policy,workspace=directory)
         reporter=guard.progress;task=None
         try:
+            await asyncio.to_thread(clear_orphans,store,value,token)
             if index<len(value['items']):
                 from .index import DownloadInput
                 payload=await asyncio.to_thread(store.payload,owner,batch)
