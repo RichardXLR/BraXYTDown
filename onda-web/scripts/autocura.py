@@ -32,6 +32,7 @@ from packaging.version import InvalidVersion, Version
 
 TOOLS = ("yt-dlp", "imageio-ffmpeg", "deno")
 DIRECT_COMPONENTS = (*TOOLS, "fastapi", "uvicorn", "publicsuffixlist", "clerk-backend-api")
+OPTIONAL_RUNTIME_COMPONENTS = ("vercel-queue",)
 CANONICAL_ORIGIN = "https://onda-audio.vercel.app"
 CANARIES = (
     {"name": "me_at_zoo_metadata", "url": "https://www.youtube.com/watch?v=jNQXAC9IVRw",
@@ -246,7 +247,7 @@ class DependencyCandidate:
         # Update reviewed parents, then let pip resolve compatible transitives.
         # Independently pinning every latest child can conflict with an exact
         # parent requirement (for example pydantic/pydantic-core).
-        for name in DIRECT_COMPONENTS:
+        for name in (*DIRECT_COMPONENTS, *(name for name in OPTIONAL_RUNTIME_COMPONENTS if name in pins)):
             # PyPI includes the full release history here, which can exceed
             # the ordinary 8 MiB budget as projects accumulate releases.
             # Only this trusted metadata request receives the larger bound;
@@ -309,7 +310,7 @@ class DependencyCandidate:
             raise CureError("unreviewed_component_update")
         pins["yt-dlp"]["extra"] = "[default]"
         return [f'{name}{item["extra"]}=={versions.get(name, item["version"])}'
-                for name, item in sorted(pins.items()) if name in DIRECT_COMPONENTS]
+                for name, item in sorted(pins.items()) if name in (*DIRECT_COMPONENTS, *OPTIONAL_RUNTIME_COMPONENTS)]
 
     def verify_wheels(self, folder: Path):
         """Verify every transitive wheel before installing or executing it."""
@@ -850,6 +851,7 @@ class DeploymentChecks:
         base = deployment_url(deployment["url"])
         public_headers = self.api_headers(deployment, include_machine=False)
         checks = []
+        health = {}
         try:
             health = self.http.json(base + "/api/health", headers=public_headers)
             if not isinstance(health, dict):
@@ -891,6 +893,23 @@ class DeploymentChecks:
             checks.append({"name": "packaged_versions", "status": classify(str(exc)), "code": str(exc)})
         for canary in self.canaries:
             checks.append(self.metadata_check(base, canary, headers))
+        if isinstance(health, dict) and health.get("backgroundQueueProbe") is True:
+            try:
+                probe = self.http.json(base + "/api/background/probe", method="POST",
+                    payload={"url": base + "/canary.wav"}, headers=headers, timeout=30)
+                if not isinstance(probe, dict) or not re.fullmatch(r"[a-f0-9]{32}", str(probe.get("id", ""))):
+                    raise CureError("background_queue_probe_invalid")
+                deadline = time.monotonic() + 120
+                while time.monotonic() < deadline:
+                    result = self.http.json(base + "/api/background/probe?id=" + probe["id"], headers=headers, timeout=20)
+                    if result.get("completed") is True:
+                        checks.append({"name": "background_queue_execution", "status": "passed"})
+                        break
+                    time.sleep(2)
+                else:
+                    raise CureError("background_queue_probe_timeout")
+            except (CureError, TypeError, AttributeError):
+                checks.append({"name": "background_queue_execution", "status": "failed", "code": "background_queue_probe_failed"})
         video_url = self.video_canary_url or base + "/canary.mp4"
         parsed_video = urllib.parse.urlsplit(video_url)
         video_status = None

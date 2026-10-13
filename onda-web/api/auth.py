@@ -32,10 +32,10 @@ YOUTUBE_METADATA_CANARIES = frozenset({
 })
 MACHINE_READ_PATHS = frozenset({
     "/api/health", "/api/compatibility", "/api/compatibility/providers",
-    "/api/maintenance",
+    "/api/maintenance", "/api/background/probe",
 })
 MACHINE_MEDIA_PATHS = frozenset({
-    "/api/download", "/api/inspect", "/api/player", "/api/compatibility/test",
+    "/api/download", "/api/inspect", "/api/player", "/api/compatibility/test", "/api/background/probe",
 })
 PUBLIC_PATHS = frozenset({"/api/health", "/api/auth/config"})
 MAX_MACHINE_BODY = 16 * 1024

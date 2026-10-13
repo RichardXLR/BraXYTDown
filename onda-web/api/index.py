@@ -175,6 +175,7 @@ async def health():
             "downloadRecovery": {"enabled": True, "maxAttempts": 3, "resume": True,
                                  "nativeAlternatives": True, "requiresCompleteFile": True},
             "downloadProgress": {"enabled": True, "protocol": PROGRESS_CONTENT_TYPE},
+            "backgroundQueueProbe": bool(deployment_id),
             "auth": auth_capabilities(),
             "deploymentId": deployment_id,
             "jsRuntime": next(iter(runtime_options()), None)}
@@ -527,6 +528,8 @@ register_account(app)
 register_auth(app)
 from .jobs import register_jobs
 register_jobs(app, DownloadInput)
+from .batch_probe import register_batch_probe
+register_batch_probe(app, LinkInput)
 from .download_history import register_history
 register_history(app)
 
