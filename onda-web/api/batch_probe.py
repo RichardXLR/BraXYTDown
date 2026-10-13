@@ -55,9 +55,8 @@ def register_batch_probe(app, model):
         request_data = BatchInput(urls=[body.url, body.url + '?onda-batch-canary=2'],
             settings={'media_type':'audio','format':'mp3','quality':'128','trim_start':0.2,'trim_end':0.8},
             idempotencyKey=uuid.uuid4().hex)
-        value = await asyncio.to_thread(create_batch, BatchStore(), owner, request_data, DownloadInput)
-        await schedule_cleanup(owner, value['id'], value['expires']-time.time())
-        await dispatch(owner, value['id'], value['dispatchVersion'])
+        value = await create_batch(BatchStore(), owner, request_data, DownloadInput)
+        await dispatch(owner, value['id'], value['dispatchVersion'],generation=value.get('generation'))
         return JSONResponse({'batch':public_state(value)},status_code=202,headers={'Cache-Control':'no-store'})
 
     @app.get('/api/background/batch-canary')

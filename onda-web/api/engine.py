@@ -25,6 +25,7 @@ from yt_dlp.downloader.http import HttpFD
 from yt_dlp.downloader.hls import HlsFD
 from yt_dlp.downloader.dash import DashSegmentsFD
 from yt_dlp.cookies import YoutubeDLCookieJar
+from .toolchain import ffmpeg_executable
 from .cookies import RequestCookieJar, parse_netscape
 from .direct_transfer import download_direct
 from .recovery import AttemptGuard, MAX_ATTEMPTS, retry_kind, wait_for_retry
@@ -799,7 +800,7 @@ def probe_media(source: Path, guard: Guard):
     if identity in cache:
         return dict(cache[identity])
     sanitize_transport_metadata(source, guard)
-    command = [imageio_ffmpeg.get_ffmpeg_exe(), "-hide_banner", "-nostdin"] + input_command(source)
+    command = [ffmpeg_executable(), "-hide_banner", "-nostdin"] + input_command(source)
     log = source.parent / f"probe-{source.name}.log"
     process = None
     started = time.monotonic()
@@ -934,7 +935,7 @@ def convert_audio(source: Path, directory: Path, audio_format: str, quality: int
     start, output_duration = validate_trim(settings, inspected["duration"])
     target = directory / f"audio.{audio_format}"
     codec, _ = FORMATS[audio_format]
-    command = [imageio_ffmpeg.get_ffmpeg_exe(), "-hide_banner", "-loglevel", "warning", "-nostats", "-nostdin", "-y"]
+    command = [ffmpeg_executable(), "-hide_banner", "-loglevel", "warning", "-nostats", "-nostdin", "-y"]
     command += input_command(source)
     # Decode before seeking: native HLS/MPEG-TS downloads can lack an indexed
     # keyframe at the requested position. Input seeking can silently lose video
@@ -949,6 +950,14 @@ def convert_audio(source: Path, directory: Path, audio_format: str, quality: int
     copy_audio = (quality == "source" and audio_format in LOSSLESS and not start
                   and output_duration is None and not settings.normalize_audio
                   and inspected.get("audio_codec") == codec)
+    if (copy_audio and audio_format == "wav" and getattr(guard, "disposable_sources", False)
+            and reuse_pcm_wave(source, guard, strip_metadata=settings.strip_metadata)):
+        # This request owns the input and keeps no resumable source checkpoint.
+        # Reuse its samples instead of allocating another full-sized WAV.
+        guard.report("converting", durationSeconds=inspected["duration"])
+        guard.check_output(source.stat().st_size)
+        guard.check_workspace()
+        return source
     if copy_audio:
         command += ["-c:a", "copy"]
     else:
@@ -968,6 +977,56 @@ def convert_audio(source: Path, directory: Path, audio_format: str, quality: int
     guard.conversion_duration = (output_duration if output_duration is not None else
                                  max(0, inspected["duration"] - start) if inspected["duration"] else None)
     return run_conversion(command, target, directory, guard)
+
+
+def reuse_pcm_wave(source: Path, guard: Guard, *, strip_metadata: bool):
+    """Validate RIFF structure, then compact only private, disposable PCM input.
+
+    Metadata chunks are removed with at most 1 MiB of RAM and no second media
+    file. Unsupported/ambiguous containers retain the normal FFmpeg path.
+    """
+    import struct
+    size=source.stat().st_size
+    with source.open('rb') as stream:
+        header=stream.read(12)
+        if len(header)!=12 or header[:4]!=b'RIFF' or header[8:]!=b'WAVE' or struct.unpack('<I',header[4:8])[0]+8!=size:return False
+        position=12;fmt=None;data=None;chunks=0
+        while position<size:
+            guard.check();chunks+=1
+            if chunks>1024 or position+8>size:return False
+            stream.seek(position);tag,length=struct.unpack('<4sI',stream.read(8))
+            end=position+8+length+(length&1)
+            if end>size:return False
+            if tag==b'fmt ':
+                if fmt is not None or length not in (16,18):return False
+                fmt=stream.read(length)
+            elif tag==b'data':
+                if data is not None or not length:return False
+                data=(position+8,length)
+            position=end
+        if not fmt or not data or len(fmt)==18 and fmt[16:]!=b'\0\0':return False
+        encoding,channels,rate,byte_rate,alignment,bits=struct.unpack('<HHIIHH',fmt[:16])
+        if encoding!=1 or bits!=16 or not channels or not rate or alignment!=channels*2 or byte_rate!=rate*alignment or data[1]%alignment:return False
+    if not strip_metadata:return True
+    prefix=b'RIFF'+struct.pack('<I',4+8+len(fmt)+(len(fmt)&1)+8+data[1]+(data[1]&1))+b'WAVEfmt '+struct.pack('<I',len(fmt))+fmt
+    if len(fmt)&1:prefix+=b'\0'
+    prefix+=b'data'+struct.pack('<I',data[1])
+    destination=len(prefix);read_at=data[0];remaining=data[1]
+    if destination==read_at and size==destination+remaining+(remaining&1):
+        with source.open('rb') as stream:
+            if stream.read(len(prefix))==prefix:return True
+    # Compaction always moves data toward the beginning, never over unread bytes.
+    if destination>read_at:return False
+    with source.open('r+b') as stream:
+        while remaining:
+            guard.check();stream.seek(read_at);block=stream.read(min(1024*1024,remaining))
+            if not block:raise AudioError('O áudio está incompleto.','conversion_failed',422)
+            stream.seek(destination);stream.write(block)
+            read_at+=len(block);destination+=len(block);remaining-=len(block)
+        if data[1]&1:stream.write(b'\0');destination+=1
+        stream.seek(0);stream.write(prefix);stream.truncate(destination)
+    guard.check()
+    return True
 
 
 def convert_video(source: VideoSources | Path, directory: Path, video_format: str, quality: int | str,
@@ -1017,7 +1076,7 @@ def convert_video(source: VideoSources | Path, directory: Path, video_format: st
     guard.copy_attempted = copy_video or (copy_audio and not settings.mute)
     target = directory / f"video.{video_format}"
     threads = video_worker_threads()
-    command = [imageio_ffmpeg.get_ffmpeg_exe(), "-hide_banner", "-loglevel", "warning", "-nostats", "-nostdin", "-y"]
+    command = [ffmpeg_executable(), "-hide_banner", "-loglevel", "warning", "-nostats", "-nostdin", "-y"]
     command += ["-filter_threads", str(threads), "-threads", str(threads)]
     command += input_command(sources.video)
     if sources.audio and not settings.mute:
@@ -1178,13 +1237,14 @@ def prepare_download(url, directory, audio_format, quality, guard, cookies: str 
                     path.unlink(missing_ok=True)
             return target, details
         source = sources
+        guard.disposable_sources = not bool(getattr(guard, "save_acquired", None))
         if settings == MediaSettings():
             target = convert_audio(source, directory, audio_format, quality, guard)
         else:
             target = convert_audio(source, directory, audio_format, quality, guard, settings=settings)
         if not probe_media(target, guard)["audio"]:
             raise AudioError("A saída não contém uma faixa de áudio válida.", "conversion_failed", 422)
-        if not getattr(guard, "save_acquired", None):
+        if source != target and not getattr(guard, "save_acquired", None):
             source.unlink(missing_ok=True)
         return target, details
     except Exception as exc:

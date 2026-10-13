@@ -121,19 +121,21 @@ def pack(store,value,guard,directory):
         if archive.testzip() is not None:raise AudioError('O pacote não passou na verificação.','batch_integrity_failed',502)
     return target
 
-async def process(owner,batch):
+async def process(owner,batch,generation=None):
     store=BatchStore()
     try:value=await asyncio.to_thread(state_of,store,owner,batch)
     except AudioError as error:
         if error.status==404:return
         raise
+    if value.get('generation')!=generation:return
+    if value['status'] in ('creating','creation_failed'):return
     if value['expires']<time.time() or value['status']=='cancelled':
-        await cleanup(owner,batch);return
+        await cleanup(owner,batch,generation);return
     if value['status'] in ('ready','failed'):
-        await schedule_cleanup(owner,batch,value['expires']-time.time());return
+        await schedule_cleanup(owner,batch,value['expires']-time.time(),generation=value.get('generation'));return
     token=uuid.uuid4().hex
     def claim(row):
-        if row['status'] in ('ready','failed','cancelled') or row['expires']<time.time():return None
+        if row.get('generation')!=generation or row['status'] in ('ready','failed','cancelled','creating','creation_failed') or row['expires']<time.time():return None
         if row.get('lease') and row['lease']['until']>time.time():raise AudioError('Outro worker está processando esta etapa.','batch_busy',503)
         row['status']='running' if row['cursor']<len(row['items']) else 'packing'
         row['lease']={'token':token,'until':time.time()+360}
@@ -206,8 +208,8 @@ async def process(owner,batch):
                     sources=[item['result']['path'] for item in value['items'] if item.get('result')]
                     await asyncio.to_thread(store.delete,sources)
                     await asyncio.to_thread(budget,store,owner+':'+batch,artifact['size'],value['expires'])
-            if value and value['status']=='queued':await dispatch(owner,batch,value['dispatchVersion'])
-            elif value:await schedule_cleanup(owner,batch,value['expires']-time.time())
+            if value and value['status']=='queued':await dispatch(owner,batch,value['dispatchVersion'],generation=value.get('generation'))
+            elif value:await schedule_cleanup(owner,batch,value['expires']-time.time(),generation=value.get('generation'))
         except Exception as error:
             code=error.code if isinstance(error,AudioError) else 'batch_processing_failed'
             def failed(row):
@@ -220,8 +222,8 @@ async def process(owner,batch):
                 else:row['status']='failed';row['code']=code
                 row['lease']=None;row['attempt']=0;row['dispatchVersion']+=1;return row
             value=await asyncio.to_thread(update_owned,store,owner,batch,token,failed)
-            if value and value['status']=='queued':await dispatch(owner,batch,value['dispatchVersion'],delay=min(60,5*2**value.get('attempt',0)) if value.get('attempt') else 0)
-            elif value and value['status']!='cancelled':await schedule_cleanup(owner,batch,value['expires']-time.time())
+            if value and value['status']=='queued':await dispatch(owner,batch,value['dispatchVersion'],delay=min(60,5*2**value.get('attempt',0)) if value.get('attempt') else 0,generation=value.get('generation'))
+            elif value and value['status']!='cancelled':await schedule_cleanup(owner,batch,value['expires']-time.time(),generation=value.get('generation'))
         finally:
             guard.abort()
             if task is not None:
@@ -229,16 +231,41 @@ async def process(owner,batch):
                 except Exception:pass
             release_workspace(directory)
 
-async def cleanup(owner,batch):
+async def cleanup(owner,batch,generation=None):
     store=BatchStore()
     try:value=await asyncio.to_thread(state_of,store,owner,batch)
     except AudioError as error:
-        if error.status==404:return
+        if error.status==404:
+            # Legacy partial creations may have a payload without a state.
+            # A fenced generation must never delete a later creation.
+            if generation is None:
+                # Claim the vacant intent conditionally. A creation that wins
+                # this race must keep both its payload and resource budget.
+                from .batch_store import Conflict
+                try:
+                    await asyncio.to_thread(store.write,batch_path(owner,batch),{
+                        'schema':1,'id':batch,'owner':owner,'generation':None,'status':'cancelled',
+                        'fingerprint':'cleanup','created':time.time(),'expires':time.time()-1,'cursor':0,'items':[],
+                        'artifacts':[],'file':None})
+                except Conflict:return
+                await asyncio.to_thread(store.delete,[batch_path(owner,batch,'request.bin')])
+                await asyncio.to_thread(budget,store,owner+':'+batch,0,time.time())
+                await asyncio.to_thread(store.delete,[batch_path(owner,batch)])
+            return
         raise
+    if value.get('generation')!=generation:return
+    quiet=max((value.get('lease') or {}).get('until',0),(value.get('creationLease') or {}).get('until',0),value.get('cleanupNotBefore',0))
+    if quiet>time.time():
+        # A timed-out PUT can finish after its client loses the lease. Never
+        # remove the intent while that invocation could still create a blob.
+        await schedule_cleanup(owner,batch,quiet-time.time(),generation=generation);return
     if value['status']!='cancelled' and value['expires']>time.time():
-        await schedule_cleanup(owner,batch,value['expires']-time.time());return
-    paths=[batch_path(owner,batch,'request.bin'),batch_path(owner,batch),*value['artifacts']]
+        await schedule_cleanup(owner,batch,value['expires']-time.time(),generation=value.get('generation'));return
+    paths=[batch_path(owner,batch,'request.bin'),*value['artifacts']]
     prefix=batch_path(owner,batch).rsplit('/',1)[0]+'/'
     if any(not path.startswith(prefix) for path in paths):raise storage_error('invalid_batch_path',400)
     await asyncio.to_thread(store.delete,list(dict.fromkeys(paths)))
     await asyncio.to_thread(budget,store,owner+':'+batch,0,value['expires'])
+    # Delete the intent last: its generation fences late messages and prevents
+    # a new submission from racing deletion of this generation's payload.
+    await asyncio.to_thread(store.delete,[batch_path(owner,batch)])

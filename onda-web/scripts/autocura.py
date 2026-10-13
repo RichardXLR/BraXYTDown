@@ -29,6 +29,10 @@ import urllib.request
 import venv
 
 from packaging.version import InvalidVersion, Version
+try:
+    from scripts import ffmpeg_runtime as ffmpeg_binary
+except ModuleNotFoundError:
+    import ffmpeg_runtime as ffmpeg_binary
 
 TOOLS = ("yt-dlp", "imageio-ffmpeg", "deno")
 DIRECT_COMPONENTS = (*TOOLS, "fastapi", "uvicorn", "publicsuffixlist", "clerk-backend-api")
@@ -219,6 +223,7 @@ class DependencyCandidate:
         self.root = root
         self.http = http or HTTP()
         self.resolved_versions = None
+        self.binary_candidate = None
 
     def pinned_components(self):
         """Read reviewed pins, including transitives in a generated hash lock."""
@@ -300,13 +305,22 @@ class DependencyCandidate:
         if any(name not in versions or not same_version(versions[name], version)
                for name, version in parents.items()):
             raise CureError("resolved_parent_version_mismatch")
+        if (self.root / ffmpeg_binary.LOCK).exists():
+            try:self.binary_candidate = ffmpeg_binary.latest(self.http)
+            except ffmpeg_binary.BinaryError as exc:raise CureError(str(exc)) from None
+            pinned_binary = read_json(self.root / ffmpeg_binary.LOCK, {})
+            current_match = ffmpeg_binary.ASSET.fullmatch(pinned_binary.get('asset',''))
+            selected_match = ffmpeg_binary.ASSET.fullmatch(self.binary_candidate['asset'])
+            if current_match and Version(selected_match[2]) < Version(current_match[2]):
+                raise CureError('ffmpeg_automatic_downgrade_rejected')
+            versions[ffmpeg_binary.COMPONENT] = self.binary_candidate['version']
         self.resolved_versions = dict(versions)
         return dict(versions)
 
     def specifications(self, versions):
         """Apply only explicitly selected versions to reviewed components."""
         pins = self.pinned_components()
-        if set(versions) - set(pins) and versions != self.resolved_versions:
+        if set(versions) - {ffmpeg_binary.COMPONENT} - set(pins) and versions != self.resolved_versions:
             raise CureError("unreviewed_component_update")
         pins["yt-dlp"]["extra"] = "[default]"
         return [f'{name}{item["extra"]}=={versions.get(name, item["version"])}'
@@ -343,6 +357,7 @@ class DependencyCandidate:
 
     def prepare(self, versions):
         specifications = self.specifications(versions)
+        wheel_versions = {name:version for name,version in versions.items() if name != ffmpeg_binary.COMPONENT}
         temporary = Path(tempfile.mkdtemp(prefix="onda-candidate-"))
         wheels = temporary / "wheels"
         wheels.mkdir()
@@ -353,8 +368,8 @@ class DependencyCandidate:
             artifacts = self.verify_wheels(wheels)
             if self.resolved_versions is not None:
                 downloaded = {item["name"]: item["version"] for item in artifacts}
-                if (versions != self.resolved_versions or set(downloaded) != set(versions)
-                        or any(not same_version(downloaded[name], version) for name, version in versions.items())):
+                if (versions != self.resolved_versions or set(downloaded) != set(wheel_versions)
+                        or any(not same_version(downloaded[name], version) for name, version in wheel_versions.items())):
                     raise CureError("dependency_resolution_changed")
             lock = "# AutoCura: every direct and transitive wheel is pinned and verified against PyPI.\n"
             lock += "--require-hashes\n"
@@ -369,6 +384,13 @@ class DependencyCandidate:
             run([str(python), "-m", "pip", "install", "--no-index", "--find-links", str(wheels),
                  "--require-hashes", "--no-deps", "-r", str(lock_file)], directory=self.root,
                 error_code="verified_dependency_install_failed")
+            if ffmpeg_binary.COMPONENT in versions:
+                if not self.binary_candidate or self.binary_candidate['version'] != versions[ffmpeg_binary.COMPONENT]:
+                    raise CureError('ffmpeg_candidate_changed')
+                try:
+                    binary=ffmpeg_binary.download(self.binary_candidate,self.root/'bin'/'ffmpeg')
+                    ffmpeg_binary.write_lock(self.root,binary)
+                except ffmpeg_binary.BinaryError as exc:raise CureError(str(exc)) from None
             self.verify_runtime(python, versions)
             self.verify_application(python, artifacts, temporary)
             (self.root / "requirements.txt").write_text(lock)
@@ -419,10 +441,13 @@ class DependencyCandidate:
 import importlib.metadata, json, subprocess, tempfile
 from pathlib import Path
 import imageio_ffmpeg, deno, yt_dlp
+from api.toolchain import ffmpeg_executable
 expected = json.loads(__import__('sys').argv[1])
 for name, version in expected.items():
-    assert importlib.metadata.version(name) == version
-ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    if name != 'ffmpeg-binary': assert importlib.metadata.version(name) == version
+ffmpeg = ffmpeg_executable()
+if 'ffmpeg-binary' in expected:
+    assert subprocess.check_output([ffmpeg,'-version'],text=True,timeout=10).splitlines()[0].split()[2] == expected['ffmpeg-binary']
 subprocess.run([str(deno.find_deno_bin()), 'eval', 'if(2+2!==4)Deno.exit(1)'], check=True, capture_output=True, timeout=20)
 codecs = {'mp3':'libmp3lame','m4a':'aac','wav':'pcm_s16le','flac':'flac','ogg':'libvorbis','opus':'libopus','aac':'aac','aiff':'pcm_s16be'}
 with tempfile.TemporaryDirectory() as directory:
@@ -902,7 +927,8 @@ class DeploymentChecks:
                            for key in ("ytDlp", "deno", "ffmpeg"))
                     or actual.get("ffmpeg") == "indisponível" or actual.get("deno") == "indisponível"
                     or (versions and (not same_version(actual.get("ytDlp"), versions["yt-dlp"])
-                                      or not same_version(actual.get("deno"), versions["deno"])) )):
+                                      or not same_version(actual.get("deno"), versions["deno"])
+                                      or ffmpeg_binary.COMPONENT in versions and actual.get('ffmpeg') != versions[ffmpeg_binary.COMPONENT])) ):
                 raise CureError("packaged_runtime_version_mismatch")
             checks.append({"name": "packaged_versions", "status": "passed", "versions": actual})
         except CureError as exc:
@@ -1315,6 +1341,8 @@ class RepositoryCheckpoint:
             paths += ["requirements.txt", ".autocura/artifacts.json"]
             if (self.root / "pyproject.toml").exists():
                 paths += ["pyproject.toml"]
+            if (self.root / ffmpeg_binary.LOCK).exists():
+                paths += [ffmpeg_binary.LOCK]
         tree = []
         for path in paths:
             content = (self.root / path).read_text()
@@ -1458,6 +1486,8 @@ class AutoCura:
             original = (self.root / "requirements.txt").read_bytes()
             project_path = self.root / "pyproject.toml"
             original_project = project_path.read_bytes() if project_path.exists() else None
+            binary_lock_path = self.root / ffmpeg_binary.LOCK
+            original_binary_lock = binary_lock_path.read_bytes() if binary_lock_path.exists() else None
             committed = False
             versions = {}
             previous_versions = dict(self.state.get("versions", {}))
@@ -1547,7 +1577,8 @@ class AutoCura:
                 if str(exc) in {"wheel_integrity_failed", "verified_dependency_install_failed",
                                 "toolchain_functional_failed", "candidate_application_tests_failed",
                                 "wheel_not_in_official_release", "dependency_download_failed",
-                                "verified_test_dependency_install_failed"}:
+                                "verified_test_dependency_install_failed", "ffmpeg_integrity_failed",
+                                "ffmpeg_archive_invalid", "ffmpeg_candidate_changed"}:
                     self.quarantine(versions, str(exc), candidate)
                 self.save(durable=bool(self.checkpoint))
                 return self.state
@@ -1556,6 +1587,8 @@ class AutoCura:
                     (self.root / "requirements.txt").write_bytes(original)
                     if original_project is not None:
                         project_path.write_bytes(original_project)
+                    if original_binary_lock is not None:
+                        binary_lock_path.write_bytes(original_binary_lock)
 
     def capture_baseline(self, deployment):
         capture = getattr(self.checks, "capture_platform_baseline", None)

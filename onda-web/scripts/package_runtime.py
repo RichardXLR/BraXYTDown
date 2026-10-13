@@ -8,6 +8,7 @@ import subprocess
 import sys
 
 import deno
+from ffmpeg_runtime import install
 import imageio_ffmpeg
 from yt_dlp.version import __version__ as ytdlp_version
 
@@ -27,11 +28,13 @@ def main():
     target.chmod(0o755)
     version = subprocess.check_output([str(target), "--version"], text=True, timeout=10)
     print(f"Bundled {version.splitlines()[0]} ({target.stat().st_size // 1024 // 1024} MB)")
-    ffmpeg = Path(imageio_ffmpeg.get_ffmpeg_exe())
+    install(root)
+    ffmpeg = root / "bin" / "ffmpeg"
+    ffmpeg_version = subprocess.check_output([str(ffmpeg), "-version"], text=True, timeout=10).splitlines()[0].split()[2]
     manifest = {
         "schemaVersion": 1,
         "versions": {"ytDlp": ytdlp_version, "deno": version.splitlines()[0].split()[1],
-                     "ffmpeg": imageio_ffmpeg.get_ffmpeg_version()},
+                     "ffmpeg": ffmpeg_version},
         "sha256": {"deno": digest(target), "ffmpeg": digest(ffmpeg)},
     }
     pending = root / "toolchain.json.pending"

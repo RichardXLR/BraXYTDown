@@ -17,6 +17,7 @@ import urllib.parse
 
 import imageio_ffmpeg
 from pydantic import Field
+from .toolchain import ffmpeg_version
 from .resources import ResourcePolicy
 from yt_dlp.extractor import gen_extractor_classes
 from yt_dlp.version import __version__ as ytdlp_version
@@ -33,7 +34,7 @@ def _version_data():
     """Only trusted executables and package data; never a user supplied path."""
     result = {"ytDlp": ytdlp_version, "ffmpeg": "indisponível", "deno": "indisponível"}
     try:
-        result["ffmpeg"] = imageio_ffmpeg.get_ffmpeg_version()
+        result["ffmpeg"] = ffmpeg_version()
     except (OSError, RuntimeError):
         pass
     runtime = engine.runtime_options().get("deno", {}).get("path")

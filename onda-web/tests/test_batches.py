@@ -17,6 +17,7 @@ from api.security import AudioError
 
 URL='https://ondaittoux.online/canary.wav'
 ROOT=Path(__file__).resolve().parents[1]
+REAL_DISPATCH=batches.dispatch
 
 @pytest.fixture
 def batch_environment(monkeypatch):
@@ -58,7 +59,7 @@ def batch_environment(monkeypatch):
         assert kwargs['allow_redirects'] is False and headers['Accept-Encoding']=='identity'
         return PrivateResponse(url,headers)
     async def send(owner,batch,step,**kwargs):sent.append((owner,batch,step))
-    async def gc(*args):pass
+    async def gc(*args,**kwargs):pass
     monkeypatch.setenv('ONDA_BATCH_ENABLED','true')
     monkeypatch.setattr(batch_store,'blob_http',wire)
     monkeypatch.setattr(batch_store.requests,'get',get)
@@ -86,7 +87,10 @@ def run_steps(sent):
     # Every step is a new invocation, after the enqueue request/client is gone.
     while sent:
         owner,batch,_=sent.pop(0)
-        asyncio.run(batch_subscriber.consume({'owner':owner,'batch':batch}))
+        value,_=batch_store.BatchStore().read(batch_store.batch_path(owner,batch))
+        payload={'owner':owner,'batch':batch}
+        if value and value.get('generation'):payload['generation']=value['generation']
+        asyncio.run(batch_subscriber.consume(payload))
 
 def test_batch_survives_closed_client_new_workers_and_delivers_real_zip(batch_environment):
     files,sent=batch_environment
@@ -131,7 +135,7 @@ def test_cancelled_and_expired_batches_are_cleaned_without_browser(batch_environ
 def test_temporary_failure_retries_step_without_redownloading_checkpoint(batch_environment,monkeypatch):
     files,sent=batch_environment
     with TestClient(index.app) as client:job=submit(client).json()['batch']
-    owner,batch,_=sent.pop(0);asyncio.run(batch_worker.process(owner,batch))
+    owner,batch,_=sent.pop(0);asyncio.run(batch_worker.process(owner,batch,batch_store.state_of(batch_store.BatchStore(),owner,batch).get('generation')))
     first=batch_store.state_of(batch_store.BatchStore(),owner,batch)['items'][0]['result']
     original=batch_worker.prepare_download;attempts=0
     def intermittent(*args,**kwargs):
@@ -174,11 +178,11 @@ def test_missing_or_reclaimed_job_is_never_reprocessed(batch_environment):
     owner,batch,_=sent.pop(0);store=batch_store.BatchStore();value=batch_store.state_of(store,owner,batch)
     value.update(status='running',lease={'token':'worker-still-alive','until':time.time()+360})
     _,etag=store.read(batch_store.batch_path(owner,batch));store.write(batch_store.batch_path(owner,batch),value,etag)
-    with pytest.raises(AudioError) as error:asyncio.run(batch_worker.process(owner,batch))
+    with pytest.raises(AudioError) as error:asyncio.run(batch_worker.process(owner,batch,batch_store.state_of(batch_store.BatchStore(),owner,batch).get('generation')))
     assert error.value.code=='batch_busy'
     value['lease']['until']=0
     _,etag=store.read(batch_store.batch_path(owner,batch));store.write(batch_store.batch_path(owner,batch),value,etag)
-    asyncio.run(batch_worker.process(owner,batch));run_steps(sent)
+    asyncio.run(batch_worker.process(owner,batch,batch_store.state_of(batch_store.BatchStore(),owner,batch).get('generation')));run_steps(sent)
     assert batch_store.state_of(store,owner,batch)['status']=='ready'
 
 def test_blob_range_change_and_encryption_tampering_rejected(batch_environment):
@@ -222,10 +226,10 @@ def test_retry_only_failed_items_uses_new_authorized_settings(batch_environment,
 def test_incomplete_creation_cannot_change_existing_idempotency_payload(batch_environment):
     files,sent=batch_environment;store=batch_store.BatchStore();owner=store.owner('user_fixture')
     body=batches.BatchInput(urls=[URL],idempotencyKey='d'*32)
-    job=batches.create_batch(store,owner,body,index.DownloadInput)
+    job=asyncio.run(batches.create_batch(store,owner,body,index.DownloadInput))
     store.delete([batch_store.batch_path(owner,job['id'])])
     body.video_password='different-credentials'
-    with pytest.raises(AudioError) as error:batches.create_batch(store,owner,body,index.DownloadInput)
+    with pytest.raises(AudioError) as error:asyncio.run(batches.create_batch(store,owner,body,index.DownloadInput))
     assert error.value.code=='batch_idempotency_conflict'
 
 def test_restart_reclaims_unpublished_blob_before_new_upload(batch_environment):
@@ -239,3 +243,122 @@ def test_restart_reclaims_unpublished_blob_before_new_upload(batch_environment):
     run_steps(sent)
     assert path not in files
     assert batch_store.state_of(store,owner,job['id'])['status']=='ready'
+
+
+def test_failed_admission_releases_slots_immediately(batch_environment,monkeypatch):
+    files,sent=batch_environment
+    original=batch_worker.reserve_submission
+    def unavailable(*args):raise AudioError('Fixture storage unavailable','batch_storage_unavailable',503)
+    monkeypatch.setattr(batch_worker,'reserve_submission',unavailable)
+    with TestClient(index.app) as client:
+        for number in range(4):assert submit(client,key=f'{number:032x}').status_code==503
+        monkeypatch.setattr(batch_worker,'reserve_submission',original)
+        assert submit(client,key='f'*32).status_code==202
+    assert len(sent)==1
+    assert len([p for p in files if p.endswith('/request.bin')])==1
+
+
+def test_gc_acknowledged_before_credentials_and_failed_commit_is_collectable(batch_environment,monkeypatch):
+    files,_=batch_environment;scheduled=[]
+    async def acknowledged(owner,batch,delay,**kwargs):
+        assert not any(path.endswith('/request.bin') for path in files)
+        assert batch_store.state_of(batch_store.BatchStore(),owner,batch)['status']=='creating'
+        scheduled.append((owner,batch,kwargs['generation']))
+    monkeypatch.setattr(batches,'schedule_cleanup',acknowledged)
+    original=batch_store.BatchStore.write
+    def interrupted(self,path,value,etag=None):
+        if value.get('status')=='queued':raise AudioError('Fixture state failure','batch_storage_unavailable',503)
+        return original(self,path,value,etag)
+    monkeypatch.setattr(batch_store.BatchStore,'write',interrupted)
+    with TestClient(index.app) as client:assert submit(client,video_password='fixture-private').status_code==503
+    assert scheduled and any(path.endswith('/request.bin') for path in files)
+    owner,batch,generation=scheduled[0];store=batch_store.BatchStore()
+    store.mutate(batch_store.batch_path(owner,batch),lambda row:{**row,'expires':time.time()-1})
+    asyncio.run(batch_worker.cleanup(owner,batch,generation))
+    assert not any('/'+batch+'/' in path for path in files)
+    assert owner+':'+batch not in store.read(batch_worker.BUDGET_PATH)[0]['allocations']
+
+
+def test_gc_unavailable_never_stores_credentials_or_occupies_slot(batch_environment,monkeypatch):
+    files,sent=batch_environment
+    async def unavailable(*args,**kwargs):raise AudioError('Fixture queue unavailable','queue_unavailable',503)
+    monkeypatch.setattr(batches,'schedule_cleanup',unavailable)
+    with TestClient(index.app) as client:assert submit(client,video_password='fixture-private').status_code==503
+    assert not sent and not any(path.endswith('/request.bin') for path in files)
+    owner=batch_store.BatchStore.owner('user_fixture')
+    listing,_=batch_store.BatchStore().read(batches.index_path(owner));assert not (listing or {}).get('rows')
+
+
+def test_recreated_job_has_unique_dispatch_and_old_messages_are_fenced(batch_environment,monkeypatch):
+    from vercel import queue
+    files,sent=batch_environment;published=[];cleanups=[]
+    async def provider(topic,payload,**kwargs):published.append((topic,copy.deepcopy(payload),kwargs['idempotency_key']))
+    monkeypatch.setattr(queue,'send',provider)
+    with TestClient(index.app) as client:first=submit(client).json()['batch']
+    owner=batch_store.BatchStore.owner('user_fixture');store=batch_store.BatchStore();batch=first['id']
+    old=batch_store.state_of(store,owner,batch)
+    # While the state exists, expiry is explicit, never a stalled 202.
+    store.mutate(batch_store.batch_path(owner,batch),lambda row:{**row,'expires':time.time()-1})
+    with TestClient(index.app) as client:assert submit(client).status_code==410
+    asyncio.run(batch_worker.cleanup(owner,batch,old['generation']))
+    with TestClient(index.app) as client:second=submit(client).json()['batch']
+    new=batch_store.state_of(store,owner,batch);assert old['generation']!=new['generation']
+    # Check real publisher keys, not a test double that ignores deduplication.
+    asyncio.run(REAL_DISPATCH(owner,batch,0,generation=old['generation']))
+    asyncio.run(REAL_DISPATCH(owner,batch,0,generation=new['generation']))
+    assert published[-1][2]!=published[-2][2]
+    asyncio.run(batch_subscriber.consume({'owner':owner,'batch':batch,'generation':old['generation']}))
+    asyncio.run(batch_worker.cleanup(owner,batch,old['generation']))
+    assert batch_store.state_of(store,owner,batch)==new
+    assert batch_store.batch_path(owner,batch,'request.bin') in files
+
+
+def test_legacy_orphan_payload_is_reclaimed(batch_environment):
+    files,_=batch_environment;store=batch_store.BatchStore();owner=store.owner('user_fixture');batch='f'*32
+    store.put_payload(owner,batch,{'cookies':'fixture-private'})
+    batch_worker.budget(store,owner+':'+batch,1,time.time()+100)
+    asyncio.run(batch_worker.cleanup(owner,batch))
+    assert batch_store.batch_path(owner,batch,'request.bin') not in files
+    assert owner+':'+batch not in store.read(batch_worker.BUDGET_PATH)[0]['allocations']
+
+
+def test_lost_commit_response_does_not_undo_queued_state(batch_environment,monkeypatch):
+    files,sent=batch_environment;original=batch_store.BatchStore.write
+    def lost_response(self,path,value,etag=None):
+        original(self,path,value,etag)
+        if value.get('status')=='queued':raise AudioError('Fixture lost response','batch_storage_unavailable',503)
+    monkeypatch.setattr(batch_store.BatchStore,'write',lost_response)
+    with TestClient(index.app) as client:job=submit(client).json()['batch']
+    assert job['status']=='queued' and sent
+    run_steps(sent)
+    assert batch_store.state_of(batch_store.BatchStore(),batch_store.BatchStore.owner('user_fixture'),job['id'])['status']=='ready'
+
+
+def test_gc_waits_for_inflight_upload_deadline_after_cancel(batch_environment,monkeypatch):
+    files,_=batch_environment;scheduled=[]
+    async def schedule(owner,batch,delay,**kwargs):scheduled.append(delay)
+    monkeypatch.setattr(batch_worker,'schedule_cleanup',schedule)
+    with TestClient(index.app) as client:job=submit(client).json()['batch']
+    store=batch_store.BatchStore();owner=store.owner('user_fixture');path=batch_store.batch_path(owner,job['id'])
+    value=store.mutate(path,lambda row:{**row,'status':'running','lease':{'token':'active-upload','until':time.time()+360}})
+    with TestClient(index.app) as client:assert client.delete('/api/batches/'+job['id']).status_code==200
+    asyncio.run(batch_worker.cleanup(owner,job['id'],value['generation']))
+    assert path in files and scheduled and scheduled[0]>300
+    store.mutate(path,lambda row:{**row,'cleanupNotBefore':0})
+    asyncio.run(batch_worker.cleanup(owner,job['id'],value['generation']))
+    assert path not in files
+
+
+def test_concurrent_creation_is_fenced_and_retry_retains_exact_payload(batch_environment):
+    store=batch_store.BatchStore();owner=store.owner('user_fixture');body=batches.BatchInput(urls=[URL],idempotencyKey='b'*32)
+    intent,payload,token=batches.initialize_batch(store,owner,body,index.DownloadInput)
+    with pytest.raises(AudioError) as error:batches.initialize_batch(store,owner,body,index.DownloadInput)
+    assert error.value.code=='batch_busy'
+    body.video_password='different'
+    with pytest.raises(AudioError) as error:batches.initialize_batch(store,owner,body,index.DownloadInput)
+    assert error.value.code=='batch_idempotency_conflict'
+    batches.undo_creation(store,owner,intent,token)
+    body.video_password=None
+    retried=asyncio.run(batches.create_batch(store,owner,body,index.DownloadInput))
+    assert retried['generation']==intent['generation'] and retried['status']=='queued'
+    assert store.payload(owner,intent['id'])==payload

@@ -8,6 +8,7 @@ import time
 import os
 import re
 import math
+import uuid
 from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -40,13 +41,19 @@ def capabilities():
     return {'configured':enabled(),'browserIndependent':True,'maxItems':MAX_ITEMS,
             'maxArchiveMB':MAX_ARCHIVE//1024**2,'expiresHours':EXPIRY//3600}
 
-async def dispatch(owner,batch,step,*,delay=0):
+async def dispatch(owner,batch,step,*,delay=0,generation=None):
     from vercel.queue import send
-    await send(TOPIC,{'owner':owner,'batch':batch},idempotency_key=f'{owner}:{batch}:{step}',retention=86400,delay=delay)
+    payload={'owner':owner,'batch':batch}
+    if generation:payload['generation']=generation
+    key=f'{owner}:{batch}:{generation}:{step}' if generation else f'{owner}:{batch}:{step}'
+    await send(TOPIC,payload,idempotency_key=key,retention=86400,delay=delay)
 
-async def schedule_cleanup(owner,batch,delay):
+async def schedule_cleanup(owner,batch,delay,*,generation=None):
     from vercel.queue import send
-    await send(GC_TOPIC,{'owner':owner,'batch':batch},idempotency_key=f'gc:{owner}:{batch}:{int(delay//60)}',
+    payload={'owner':owner,'batch':batch}
+    if generation:payload['generation']=generation
+    key=f'gc:{owner}:{batch}:{generation}:{int(delay//60)}' if generation else f'gc:{owner}:{batch}:{int(delay//60)}'
+    await send(GC_TOPIC,payload,idempotency_key=key,
                delay=math.ceil(max(0,delay))+2,retention=86400)
 
 def public_state(value):
@@ -61,7 +68,7 @@ def index_path(owner):
     if not HEX64.fullmatch(owner or ''):raise storage_error('invalid_batch_path',400)
     return f'batches/v1/{owner}/index.json'
 
-def create_batch(store,owner,body,model):
+def initialize_batch(store,owner,body,model):
     if set(body.settings)-SAFE_SETTINGS:raise AudioError('Revise os ajustes do pacote.','invalid_batch_settings',422)
     urls=list(dict.fromkeys(body.urls))
     payload={'urls':urls,'settings':body.settings,'cookies':body.cookies,'video_password':body.video_password,'user_agent':body.user_agent}
@@ -75,9 +82,36 @@ def create_batch(store,owner,body,model):
     batch=hashlib.sha256((owner+':'+body.idempotencyKey).encode()).hexdigest()[:32]
     fingerprint=hmac.digest(encryption_key(),json.dumps(payload,sort_keys=True,separators=(',',':')).encode(),'sha256').hex()
     old,_=store.read(batch_path(owner,batch))
+    listing,_=store.read(index_path(owner))
+    prior=next((row for row in (listing or {}).get('rows',[]) if row.get('id')==batch and row.get('expires',0)>time.time()),None)
+    if prior and prior.get('fingerprint')!=fingerprint:
+        raise AudioError('Esta solicitação já foi usada com outros ajustes.','batch_idempotency_conflict',409)
     if old:
         if old.get('fingerprint')!=fingerprint:raise AudioError('Esta solicitação já foi usada com outros ajustes.','batch_idempotency_conflict',409)
-        return old
+        if old['expires']<=time.time():raise AudioError('Este pacote expirou. Envie novamente com uma nova solicitação.','batch_expired',410)
+        if old['status'] not in ('creating','creation_failed'):return old,None,None
+    from .engine import source_for
+    token=uuid.uuid4().hex
+    def claim(current):
+        if current:
+            if current.get('fingerprint')!=fingerprint:raise AudioError('Solicitação duplicada com ajustes diferentes.','batch_idempotency_conflict',409)
+            if current['expires']<=time.time():raise AudioError('Este pacote expirou.','batch_expired',410)
+            if current['status'] not in ('creating','creation_failed'):return None
+            if current.get('creationLease') and current['creationLease']['until']>time.time():
+                raise AudioError('Esta solicitação está sendo preparada. Tente novamente em instantes.','batch_busy',503)
+            current['status']='creating';current['creationLease']={'token':token,'until':time.time()+600}
+            return current
+        return {'schema':1,'id':batch,'owner':owner,'fingerprint':fingerprint,'status':'creating',
+            'generation':uuid.uuid4().hex,'creationLease':{'token':token,'until':time.time()+600},
+            'created':time.time(),'expires':time.time()+EXPIRY,'cursor':0,'dispatchVersion':0,'attempt':0,'lease':None,'artifacts':[],
+            'items':[{'source':source_for(item.url)[:253],'status':'queued','format':item.format,
+                      'media_type':item.media_type,'title':f'Arquivo {i+1}'} for i,item in enumerate(inputs)],'file':None}
+    value=store.mutate(batch_path(owner,batch),claim)
+    if value['status'] not in ('creating','creation_failed'):return value,None,None
+    return value,payload,token
+
+def reserve_creation(store,owner,value,token):
+    batch=value['id'];fingerprint=value['fingerprint'];expires=value['expires']
     # Reserve a recent-list slot with CAS; only server-derived owner paths exist.
     def reserve(value):
         prior=next((r for r in (value or {}).get('rows',[]) if r.get('id')==batch and r.get('expires',0)>time.time()),None)
@@ -87,25 +121,63 @@ def create_batch(store,owner,body,model):
         active=0
         for row in rows:
             doc,_=store.read(batch_path(owner,row['id']))
-            if (doc and doc.get('status') in ('queued','running','packing')) or (not doc and row.get('reservedUntil',0)>time.time()):active+=1
+            if (doc and (doc.get('status') in ('queued','running','packing') or
+                    doc.get('status')=='creating' and (doc.get('creationLease') or {}).get('until',0)>time.time())) or (not doc and row.get('reservedUntil',0)>time.time()):active+=1
         if active>=4:raise AudioError('Há quatro pacotes em andamento. Aguarde ou cancele um deles.','batch_busy',429)
-        rows.insert(0,{'id':batch,'expires':time.time()+EXPIRY,'reservedUntil':time.time()+600,'fingerprint':fingerprint})
+        rows.insert(0,{'id':batch,'expires':expires,'reservedUntil':time.time()+600,'fingerprint':fingerprint})
         return {'rows':rows[:12]}
     store.mutate(index_path(owner),reserve)
     from .batch_worker import reserve_submission
-    reserve_submission(store,owner,batch,len(inputs),time.time()+EXPIRY)
+    reserve_submission(store,owner,batch,len(value['items']),value['expires'])
+
+def finish_creation(store,owner,value,payload,token):
+    batch=value['id']
+    current=state_of(store,owner,batch)
+    if current['expires']<=time.time() or current['status']!='creating' or (current.get('creationLease') or {}).get('token')!=token:
+        raise AudioError('A solicitação foi cancelada ou reassumida.','batch_busy',409)
     store.put_payload(owner,batch,payload)
-    from .engine import source_for
-    value={'schema':1,'id':batch,'owner':owner,'fingerprint':fingerprint,'status':'queued',
-        'created':time.time(),'expires':time.time()+EXPIRY,'cursor':0,'dispatchVersion':0,'attempt':0,'lease':None,'artifacts':[],
-        'items':[{'source':source_for(item.url)[:253],'status':'queued','format':item.format,
-                  'media_type':item.media_type,'title':f'Arquivo {i+1}'} for i,item in enumerate(inputs)],'file':None}
-    try:store.write(batch_path(owner,batch),value)
-    except Conflict:
-        current=state_of(store,owner,batch)
-        if current['fingerprint']!=fingerprint:raise AudioError('Solicitação duplicada com ajustes diferentes.','batch_idempotency_conflict',409)
-        return current
-    return value
+    def finish(row):
+        if row['expires']<=time.time() or row['status']!='creating' or (row.get('creationLease') or {}).get('token')!=token:
+            raise AudioError('A solicitação foi cancelada ou reassumida.','batch_busy',409)
+        row['status']='queued';row.pop('creationLease',None);return row
+    return store.mutate(batch_path(owner,batch),finish)
+
+def undo_creation(store,owner,value,token):
+    """Release admission without deleting a concurrent producer's payload."""
+    batch=value['id']
+    def failed(row):
+        if not row or (row.get('creationLease') or {}).get('token')!=token:return None
+        row['status']='creation_failed';row.pop('creationLease',None);return row
+    current=state_of(store,owner,batch)
+    if (current.get('creationLease') or {}).get('token')!=token:return
+    from .batch_worker import budget
+    budget(store,owner+':'+batch,0,value['expires'])
+    def unreserve(row):
+        if not row:return None
+        row['rows']=[entry for entry in row.get('rows',[]) if entry['id']!=batch];return row
+    store.mutate(index_path(owner),unreserve)
+    # Keep the creation lease until compensation ends, so another producer
+    # cannot lose its new reservation to this failed attempt.
+    store.mutate(batch_path(owner,batch),failed)
+
+async def create_batch(store,owner,body,model):
+    value,payload,token=await asyncio.to_thread(initialize_batch,store,owner,body,model)
+    if payload is None:return value
+    try:
+        # Persist a non-secret intent, then acknowledge durable GC BEFORE any
+        # cookies are uploaded. Interrupted creation is visible to cleanup.
+        await schedule_cleanup(owner,value['id'],value['expires']-time.time(),generation=value.get('generation'))
+        await asyncio.to_thread(reserve_creation,store,owner,value,token)
+        return await asyncio.to_thread(finish_creation,store,owner,value,payload,token)
+    except Exception as error:
+        try:
+            # A PUT response may have been lost after the queued state committed.
+            current=await asyncio.to_thread(state_of,store,owner,value['id'])
+            if current['status']=='queued' and current.get('generation')==value.get('generation'):return current
+            await asyncio.to_thread(undo_creation,store,owner,value,token)
+        except Exception:pass # The acknowledged GC still reclaims interrupted work.
+        if isinstance(error,AudioError):raise
+        raise AudioError('Não foi possível preparar a fila. Tente novamente em instantes.','queue_unavailable',503) from None
 
 def require_user(request):
     principal=request.state.onda_auth
@@ -133,11 +205,10 @@ def register_batches(app,model):
     @app.post('/api/batches')
     async def enqueue(request:Request):
         owner=require_user(request);body=await request_body(request);store=BatchStore()
-        value=await asyncio.to_thread(create_batch,store,owner,body,model)
+        value=await create_batch(store,owner,body,model)
         if value['status'] in ('queued','running','packing'):
             try:
-                await dispatch(owner,value['id'],value['dispatchVersion'])
-                await schedule_cleanup(owner,value['id'],value['expires']-time.time())
+                await dispatch(owner,value['id'],value['dispatchVersion'],generation=value.get('generation'))
             except Exception:raise AudioError('A fila não respondeu. Use a mesma lista para tentar novamente.','queue_unavailable',503) from None
         return JSONResponse({'batch':public_state(value)},status_code=202,headers={'Cache-Control':'no-store'})
 
@@ -149,7 +220,7 @@ def register_batches(app,model):
             for row in (value or {}).get('rows',[]):
                 if row.get('expires',0)>time.time() and HEX32.fullmatch(row.get('id','')):
                     doc,_=store.read(batch_path(owner,row['id']))
-                    if doc and doc.get('owner')==owner:result.append(public_state(doc))
+                    if doc and doc.get('owner')==owner and doc['status'] not in ('creating','creation_failed'):result.append(public_state(doc))
             return result
         return JSONResponse({'batches':await asyncio.to_thread(read)},headers={'Cache-Control':'no-store'})
 
@@ -170,23 +241,25 @@ def register_batches(app,model):
         body=await request_body(request,BatchRetryInput)
         original=await asyncio.to_thread(store.payload,owner,batch)
         next_body=BatchInput(**body.model_dump(),urls=[original['urls'][i] for i in positions])
-        next_value=await asyncio.to_thread(create_batch,store,owner,next_body,model)
+        next_value=await create_batch(store,owner,next_body,model)
         try:
-            await schedule_cleanup(owner,next_value['id'],next_value['expires']-time.time())
-            await dispatch(owner,next_value['id'],next_value['dispatchVersion'])
+            await dispatch(owner,next_value['id'],next_value['dispatchVersion'],generation=next_value.get('generation'))
         except Exception:raise AudioError('Não foi possível enviar para a fila. Tente novamente.','queue_unavailable',503) from None
         return JSONResponse({'batch':public_state(next_value)},status_code=202,headers={'Cache-Control':'no-store'})
 
     @app.delete('/api/batches/{batch}')
     async def cancel(batch:str,request:Request):
-        owner=require_user(request);store=BatchStore();await asyncio.to_thread(state_of,store,owner,batch)
+        owner=require_user(request);store=BatchStore();existing=await asyncio.to_thread(state_of,store,owner,batch)
         def stop(value):
+            if not value or value.get('generation')!=existing.get('generation'):
+                raise AudioError('Este pacote expirou.','batch_expired',410)
+            value['cleanupNotBefore']=max((value.get('lease') or {}).get('until',0),(value.get('creationLease') or {}).get('until',0))
             value['status']='cancelled';value['lease']=None
             for item in value['items']:
                 if item['status'] in ('queued','running'):item['status']='cancelled'
             return value
         await asyncio.to_thread(store.mutate,batch_path(owner,batch),stop)
-        try:await schedule_cleanup(owner,batch,600)
+        try:await schedule_cleanup(owner,batch,600,generation=existing.get('generation'))
         except Exception:pass # The original expiry message still remains durable.
         return {'cancelled':True}
 

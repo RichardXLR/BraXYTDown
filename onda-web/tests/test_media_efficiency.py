@@ -249,3 +249,44 @@ def test_uhd_workers_respect_cloud_cpu_quota_instead_of_host_cpu_count(monkeypat
         assert engine.video_worker_threads() == expected
     finally:
         engine.video_worker_threads.cache_clear()
+
+
+def test_disposable_pcm_reuse_preserves_samples_and_removes_all_metadata_chunks(tmp_path):
+    import struct,wave
+    source=tmp_path/'tagged.wav'
+    # Metadata before and after the sample payload exercises overlapping moves.
+    fmt=struct.pack('<HHIIHH',1,2,44100,176400,4,16);data=b'\x01\x02\x03\x04'*4096
+    def chunk(kind,value):return kind+struct.pack('<I',len(value))+value+(b'\0' if len(value)%2 else b'')
+    content=b'WAVE'+chunk(b'bext',b'PRIVATE_SESSION')+chunk(b'fmt ',fmt)+chunk(b'LIST',b'INFOPRIVATE_TITLE')+chunk(b'data',data)+chunk(b'id3 ',b'PRIVATE_TRAILING')
+    source.write_bytes(b'RIFF'+struct.pack('<I',len(content))+content)
+    guard=security.Guard();guard.disposable_sources=True
+    target=engine.convert_audio(source,tmp_path,'wav','source',guard)
+    assert target==source and b'PRIVATE' not in target.read_bytes()
+    with wave.open(str(target)) as media:assert media.readframes(media.getnframes())==data
+
+
+def test_disposable_pcm_reuse_can_preserve_metadata_and_checkpoint_stays_untouched(tmp_path):
+    source=tmp_path/'tagged.wav'
+    ffmpeg('-y','-f','lavfi','-i','sine=frequency=440:duration=0.2','-c:a','pcm_s16le','-metadata','title=PRIVATE_KEEP',source)
+    original=source.read_bytes();guard=security.Guard();guard.disposable_sources=True
+    target=engine.convert_audio(source,tmp_path,'wav','source',guard,engine.MediaSettings(strip_metadata=False))
+    assert target==source and target.read_bytes()==original
+    # Without disposable ownership (including the persistent worker), keep
+    # the original checkpoint and use the existing verified remux path.
+    target=engine.convert_audio(source,tmp_path,'wav','source',security.Guard())
+    assert target!=source and source.read_bytes()==original
+    assert b'PRIVATE_KEEP' not in target.read_bytes()
+
+
+@pytest.mark.parametrize('corrupt',['length','truncated','extra_fmt','duplicate_data'])
+def test_pcm_reuse_rejects_ambiguous_structure_without_modifying_source(tmp_path,corrupt):
+    import struct
+    fmt=struct.pack('<HHIIHH',1,2,44100,176400,4,16);data=b'\0'*16
+    if corrupt=='extra_fmt':fmt+=b'PRIVATE_UNKNOWN_EXTENSION'
+    content=b'WAVEfmt '+struct.pack('<I',len(fmt))+fmt+b'data'+struct.pack('<I',len(data))+data
+    if corrupt=='duplicate_data':content+=b'data'+struct.pack('<I',len(data))+data
+    raw=b'RIFF'+struct.pack('<I',len(content)+(8 if corrupt=='length' else 0))+content
+    if corrupt=='truncated':raw=raw[:-2]
+    source=tmp_path/'source.wav';source.write_bytes(raw)
+    assert not engine.reuse_pcm_wave(source,security.Guard(),strip_metadata=True)
+    assert source.read_bytes()==raw

@@ -1,12 +1,16 @@
 Onda · tecnologias do serviço
 
-FFmpeg (empacotado por imageio-ffmpeg)
+FFmpeg (build Linux GPL de BtbN/FFmpeg-Builds, distribuidor indicado por ffmpeg.org)
 FFmpeg e os codecs preservam suas licenças originais. O binário estático usado
 pelo serviço inclui componentes GPL, como x264. Não é enviado ao navegador.
 Código-fonte FFmpeg: https://github.com/FFmpeg/FFmpeg
 Licenças e condições: https://ffmpeg.org/legal.html
-Empacotamento e fontes dos binários: https://github.com/imageio/imageio-ffmpeg
-Build estático de referência: https://johnvansickle.com/ffmpeg/
+Builds e receitas de compilação: https://github.com/BtbN/FFmpeg-Builds
+Releases imutáveis, hashes e versão: ffmpeg-runtime.json no repositório do Onda.
+Fontes correspondentes FFmpeg: https://github.com/FFmpeg/FFmpeg/tree/release/9.0
+Receitas e fontes das bibliotecas: https://github.com/BtbN/FFmpeg-Builds/tree/master/scripts
+imageio-ffmpeg permanece como dependência de compatibilidade no desenvolvimento:
+https://github.com/imageio/imageio-ffmpeg
 GPL: https://www.gnu.org/licenses/gpl.html
 
 O mecanismo WebAssembly e seu wrapper foram removidos desta versão do site.

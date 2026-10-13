@@ -26,6 +26,6 @@ async def consume(payload: dict[str, str]):
                 return
         await asyncio.to_thread(complete)
         return
-    if set(payload)=={'owner','batch'} and HEX64.fullmatch(payload['owner']) and HEX32.fullmatch(payload['batch']):
+    if set(payload) in ({'owner','batch'},{'owner','batch','generation'}) and HEX64.fullmatch(payload['owner']) and HEX32.fullmatch(payload['batch']) and ('generation' not in payload or HEX32.fullmatch(payload['generation'])):
         from .batch_worker import process
-        await process(payload['owner'],payload['batch'])
+        await process(payload['owner'],payload['batch'],payload.get('generation'))

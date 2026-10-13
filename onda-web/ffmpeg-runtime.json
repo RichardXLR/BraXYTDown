@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "provider": "BtbN/FFmpeg-Builds",
+  "release": "autobuild-2026-10-12-13-12",
+  "asset": "ffmpeg-n9.0.2-27-g7e93014c5b-linux64-gpl-9.0.tar.xz",
+  "version": "n9.0.2-27-g7e93014c5b-20261012",
+  "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-12-13-12/ffmpeg-n9.0.2-27-g7e93014c5b-linux64-gpl-9.0.tar.xz",
+  "sha256": "99ac3849c1910e8a2e0dc16da11bbacb2bd6e8c445b5d180e5540cb57871a8bf",
+  "size": 151129904,
+  "binarySha256": "67704951a8b591e2689ce18c4f8aaf0d713440f3ea953f066b57104c36a7bc41"
+}
