@@ -2,7 +2,7 @@
   "automated": true,
   "automation_enabled": true,
   "baseline_platform_check": {
-    "checked_at": "2026-10-13T15:40:40.355732+00:00",
+    "checked_at": "2026-10-13T16:05:54.396289+00:00",
     "checks": [
       {
         "code": "platform_blocked",
@@ -15,7 +15,7 @@
         "status": "blocked"
       }
     ],
-    "deployment_id": "dpl_82k3XkCDyN3GtN8t5V38FME3YYHC"
+    "deployment_id": "dpl_CYJpLFXi1Vm9tSW9ZBCWr1B7xfXU"
   },
   "canaries": [
     {
@@ -33,51 +33,10 @@
   "components": "all_pinned_python_dependencies",
   "execution": {
     "repository": "RichardXLR/BraXYTDown",
-    "run_id": "38423885245",
+    "run_id": "38427442075",
     "workflow": "Onda AutoCura 3.0"
   },
   "history": [
-    {
-      "at": "2026-10-09T04:56:28.646409+00:00",
-      "deployment_id": "dpl_CJKouSLy9MCcn1TWZKaPh22SYB9u",
-      "event": "promoted",
-      "versions": {
-        "annotated-doc": "0.0.5",
-        "annotated-types": "0.8.0",
-        "anyio": "4.15.1",
-        "brotli": "1.2.0",
-        "certifi": "2026.7.22",
-        "cffi": "2.1.1",
-        "charset-normalizer": "3.5.2",
-        "clerk-backend-api": "7.0.0",
-        "click": "8.5.0",
-        "cryptography": "50.0.2",
-        "deno": "2.9.7",
-        "fastapi": "0.143.0",
-        "h11": "0.16.0",
-        "httpcore": "1.0.9",
-        "httpx": "0.28.1",
-        "idna": "3.20",
-        "imageio-ffmpeg": "0.6.0",
-        "mutagen": "1.48.1",
-        "opentelemetry-api": "1.45.1",
-        "publicsuffixlist": "1.0.2.20261007",
-        "pycparser": "3.1",
-        "pycryptodomex": "3.24.0",
-        "pydantic": "2.14.0",
-        "pydantic-core": "2.50.0",
-        "pyjwt": "2.15.1",
-        "requests": "2.34.2",
-        "starlette": "1.7.0",
-        "typing-extensions": "4.16.0",
-        "typing-inspection": "0.4.4",
-        "urllib3": "2.8.0",
-        "uvicorn": "0.54.0",
-        "websockets": "17.2",
-        "yt-dlp": "2026.8.19",
-        "yt-dlp-ejs": "0.8.0"
-      }
-    },
     {
       "at": "2026-10-09T05:02:01.708535+00:00",
       "deployment_id": "dpl_GGf8FkoZbJD4mHfFCTfr3LiLhbgh",
@@ -878,10 +837,15 @@
         "yt-dlp": "2026.8.19",
         "yt-dlp-ejs": "0.8.0"
       }
+    },
+    {
+      "at": "2026-10-13T16:06:30.971002+00:00",
+      "deployment_id": "dpl_CYJpLFXi1Vm9tSW9ZBCWr1B7xfXU",
+      "event": "verified"
     }
   ],
   "last_check": {
-    "checked_at": "2026-10-13T15:44:47.961539+00:00",
+    "checked_at": "2026-10-13T16:06:30.970947+00:00",
     "checks": [
       {
         "name": "runtime",
@@ -918,13 +882,9 @@
         "status": "passed"
       },
       {
-        "inspection": {
-          "bytes": 21206,
-          "crc": "verified",
-          "files": 2
-        },
+        "code": "batch_canary_failed",
         "name": "persistent_batch_zip",
-        "status": "passed"
+        "status": "failed"
       },
       {
         "inspection": {
@@ -1081,7 +1041,7 @@
       "youtube_status": "blocked"
     },
     "platform_baseline": {
-      "checked_at": "2026-10-13T15:40:40.355732+00:00",
+      "checked_at": "2026-10-13T16:05:54.396289+00:00",
       "checks": [
         {
           "code": "platform_blocked",
@@ -1094,19 +1054,19 @@
           "status": "blocked"
         }
       ],
-      "deployment_id": "dpl_82k3XkCDyN3GtN8t5V38FME3YYHC"
+      "deployment_id": "dpl_CYJpLFXi1Vm9tSW9ZBCWr1B7xfXU"
     },
     "release_gate": {
       "accepted_existing_blocks": [
         "me_at_zoo_metadata",
         "big_buck_bunny_metadata"
       ],
-      "baseline_deployment_id": "dpl_82k3XkCDyN3GtN8t5V38FME3YYHC",
-      "status": "passed",
+      "baseline_deployment_id": "dpl_CYJpLFXi1Vm9tSW9ZBCWr1B7xfXU",
+      "status": "failed",
       "youtube_policy": "baseline",
       "youtube_verified": false
     },
-    "status": "passed"
+    "status": "failed"
   },
   "message": "Todas as conversões e regressões devem passar. No modo baseline, um bloqueio idêntico do YouTube já presente na versão anterior continua indicado como bloqueado e não impede atualizações dos componentes.",
   "mode": "deployment",
@@ -1128,10 +1088,10 @@
   ],
   "schedule": "23 5 * * *",
   "schema": 3,
-  "snapshot_at": "2026-10-13T15:44:47.963316+00:00",
+  "snapshot_at": "2026-10-13T16:06:30.974418+00:00",
   "snapshot_only": true,
-  "state": "passed",
-  "status": "passed",
+  "state": "failed",
+  "status": "failed",
   "strategy": "immutable_deployment",
   "versions": {
     "annotated-doc": "0.0.5",
