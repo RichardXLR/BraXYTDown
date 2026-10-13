@@ -1,0 +1,32 @@
+name: Onda infrastructure check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 5
+    steps:
+      - name: Inspect existing Vercel plan without changing billing or resources
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request, urllib.error
+          token = os.environ.get('VERCEL_TOKEN', '')
+          if not token:
+              raise SystemExit('Vercel connection is not configured.')
+          request = urllib.request.Request('https://api.vercel.com/v2/teams/team_n6dJgfB2eKLbYATPalhDgptx', headers={'Authorization': 'Bearer ' + token})
+          try:
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  data = json.load(response)
+          except urllib.error.HTTPError as error:
+              raise SystemExit('Vercel plan inspection failed with HTTP ' + str(error.code)) from None
+          print(json.dumps({'teamId': data.get('id'), 'plan': data.get('billing', {}).get('plan')}))
+          PY
