@@ -11,7 +11,7 @@
     "url": "https://onda-audio-2so9drg0e-r79078339-3591s-projects.vercel.app"
   },
   "baseline_platform_check": {
-    "checked_at": "2026-10-13T01:38:08.524337+00:00",
+    "checked_at": "2026-10-13T03:49:08.561631+00:00",
     "checks": [
       {
         "code": "platform_blocked",
@@ -1283,6 +1283,7 @@
     },
     "status": "passed"
   },
+  "last_error": "vercel_deploy_failed",
   "previous": {
     "id": "dpl_Hue63onsMtrFJX8LvtTREc7jVVW4",
     "production_aliases": [
@@ -1357,8 +1358,8 @@
     }
   ],
   "schema": 2,
-  "status": "passed",
-  "updated_at": "2026-10-13T01:38:39.514791+00:00",
+  "status": "failed",
+  "updated_at": "2026-10-13T03:50:33.183476+00:00",
   "versions": {
     "annotated-doc": "0.0.5",
     "annotated-types": "0.8.0",
