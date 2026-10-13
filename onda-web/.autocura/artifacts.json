@@ -1,5 +1,5 @@
 {
-  "created_at": "2026-10-12T22:45:25.880694+00:00",
+  "created_at": "2026-10-13T01:01:02.116434+00:00",
   "wheels": [
     {
       "filename": "annotated_doc-0.0.5-py3-none-any.whl",
@@ -80,16 +80,46 @@
       "version": "0.16.0"
     },
     {
+      "filename": "h2-4.4.1-py3-none-any.whl",
+      "name": "h2",
+      "sha256": "0e25f1462b23c9cb82d9eb02e28bc706dac2a68cb457c6a0d74d63c8a2a5d0e6",
+      "version": "4.4.1"
+    },
+    {
+      "filename": "hpack-4.2.0-py3-none-any.whl",
+      "name": "hpack",
+      "sha256": "858ac0b02280fa582b5080d68db0899c62a80375e0e5413a74970c5e518b6986",
+      "version": "4.2.0"
+    },
+    {
       "filename": "httpcore-1.0.9-py3-none-any.whl",
       "name": "httpcore",
       "sha256": "2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55",
       "version": "1.0.9"
     },
     {
+      "filename": "httpcore2-2.13.1-py3-none-any.whl",
+      "name": "httpcore2",
+      "sha256": "e1e05d4f25f7d7d496bfb96748f6f4b67657b03da069b3a68c36069f3db73d0a",
+      "version": "2.13.1"
+    },
+    {
       "filename": "httpx-0.28.1-py3-none-any.whl",
       "name": "httpx",
       "sha256": "d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad",
       "version": "0.28.1"
+    },
+    {
+      "filename": "httpx2-2.13.1-py3-none-any.whl",
+      "name": "httpx2",
+      "sha256": "6dff50fabc270ee5fd25d845d0b078ed20564579744d6d962850975996d2f9a4",
+      "version": "2.13.1"
+    },
+    {
+      "filename": "hyperframe-6.1.0-py3-none-any.whl",
+      "name": "hyperframe",
+      "sha256": "b03380493a519fce58ea5af42e4a42317bf9bd425596f7a0835ffce80f1a42e5",
+      "version": "6.1.0"
     },
     {
       "filename": "idna-3.20-py3-none-any.whl",
@@ -152,6 +182,12 @@
       "version": "2.15.1"
     },
     {
+      "filename": "python_multipart-0.0.32-py3-none-any.whl",
+      "name": "python-multipart",
+      "sha256": "ff6d3f776f16878c894e52e107296ffc890e913c611b1a4ec6c44e2821fe2e23",
+      "version": "0.0.32"
+    },
+    {
       "filename": "requests-2.34.2-py3-none-any.whl",
       "name": "requests",
       "sha256": "2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0",
@@ -162,6 +198,12 @@
       "name": "starlette",
       "sha256": "67f8e99895493dd2911a03f11314af6ceebeae4e704bb9f43dfc6a9db151c93e",
       "version": "1.7.0"
+    },
+    {
+      "filename": "truststore-0.10.5-py3-none-any.whl",
+      "name": "truststore",
+      "sha256": "9aaaedaefaf06d8b206278cf8b5012bc897f485a874503501e12d776df78951c",
+      "version": "0.10.5"
     },
     {
       "filename": "typing_extensions-4.16.0-py3-none-any.whl",
@@ -186,6 +228,30 @@
       "name": "uvicorn",
       "sha256": "505bdb0f318731d45f1f712071fc781a8981f6847a31c902c9f5e652d4f67faf",
       "version": "0.54.0"
+    },
+    {
+      "filename": "vercel_headers-0.7.2-py3-none-any.whl",
+      "name": "vercel-headers",
+      "sha256": "26dcb0016b5c553e638385e532cb8557f071e247b46f2575d5737e48718dc8c6",
+      "version": "0.7.2"
+    },
+    {
+      "filename": "vercel_internal_core-0.2.1-py3-none-any.whl",
+      "name": "vercel-internal-core",
+      "sha256": "6d79198c7c4fd0ea44e8ca09c06dd4a6653fd86b4cab7a28148162d2689b1408",
+      "version": "0.2.1"
+    },
+    {
+      "filename": "vercel_oidc-0.10.0-py3-none-any.whl",
+      "name": "vercel-oidc",
+      "sha256": "abc8317317482e542834ab35883e8c4a0f9a1baea554898e3f041ca037f90bec",
+      "version": "0.10.0"
+    },
+    {
+      "filename": "vercel_queue-0.9.1-py3-none-any.whl",
+      "name": "vercel-queue",
+      "sha256": "cbc8cecd646051a621b0c9302607b62fecf91a8dc743b879d0e2188f50cc4239",
+      "version": "0.9.1"
     },
     {
       "filename": "websockets-17.2-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl",
