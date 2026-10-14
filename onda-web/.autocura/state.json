@@ -11,7 +11,7 @@
     "url": "https://onda-audio-46gg8r60q-r79078339-3591s-projects.vercel.app"
   },
   "baseline_platform_check": {
-    "checked_at": "2026-10-13T16:05:54.396289+00:00",
+    "checked_at": "2026-10-14T10:21:16.838130+00:00",
     "checks": [
       {
         "code": "platform_blocked",
@@ -1220,7 +1220,7 @@
     }
   ],
   "last_check": {
-    "checked_at": "2026-10-13T16:06:30.970947+00:00",
+    "checked_at": "2026-10-14T10:21:49.432631+00:00",
     "checks": [
       {
         "name": "runtime",
@@ -1416,7 +1416,7 @@
       "youtube_status": "blocked"
     },
     "platform_baseline": {
-      "checked_at": "2026-10-13T16:05:54.396289+00:00",
+      "checked_at": "2026-10-14T10:21:16.838130+00:00",
       "checks": [
         {
           "code": "platform_blocked",
@@ -1519,7 +1519,7 @@
   ],
   "schema": 2,
   "status": "failed",
-  "updated_at": "2026-10-13T16:06:30.971008+00:00",
+  "updated_at": "2026-10-14T10:21:49.432685+00:00",
   "versions": {
     "annotated-doc": "0.0.5",
     "annotated-types": "0.8.0",
