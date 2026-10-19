@@ -1444,6 +1444,7 @@
     },
     "status": "failed"
   },
+  "last_error": "http_403",
   "previous": {
     "id": "dpl_82k3XkCDyN3GtN8t5V38FME3YYHC",
     "production_aliases": [
@@ -1890,8 +1891,8 @@
     }
   ],
   "schema": 2,
-  "status": "failed",
-  "updated_at": "2026-10-18T18:13:32.311849+00:00",
+  "status": "blocked",
+  "updated_at": "2026-10-19T10:56:41.519621+00:00",
   "versions": {
     "annotated-doc": "0.0.5",
     "annotated-types": "0.8.0",
