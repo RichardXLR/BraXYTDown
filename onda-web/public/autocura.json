@@ -33,7 +33,7 @@
   "components": "all_pinned_python_dependencies",
   "execution": {
     "repository": "RichardXLR/BraXYTDown",
-    "run_id": "39693221923",
+    "run_id": "39762150785",
     "workflow": "Onda AutoCura 3.0"
   },
   "history": [
@@ -2149,10 +2149,10 @@
   ],
   "schedule": "23 5 * * *",
   "schema": 3,
-  "snapshot_at": "2026-10-21T23:28:57.124219+00:00",
+  "snapshot_at": "2026-10-22T10:20:34.712438+00:00",
   "snapshot_only": true,
-  "state": "failed",
-  "status": "failed",
+  "state": "quarantined",
+  "status": "quarantined",
   "strategy": "immutable_deployment",
   "versions": {
     "annotated-doc": "0.0.5",

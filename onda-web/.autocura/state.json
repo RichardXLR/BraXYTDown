@@ -2580,8 +2580,8 @@
     }
   ],
   "schema": 2,
-  "status": "failed",
-  "updated_at": "2026-10-21T23:28:57.121599+00:00",
+  "status": "quarantined",
+  "updated_at": "2026-10-22T10:20:34.708600+00:00",
   "versions": {
     "annotated-doc": "0.0.5",
     "annotated-types": "0.8.0",
