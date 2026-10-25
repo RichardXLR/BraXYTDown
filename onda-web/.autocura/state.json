@@ -2898,8 +2898,8 @@
     }
   ],
   "schema": 2,
-  "status": "failed",
-  "updated_at": "2026-10-24T16:43:01.310740+00:00",
+  "status": "quarantined",
+  "updated_at": "2026-10-25T09:56:13.419959+00:00",
   "versions": {
     "annotated-doc": "0.0.5",
     "annotated-types": "0.8.0",
