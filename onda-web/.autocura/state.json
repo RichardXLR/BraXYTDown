@@ -2899,7 +2899,7 @@
   ],
   "schema": 2,
   "status": "quarantined",
-  "updated_at": "2026-10-25T09:56:13.419959+00:00",
+  "updated_at": "2026-10-26T11:18:11.155983+00:00",
   "versions": {
     "annotated-doc": "0.0.5",
     "annotated-types": "0.8.0",
